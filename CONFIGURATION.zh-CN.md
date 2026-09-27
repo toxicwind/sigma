@@ -161,9 +161,11 @@
 - **类型：** `Record<string, { context?: number; output?: number; compress?: CompressSettings }>`
 - **默认值：** *（无）*
 - **状态：** ACTIVE
-- **说明：** 将模型名映射到其上下文窗口声明。LLM 的 `/models` 端点**不会**返回上下文窗口大小（已在 OpenAI、Anthropic、zhipu、comfly 上验证），因此代理无法在运行时发现它们 —— 你必须在此声明。`context` 是模型的上下文窗口（以 token 为单位）；`output` 是最大输出大小，在请求完全不携带输出预算字段时作为 output headroom 预留的回退值（见 [`outputHeadroomMaxPct`](#outputheadroommaxpct)）。当模型未声明时，代理回退到内置上下文表或 models.dev 注册表。每个模型条目还可以携带按模型的 `compress` 块（见[压缩调优](#压缩调优)）。
+- **说明：** 将模型名映射到其上下文窗口声明。多数 LLM 的 `/models` 端点**不会**返回上下文窗口大小（已在 OpenAI、Anthropic、zhipu、comfly 上验证），因此对这些服务代理无法在运行时发现它们。OpenRouter 是例外，会被自动发现 —— 见[运行时窗口发现](#运行时窗口发现)。`context` 是模型的上下文窗口（以 token 为单位）；`output` 是最大输出大小，在请求完全不携带输出预算字段时作为 output headroom 预留的回退值（见 [`outputHeadroomMaxPct`](#outputheadroommaxpct)）。当模型未声明时，代理回退到内置上下文表或 models.dev 注册表。每个模型条目还可以携带按模型的 `compress` 块（见[压缩调优](#压缩调优)）。
 
-  内置上下文表是随每个版本发布的静态数据，可能过期 —— 例如 DeepSeek 的规范请求 id `deepseek-flash` 在 models.dev 上没有以该名列出（其窗口列在 `deepseek-v4-flash` 名下），因此只有兜底表能回答它（#852）。日志会为每个模型记录一次胜出来源（`[window] ... fallback=true` 表示值来自内置表）。若解析出的窗口不对，按上文声明 `models.<name>.context`（它优先于注册表和内置表），或固定 `compress.modelContextLimit`；注意 provider 键必须带流量的 scheme（MITM 登录态客户端流量用 `mitm://<host>`，`/bili/` 流量用 `https://<host>`）。
+  **解析顺序（先匹配者胜出）：**（1）每请求来源 —— 客户端的 `anthropic-beta` 更大上下文协商、协作插件的报告、以及启动器的按模型窗口；（2）本按模型 `context` 声明；（3）**已预热**的 models.dev 注册表缓存（若该模型已列出；中继/私有主机用裸模型名去匹配注册表中带 provider 前缀的条目）；（4）OpenRouter 为该确切模型 id 公布的上下文窗口（见[运行时窗口发现](#运行时窗口发现)）；（5）内置上下文表。因此本按模型 `context` 声明**优先于注册表** —— 把它设成你的中继/私有部署实际提供的窗口，即使 models.dev 为该模型列出不同的（通常更大）窗口它也会胜出。若要把窗口固定到所有路由，`compress.modelContextLimit` 仍是最高优先级来源（总是胜出）。
+
+  内置上下文表（第 5 步）是随每个版本发布的静态数据，可能过期 —— 例如 DeepSeek 的规范请求 id `deepseek-flash` 在 models.dev 上没有以该名列出（其窗口列在 `deepseek-v4-flash` 名下），因此只有兜底表能回答它（#852）。日志会为每个模型记录一次胜出来源（`[window] ... fallback=true` 表示值来自内置表）。若解析出的窗口不对，按上文声明 `models.<name>.context`（它优先于注册表、OpenRouter 发现和内置表），或固定 `compress.modelContextLimit`；注意 provider 键必须带流量的 scheme（MITM 登录态客户端流量用 `mitm://<host>`，`/bili/` 流量用 `https://<host>`）。
 
 ### `context`
 
@@ -175,6 +177,15 @@
   上下文窗口是**服务进程**的属性，而不是模型家族的属性。一个 Ollama 或 vLLM 服务器在单一的 `num_ctx` 或 `--ctx-size` 下承载许多 tag，因此路由才是声明它的正确单位。常见写法是 `"http://127.0.0.1:11434": { "context": 32768 }`。
 
   与按模型字段一样，它优先于热的 models.dev 注册表和内置表，因此本地服务的模型不会被家族猜测误判大小。内置表因为 `qwen2.5:7b` 是 qwen 家族 id 而给它 200K，而本地进程实际可能只有 32K。非正数和非有限值会被忽略。已声明的窗口具有权威性，因此不会被压到兜底窗口下限。
+
+#### 运行时窗口发现
+
+- **状态：** ACTIVE，无需配置
+- **说明：** OpenRouter 会在 `https://openrouter.ai/api/v1/models` 按模型公布真实的上下文窗口，即 `context_length` 与 `top_provider.max_completion_tokens`。代理在启动时后台拉取该列表并缓存，在请求路径上只读缓存 —— 从不内联发起请求。
+
+  已公布的窗口优先于内置家族表，因此 `vendor/model` 这类会被家族表误判大小的 id 能被正确标定。它**不**优先于客户端自报窗口、插件报告或运维声明；这些仍然具有权威性。OpenRouter 未公布的 id 原样回退到家族表 —— 绝不会拿兄弟模型的窗口来假设。
+
+  窗口算错不是外观问题。`stealth/space-bunny-alpha` 上的一个会话被按 200,000 的窗口做预算，而该模型实际提供 1,000,000，于是 preflight 压缩在"窗口的 526%"处触发，花费最多 330,735 ms 去压缩一个其实从未超出真实窗口的载荷。若日志仍显示窗口不对，声明 [`models.<name>.context`](#models) 把它固定下来 —— 声明优先于自动发现。
 
 ### `proxy`
 

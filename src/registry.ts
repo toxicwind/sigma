@@ -31,6 +31,74 @@ let loading: Promise<RegistryShape | null> | null = null;
 const warnedConflicts = new Set<string>();
 const warnedPriceConflicts = new Set<string>();
 
+// #1462: OpenRouter is the one upstream whose model list PUBLISHES each model's
+// context window (`context_length`) and output ceiling
+// (`top_provider.max_completion_tokens`) at runtime — models.dev, OpenAI,
+// Anthropic, zhipu and comfly all do not (see the note above CONTEXT_LIMIT_TABLE
+// in config.ts). Measured cost of guessing instead: a live session on
+// `stealth/space-bunny-alpha` was budgeted against a guessed 200,000-token
+// window while the model actually serves 1,000,000, so preflight fired at "526%
+// of the window" and spent up to 330,735 ms compressing a payload that was
+// never over the real one. Cached here and consulted cache-only, exactly like
+// the models.dev floor: never fetched on the request path.
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+type OpenRouterEntry = { context: number; output?: number };
+let openRouterCache: Record<string, OpenRouterEntry> | null = null;
+let openRouterLoading: Promise<void> | null = null;
+
+export async function loadOpenRouterModels(): Promise<void> {
+    if (openRouterCache) return;
+    if (openRouterLoading) return openRouterLoading;
+    openRouterLoading = (async () => {
+        try {
+            const res = await fetchWithTimeout(OPENROUTER_MODELS_URL, { headers: { accept: "application/json" } });
+            if (!res.response.ok) {
+                loggerLog("warn", `[acp-registry] openrouter /models returned HTTP ${res.response.status}; window discovery stays on the family table`);
+                return;
+            }
+            const body = (await res.response.json()) as { data?: Array<{ id?: string; context_length?: number; top_provider?: { max_completion_tokens?: number } }> };
+            const next: Record<string, OpenRouterEntry> = {};
+            for (const row of body.data ?? []) {
+                if (typeof row.id !== "string" || typeof row.context_length !== "number" || !(row.context_length > 0)) continue;
+                const output = row.top_provider?.max_completion_tokens;
+                next[row.id] = typeof output === "number" && output > 0 ? { context: row.context_length, output } : { context: row.context_length };
+            }
+            if (Object.keys(next).length === 0) {
+                loggerLog("warn", "[acp-registry] openrouter /models carried no usable context_length; window discovery stays on the family table");
+                return;
+            }
+            openRouterCache = next;
+            loggerLog("info", `[acp-registry] loaded openrouter model windows (${Object.keys(next).length} models)`);
+        } catch {
+            // Never fatal: an upstream we cannot reach must not stop the proxy,
+            // and the family table remains the fallback.
+            loggerLog("warn", "[acp-registry] openrouter /models unreachable; window discovery stays on the family table");
+        }
+    })();
+    await openRouterLoading;
+    openRouterLoading = null;
+}
+
+/** Cache-only OpenRouter context window for an EXACT published model id
+ *  (`vendor/model`). Undefined means either "OpenRouter does not publish this
+ *  id" or the cache has not loaded — both fall through to the family table, so
+ *  an unpublished id is never guessed at. */
+export function peekOpenRouterContext(model: string | undefined): number | undefined {
+    if (!model || !openRouterCache) return undefined;
+    return openRouterCache[model]?.context;
+}
+
+/** Cache-only OpenRouter output ceiling; same residency rules as
+ *  {@link peekOpenRouterContext}. */
+export function peekOpenRouterOutputLimit(model: string | undefined): number | undefined {
+    if (!model || !openRouterCache) return undefined;
+    return openRouterCache[model]?.output;
+}
+
+export function _setOpenRouterForTest(data: Record<string, OpenRouterEntry> | null): void {
+    openRouterCache = data;
+}
+
 /** Full models.dev snapshot committed at src/registry-snapshot.json
  *  (refresh with `npm run registry:snapshot`) and inlined into dist at build
  *  time — the ENTIRE registry (all fields models.dev ships: name,
@@ -521,10 +589,18 @@ function registryLookup(reg: RegistryShape | null, model: string, host?: string,
     return undefined;
 }
 
+// Both window-discovery caches are warmed together by startServer, so these
+// seams cover both. Pinning only the models.dev one left the OpenRouter loader
+// live: 29 test files fired a real request to openrouter.ai, and the open
+// socket kept the event loop alive so `npm test` never exited. A warm empty
+// cache is the short-circuit `loadOpenRouterModels` checks first, so seeding
+// the registry alone is now enough to keep a test off the network.
 export function _resetForTest(): void {
     cache = null;
     costCache = null;
     loading = null;
+    openRouterCache = null;
+    openRouterLoading = null;
     warnedConflicts.clear();
     warnedPriceConflicts.clear();
 }
@@ -533,4 +609,6 @@ export function _setForTest(data: RegistryShape, costs?: CostsShape | null): voi
     cache = data;
     costCache = costs ?? null;
     loading = null;
+    openRouterCache = {};
+    openRouterLoading = null;
 }

@@ -10,7 +10,7 @@ import type { CompressSettings, ProxyOptions } from "./config.js";
 import { loadOptions, loadRoutes } from "./config.js";
 import { resetProxyCache } from "./upstream-proxy.js";
 import { FALLBACK_EFFECTIVE_WINDOW_FLOOR, findRoute, lookupContextLimit, resolveConfiguredContextLimit, resolveConfiguredOutputLimit, resolveCompressProtocol } from "./config.js";
-import { contextFromRegistry, loadRegistry, peekRegistryContext, peekRegistryOutputLimit, peekRegistryPriceProfile } from "./registry.js";
+import { contextFromRegistry, loadOpenRouterModels, loadRegistry, peekOpenRouterContext, peekRegistryContext, peekRegistryOutputLimit, peekRegistryPriceProfile } from "./registry.js";
 import { codexAlignedWindow } from "./codex-models.js";
 import { fetchWithTimeout, MAX_REQUEST_BYTES, upstreamTimeoutMs } from "./fetch-util.js";
 import { formatUpstreamError, getUpstreamConnectionStatus, recordUpstreamConnection, resolveProxy, resolveProxyDecision, proxyDispatcher, type UpstreamProxyDecision } from "./upstream-proxy.js";
@@ -407,6 +407,7 @@ export async function startServer(opts: ProxyOptions): Promise<http.Server> {
     // as the context-window source for zero-config `/p/` routes that have no
     // per-model config. A miss falls back to the prefix table + default.
     void loadRegistry();
+    void loadOpenRouterModels();
     const server = http.createServer(async (req, res) => {
         armRequestWatchdog(req, res, log);
         try {
@@ -1384,6 +1385,13 @@ async function handle(
             const configuredWindow = resolveConfiguredContextLimit(opts.routes, embeddedUrl, model);
             const operatorWindowTuned = resolveCompress(opts.routes, embeddedUrl, model, opts.compress).modelContextLimit !== undefined;
             const peekWindow = capRegistryWindowByStandard(model, peekRegistryContext(model, host), hasTierEvidence);
+            // #1462: a model OpenRouter actually publishes carries its own
+            // context window. It outranks the family table (the 200,000 guess
+            // that had preflight compressing a 1M-token model's payload at
+            // "526% of the window", 330s at a time) but not client/plugin or
+            // operator evidence, and is tier-capped exactly like the models.dev
+            // source (#1321).
+            const publishedWindow = capRegistryWindowByStandard(model, peekOpenRouterContext(model), hasTierEvidence);
             let native = betaWindow
                 ?? suffixWindow
                 ?? pluginWindow
@@ -1391,13 +1399,14 @@ async function handle(
                 ?? launcherWindow
                 ?? configuredWindow
                 ?? peekWindow
+                ?? publishedWindow
                 ?? lookupContextLimit(model);
             // Fallback = no authoritative source AND the operator did not
             // explicitly tune the window via compress.modelContextLimit (an
             // explicit tuning is owned by the operator — never floored). The
             // beta/suffix windows are authoritative (the client's own runtime
             // negotiation), so they also clear the fallback flag.
-            nativeFromFallback = !betaWindow && !suffixWindow && !pluginWindow && !runtimeWindow && !launcherWindow && !peekWindow && !configuredWindow && !operatorWindowTuned;
+            nativeFromFallback = !betaWindow && !suffixWindow && !pluginWindow && !runtimeWindow && !launcherWindow && !peekWindow && !publishedWindow && !configuredWindow && !operatorWindowTuned;
             if (!native) {
                 native = capRegistryWindowByStandard(model, await contextFromRegistry(model, host), hasTierEvidence);
                 if (native) nativeFromFallback = false;

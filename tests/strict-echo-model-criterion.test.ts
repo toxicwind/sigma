@@ -9,6 +9,11 @@ import { startServer } from "../src/server.ts";
 import type { ProxyOptions } from "../src/config.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { setLogCapture } from "../src/logger.ts";
+import { _setForTest as setRegistryForTest } from "../src/registry.ts";
+
+// A warm registry cache also short-circuits the OpenRouter window discovery
+// that startServer kicks off, so no test reaches the network.
+setRegistryForTest({});
 
 // #1027: DeepSeek models behind a non-deepseek gateway never trip the
 // host-only static strict-echo check, so every fresh session re-paid the

@@ -198,6 +198,56 @@ Tests live in `tests/preflight-wall-clock-ceiling.test.ts` (a slow upstream is c
 ceiling; `0` restores the call budget) and in `tests/compress-settings.test.ts` (the key survives
 the per-field merge, which is where it was silently dropped the first time).
 
+## 8. Fork-original code: OpenRouter context-window discovery
+
+The section above bounds the damage when a window is wrong. This one removes a whole class of the
+error. Upstream ships a static family table, `CONTEXT_LIMIT_TABLE` in `src/config.ts`, keyed on
+model-name roots. A `vendor/model` id from a provider upstream never heard of falls through every
+entry and lands on the 200,000 default.
+
+**Why a family table is the wrong instrument here.** The table guesses from a *name*. OpenRouter
+publishes a *fact*. `GET https://openrouter.ai/api/v1/models` returns 458 models, each carrying
+`context_length` and `top_provider.max_completion_tokens`. A measured case, from the proxy's own
+startup log:
+
+```
+model=stealth/space-bunny-alpha source=default native=none effective=200000
+  launcher=none configured=none peek=none fallback=true
+```
+
+OpenRouter serves that model at **1,000,000**. So the log above records `usage=526%` for a session
+that was never near the limit, and preflight spends up to 330,735 ms compressing a payload that fit.
+
+**The change.** `src/registry.ts` gained a second background cache beside the models.dev one, with
+the same residency discipline:
+
+```
+export async function loadOpenRouterModels(): Promise<void>
+export function peekOpenRouterContext(model: string | undefined): number | undefined
+export function peekOpenRouterOutputLimit(model: string | undefined): number | undefined
+```
+
+`src/server.ts` calls `void loadOpenRouterModels()` next to the existing `void loadRegistry()`. The
+request path only ever *reads* the cache. A failed or unreachable OpenRouter logs a warning and
+changes nothing.
+
+**Where the published window ranks.** It outranks the family table and sits below client-reported,
+plugin-reported, and operator-declared windows:
+
+```
+betaWindow ?? suffixWindow ?? pluginWindow ?? runtimeWindow ?? launcherWindow
+  ?? configuredWindow ?? peekWindow ?? publishedWindow ?? lookupContextLimit(model)
+```
+
+Two deliberate constraints. It never overrides the launcher's per-model window, because
+`src/server/context-window.ts` holds that the client's own number is authoritative: it is what the
+client itself truncates at. And a model OpenRouter does not publish falls through to the table
+unchanged, because a sibling model in the same family can serve a different window entirely.
+
+Tests live in `tests/openrouter-published-window.test.ts`. They pin both directions: a published
+128,000 beats a table entry of 1,000,000, and a published 2,000,000 raises the same entry. One pins
+the absence case, so an unpublished id cannot be silently resolved from a near neighbour.
+
 
 ---
 
@@ -211,3 +261,6 @@ the per-field merge, which is where it was silently dropped the first time).
   verbatim. It holds upstream's README, kept as a record of the full upstream feature surface.
   The terse fork README does not cover that surface.
 - Run `git show 218f31c^:<path>` to view how any file looked before the fork.
+- Sections 7 and 8 document **fork-original code**, not a diff against upstream. Neither feature
+  exists in `billion-context`. They are listed here so a reader knows that sections 7 and 8 describe
+  additions, while sections 1 through 6 describe a rename and a consolidation.
