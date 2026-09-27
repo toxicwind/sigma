@@ -1,6 +1,6 @@
 import type { CoreMessage } from "acp-kernel";
 import { coreToOpenai, injectOpenaiSystem } from "acp-kernel/wire";
-import { buildVisibilityMarker } from "../compress-loop.js";
+import { buildVisibilityMarker } from "./core.js";
 import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
@@ -127,7 +127,7 @@ function openaiCachedTokens(u: Record<string, unknown>): number | undefined {
     return undefined;
 }
 
-export function createOpenaiAdapter(requestBody: Record<string, unknown>, clientSystem?: string, absorbName?: string, notes?: string[]): CompressLoopAdapter {
+export function createOpenaiAdapter(requestBody: Record<string, unknown>, clientSystem?: string, absorbName?: string, notes?: string[], errorShape: "protocol" | "completion" = "protocol"): CompressLoopAdapter {
     const model = (requestBody.model as string) ?? "unknown";
     let responseId = `chatcmpl-proxy-${Date.now()}`;
     let toolIndex = 0;
@@ -511,9 +511,21 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
         },
 
         emitError(message) {
+            // #1455: present the failure AS a failure (see the anthropic twin). The
+            // legacy shape — error text + finish_reason "stop" + [DONE] — read as a
+            // normal completion to clients and suppressed their retry logic. The
+            // default now rides the top-level `error` frame bili's own parser already
+            // recognizes (same shape #721's truncation path emits); compat.
+            // streamErrorShape="completion" restores the legacy shape.
+            if (errorShape === "completion") {
+                return Buffer.concat([
+                    buildContent(`\n[acp-proxy: ${message}]\n`),
+                    buildFinish("stop", null),
+                    Buffer.from("data: [DONE]\n\n", "utf8"),
+                ]);
+            }
             return Buffer.concat([
-                buildContent(`\n[acp-proxy: ${message}]\n`),
-                buildFinish("stop", null),
+                Buffer.from(`data: ${JSON.stringify({ error: { type: "server_error", code: "upstream_error", message: `[acp-proxy: ${message}]` } })}\n\n`, "utf8"),
                 Buffer.from("data: [DONE]\n\n", "utf8"),
             ]);
         },

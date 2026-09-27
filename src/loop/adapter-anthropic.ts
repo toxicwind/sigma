@@ -1,6 +1,6 @@
 import type { CoreMessage } from "acp-kernel";
 import { coreToAnthropic, extractSystem, buildSystem, type AnthropicRequestBody } from "acp-kernel/wire";
-import { buildVisibilityMarker } from "../compress-loop.js";
+import { buildVisibilityMarker } from "./core.js";
 import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
@@ -150,7 +150,7 @@ function buildTextDeltaEvent(index: number, text: string): Buffer {
     );
 }
 
-export function createAnthropicAdapter(requestBody: Record<string, unknown>, originalSystem?: AnthropicRequestBody["system"], notes?: string[]): CompressLoopAdapter {
+export function createAnthropicAdapter(requestBody: Record<string, unknown>, originalSystem?: AnthropicRequestBody["system"], notes?: string[], errorShape: "protocol" | "completion" = "protocol"): CompressLoopAdapter {
     const model = (requestBody.model as string) ?? undefined;
     let messageId: string | undefined;
     let clientIndex = 0;
@@ -278,6 +278,21 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                 }
             };
 
+            // #1455: a re-fetched stream (blind truncation retry) resumes the SAME logical
+            // response — close the dead attempt's still-open blocks first, so the client
+            // never sees a dangling content_block_start; clientIndex keeps counting up
+            // across attempts, so the new stream's blocks continue at higher indices.
+            // Normal round boundaries reach here with openBlocks empty (blocks close or
+            // buffer to self-contained form before a round ends), so this is a no-op
+            // except after an aborted stream.
+            for (const index of openBlocks.splice(0)) {
+                yield {
+                    kind: "meta",
+                    chunk: Buffer.from(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index })}\n\n`, "utf8"),
+                    firstRoundOnly: false,
+                } as ParsedStreamEvent;
+            }
+
             for await (const eventStr of iterSseEvents(upstream)) {
                 const parsed = parseAnthropicSse(eventStr);
                 if (!parsed) continue;
@@ -291,7 +306,13 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                     if (typeof u.input_tokens === "number") roundInput = u.input_tokens;
                     if (typeof u.cache_read_input_tokens === "number") roundCached = u.cache_read_input_tokens;
                     if (typeof u.cache_creation_input_tokens === "number") roundCreation = u.cache_creation_input_tokens;
-                    if (round === 1) {
+                    // #1455: suppression keys off ACTUAL forwarding state, not the round
+                    // parameter — a re-fetched stream (blind truncation retry) re-parses
+                    // at the SAME round, and re-emitting the start frame would hand the
+                    // client a second response identity for one logical turn. The usage
+                    // capture above runs regardless, so the retry's start still feeds
+                    // the ledger even when the frame itself is withheld.
+                    if (!messageStartForwarded) {
                         // #1310: forward the start frame usage-NEUTRAL. The real
                         // values were captured above; on a stitched stream the
                         // pre-fold start usage is stale the moment the compress
@@ -305,7 +326,9 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                         yield { kind: "meta", chunk: neutralizeStartUsage(eventStr), firstRoundOnly: true } as ParsedStreamEvent;
                     }
                 } else if (type === "ping") {
-                    yield { kind: "meta", chunk: rawBuf } as ParsedStreamEvent;
+                    // #1455: inert keep-alive — creates no client-side stream state, so it
+                    // must not bar the loop's zero-side-effect re-fetch (#413 gate).
+                    yield { kind: "meta", chunk: rawBuf, stateless: true } as ParsedStreamEvent;
                 } else if (type === "content_block_start") {
                     const upstreamIndex = (data.index as number) ?? 0;
                     const block = (data.content_block ?? {}) as Record<string, unknown>;
@@ -507,8 +530,23 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
             for (const index of openBlocks.splice(0)) {
                 parts.push(Buffer.from(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index })}\n\n`, "utf8"));
             }
-            parts.push(buildTextBlock(clientIndex++, `\n[acp-proxy: ${message}]\n`));
-            parts.push(buildTerminal("end_turn", 0, 0, 0));
+            // #1455: present the failure AS a failure. The legacy shape (error text block +
+            // end_turn + message_stop) looked like a normal completion — the incident's ZCode
+            // client consumed it as finishReason=stop and never spent one of its retry
+            // attempts, silently dropping the turn. Emit the protocol-native error event
+            // instead (same channel #721's plugin-mode pipe and #568's preflight path use):
+            // compliant SDKs throw on it, giving the client's own retry logic a chance. No
+            // terminal success frame after it — that would re-mask the failure.
+            // compat.streamErrorShape="completion" restores the legacy shape.
+            if (errorShape === "completion") {
+                parts.push(buildTextBlock(clientIndex++, `\n[acp-proxy: ${message}]\n`));
+                parts.push(buildTerminal("end_turn", 0, 0, 0));
+            } else {
+                parts.push(Buffer.from(
+                    `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "server_error", code: "upstream_error", message: `[acp-proxy: ${message}]` } })}\n\n`,
+                    "utf8",
+                ));
+            }
             return Buffer.concat(parts);
         },
     };

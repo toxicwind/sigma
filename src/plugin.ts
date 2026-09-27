@@ -1227,7 +1227,8 @@ export async function pipePluginChatWithStrip(
             // model that produced nothing and the session reads as idle while it is
             // dead, so the client gets an error the host would never surface (#870).
             log?.("[plugin] degenerate terminal turn again after the retry; emitting an in-band error (#870)");
-            emitStreamError(res, protocol, "the turn degenerated again after the continuation nudge");
+            // #870 deliberately chose a COMPLETED turn carrying the error text (visible to the host); keep the legacy shape here regardless of the global streamErrorShape default.
+            emitStreamError(res, protocol, "the turn degenerated again after the continuation nudge", undefined, "completion");
             return true;
         }
         // A turn the model left genuinely bare — no thought, no stripped echo,

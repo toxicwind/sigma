@@ -62,7 +62,7 @@ import {
 } from "acp-kernel/wire";
 import { ABSORB_TOOL_NAME, COMPRESS_TOOL, BILI_ACP_TOOLS_ANTHROPIC, BILI_ACP_TOOLS_GOOGLE, BILI_ACP_TOOLS_OPENAI, BILI_ACP_TOOLS_RESPONSES, BILI_ACP_READONLY_TOOLS_RESPONSES, COMPRESS_TOOL_NAME, IMAGE_FULL_TOOL, IMAGE_FULL_TOOL_GOOGLE, IMAGE_FULL_TOOL_OPENAI, IMAGE_FULL_TOOL_RESPONSES, RULE_TOOL, RULE_TOOL_GOOGLE, RULE_TOOL_OPENAI, RULE_TOOL_RESPONSES, absorbToolsFor, retrieveToolsFor, buildAbsorbSystemPrompt, buildCompressSystemPrompt, buildCompressHybridSystemPrompt, withConversationIdNote, withMarkerIntegrityNote, withStagedCompressGuidance, withSummaryBudgetNote } from "./compress-tool.js";
 import { applyAbsorbView, absorbEnabled, absorbToolName, storeEffectiveAbsorb } from "./absorb.js";
-import { adoptContentStore, ccrEnabled, ccrLoopConfig, ccrPluginWireOk, commitRetrievals, contentStoreOf, dropRetrievals, executeRetrieve, flushRetrievalNotes, pruneExpiredRetrievals, reconcileReloadedRetrievals, retrieveToolName, snapshotPendingRetrievals, storeEffectiveCcr, type CcrSettings } from "./store.js";
+import { adoptContentStore, ccrEnabled, ccrLoopConfig, ccrPluginWireOk, commitRetrievals, commitRetrievalNotes, contentStoreOf, dropRetrievals, executeRetrieve, pruneExpiredRetrievals, reconcileReloadedRetrievals, renderRetrievalNotes, retrieveToolName, snapshotPendingRetrievals, snapshotRetrievalNotes, storeEffectiveCcr, type CcrSettings } from "./store.js";
 import { applyImageCompressionPass, imageCompressionEnabled, imageFullTrailingNote, storeEffectiveImageCompression, type ImageCompressionSettings } from "./image-compress.js";
 import { rulesEnabled, storeEffectiveRules } from "./rules-feature.js";
 import { storeEffectiveSearchPlanAware } from "./decompress-shared.js";
@@ -741,6 +741,11 @@ type Prepared = {
      *  (logged + corrective note) on failure — the ack is already out, so the
      *  full text must never vanish silently. */
     attachedRetrievals?: PendingRetrieval[];
+    /** [#1457] ids of the corrective notes snapshotted onto THIS request's body.
+     *  Committed ONLY when upstream accepts (2xx); on any failure they stay
+     *  pending for the next request — a note must never be consumed before the
+     *  correction actually reaches the model. */
+    attachedRetrievalNoteIds?: string[];
     nudge?: NudgeDecision;
     /** Render strategy the prepare used for processTurn ("none" for codex
      *  compaction triggers / ACP_RENDER_NONE). The #422 fold-refresh hook in
@@ -2732,6 +2737,7 @@ async function prepareAnthropic(
 
     let processedMessages: CoreMessage[] = [];
     let attachedRetrievals: PendingRetrieval[] = [];
+    let attachedRetrievalNoteIds: string[] = [];
     let originalMessages: CoreMessage[] = [];
     let nudge: NudgeDecision | undefined;
     let rebuiltMessages = parsed.messages;
@@ -2904,10 +2910,16 @@ async function prepareAnthropic(
         // (see prepareAnthropic for why not system).
         const imgNote = imageFullTrailingNote(session);
         if (imgNote) rebuiltMessages = [...rebuiltMessages, { role: "user", content: imgNote }];
-        // [#1343] surface any earlier undelivered retrieve as an ephemeral trailing
-        // user note (kept last so it never reorders cached messages).
-        const retrNote = flushRetrievalNotes(session);
-        if (retrNote) rebuiltMessages = [...rebuiltMessages, { role: "user", content: retrNote }];
+        // [#1343/#1457] surface any earlier undelivered retrieve as an ephemeral
+        // trailing user note (kept last so it never reorders cached messages).
+        // Snapshot WITHOUT consuming: forward() commits the ids only once
+        // upstream accepts this request; on failure they ride the next one.
+        const retrNotes = snapshotRetrievalNotes(session);
+        const retrNote = renderRetrievalNotes(retrNotes);
+        if (retrNote) {
+            rebuiltMessages = [...rebuiltMessages, { role: "user", content: retrNote }];
+            attachedRetrievalNoteIds = retrNotes.map((n) => n.id);
+        }
     } catch (err) {
         log("warn", `[${sessionId}] kernel transform failed, forwarding unchanged: ${String(err)}`);
         if (attachedRetrievals.length > 0) dropRetrievals(session, attachedRetrievals.map((i) => i.ref), "prepare failed; forwarded unprocessed");
@@ -2936,7 +2948,7 @@ async function prepareAnthropic(
     session.stats.localInputEstimate = estimateCoreMessagesUpper(processedMessages.length > 0 ? processedMessages : originalMessages)
         + countSystemAndToolsTokens(extractSystem(systemOut), toolsOut)
         + imageTokensInParsedBody("anthropic", rebuilt, imageBillingFor(opts, upstreamOrigin));
-    return { body: JSON.stringify(rebuilt), session, attachedRetrievals, processedMessages, originalMessages, anthropicSystem: parsed.system, systemNotes: sysNotes, protocol: "anthropic", stream, compressInjected: injectTools, pluginMode, nudge, prompts, surface, renderTags: process.env.ACP_RENDER_NONE ? "none" : "text-only" } as Prepared;
+    return { body: JSON.stringify(rebuilt), session, attachedRetrievals, attachedRetrievalNoteIds, processedMessages, originalMessages, anthropicSystem: parsed.system, systemNotes: sysNotes, protocol: "anthropic", stream, compressInjected: injectTools, pluginMode, nudge, prompts, surface, renderTags: process.env.ACP_RENDER_NONE ? "none" : "text-only" } as Prepared;
 }
 
 async function prepareOpenai(
@@ -2965,6 +2977,7 @@ async function prepareOpenai(
     let openaiOutboundSystem: string | undefined;
     let processedMessages: CoreMessage[] = [];
     let attachedRetrievals: PendingRetrieval[] = [];
+    let attachedRetrievalNoteIds: string[] = [];
     let originalMessages: CoreMessage[] = [];
     let nudge: NudgeDecision | undefined;
     let rebuiltMessages = parsed.messages;
@@ -3122,10 +3135,16 @@ async function prepareOpenai(
         // (same pattern as prepareAnthropic/Google/Responses).
         const imgNote = imageFullTrailingNote(session);
         if (imgNote) rebuiltMessages = [...rebuiltMessages, { role: "user", content: imgNote }];
-        // [#1343] surface any earlier undelivered retrieve as an ephemeral trailing
-        // user note (kept last so it never reorders cached messages).
-        const retrNote = flushRetrievalNotes(session);
-        if (retrNote) rebuiltMessages = [...rebuiltMessages, { role: "user", content: retrNote }];
+        // [#1343/#1457] surface any earlier undelivered retrieve as an ephemeral
+        // trailing user note (kept last so it never reorders cached messages).
+        // Snapshot WITHOUT consuming: forward() commits the ids only once
+        // upstream accepts this request; on failure they ride the next one.
+        const retrNotes = snapshotRetrievalNotes(session);
+        const retrNote = renderRetrievalNotes(retrNotes);
+        if (retrNote) {
+            rebuiltMessages = [...rebuiltMessages, { role: "user", content: retrNote }];
+            attachedRetrievalNoteIds = retrNotes.map((n) => n.id);
+        }
     } catch (err) {
         log("warn", `[${sessionId}] kernel transform failed, forwarding unchanged: ${String(err)}`);
         if (attachedRetrievals.length > 0) dropRetrievals(session, attachedRetrievals.map((i) => i.ref), "prepare failed; forwarded unprocessed");
@@ -3171,7 +3190,7 @@ async function prepareOpenai(
     }
     snapshotMessages(session, originalMessages);
     markDirty(session);
-    return { body: JSON.stringify(rebuilt), session, attachedRetrievals, processedMessages, originalMessages, protocol: "openai", stream, compressInjected: injectTools, pluginMode, nudge, prompts, surface, openaiSystemText, systemNotes: sysNotes, renderTags: process.env.ACP_RENDER_NONE ? "none" : "text-only" } as Prepared;
+    return { body: JSON.stringify(rebuilt), session, attachedRetrievals, attachedRetrievalNoteIds, processedMessages, originalMessages, protocol: "openai", stream, compressInjected: injectTools, pluginMode, nudge, prompts, surface, openaiSystemText, systemNotes: sysNotes, renderTags: process.env.ACP_RENDER_NONE ? "none" : "text-only" } as Prepared;
 }
 
 /** Append the ephemeral nudge to a Gemini `contents` array. Gemini is
@@ -4982,6 +5001,13 @@ async function forward(
         if (upstream.ok) commitRetrievals(prepared.session, aRefs);
         else dropRetrievals(prepared.session, aRefs, `upstream HTTP ${upstream.status}`);
     }
+    // [#1457] corrective notes settle on the SAME boundary but are never DROPPED:
+    // committed only when upstream accepted (the model actually saw them); on any
+    // failure they stay pending and ride the next request. Not gated on
+    // attachedRetrievals — a request may carry a note without any full text.
+    if (prepared && prepared.attachedRetrievalNoteIds && prepared.attachedRetrievalNoteIds.length > 0 && upstream.ok) {
+        commitRetrievalNotes(prepared.session, prepared.attachedRetrievalNoteIds);
+    }
     const respHeaders: Record<string, string> = {};
     const respConnNamed = connectionNamedHeaders(upstream.headers.get("connection") ?? undefined);
     upstream.headers.forEach((v, k) => {
@@ -5079,7 +5105,7 @@ async function forward(
             // longer change, so deliver the upstream failure in-band (protocol error
             // event for streams; verbatim error body under 200 otherwise).
             if (prepared?.stream) {
-                emitStreamError(res, prepared.protocol, `upstream HTTP ${upstream.status}: ${snippet}`, (m) => loggerLog("info", m));
+                emitStreamError(res, prepared.protocol, `upstream HTTP ${upstream.status}: ${snippet}`, (m) => loggerLog("info", m), opts.streamErrorShape);
             } else {
                 try { res.end(errBody ?? undefined); } catch { /* client gone */ }
             }
@@ -5394,7 +5420,7 @@ async function forward(
                 : "";
             const visibilityMarkers = resolveCompress(opts.routes, route?.rewrittenUrl, (parsedReq as { model?: string }).model, opts.compress).visibilityMarkers ?? true;
             const systemPrompt = withConversationIdNote(withMarkerIntegrityNote(withSummaryBudgetNote(textProtocol ? buildCompressHybridSystemPrompt(prepared.prompts ?? defaultPrompts, prepared.surface?.promptSections) : buildCompressSystemPrompt(prepared.prompts ?? defaultPrompts, prepared.surface?.promptSections)), visibilityMarkers), ensureCanonicalId(prepared.session)) + absorbSection;
-            const adapter = pickAdapter(prepared.protocol, parsedReq, textProtocol, prepared.responsesProjection, prepared.anthropicSystem, prepared.openaiSystemText, absorbActive ? absorbToolName(loopConfig) : undefined, prepared.google, prepared.systemNotes);
+            const adapter = pickAdapter(prepared.protocol, parsedReq, textProtocol, prepared.responsesProjection, prepared.anthropicSystem, prepared.openaiSystemText, absorbActive ? absorbToolName(loopConfig) : undefined, prepared.google, prepared.systemNotes, opts.streamErrorShape);
             const refreshFolded = async (current: CoreMessage[]): Promise<CoreMessage[]> => {
                 return withSessionLock(prepared.session, async () => {
                     // #422: mirror the prepare's fold with the post-compress state so
@@ -5422,9 +5448,11 @@ async function forward(
                     return repairResponsesAssistantOrdering(out, prepared.originalMessages);
                 });
             };
+            // #1455: loop-originated upstream responses (re-request/retries) are NOT covered by the outer tee above — they were invisible to ACP_DUMP_SSE until now.
+            const loopDumpDir = opts.dumpSse;
             const loop = runCompressLoop(
                 streamToRead,
-                { core, config, messages: prepared.processedMessages.length > 0 ? prepared.processedMessages : prepared.originalMessages, compressMessages: prepared.originalMessages, session: prepared.session, log: ctx.log, proxyUrl, protocol: prepared.protocol, textProtocol, debug: opts.debug, refreshFolded, visibilityMarkers },
+                { core, config, messages: prepared.processedMessages.length > 0 ? prepared.processedMessages : prepared.originalMessages, compressMessages: prepared.originalMessages, session: prepared.session, log: ctx.log, proxyUrl, protocol: prepared.protocol, textProtocol, debug: opts.debug, refreshFolded, visibilityMarkers, dumpSse: loopDumpDir ? (name, stream) => dumpStreamToFile(stream, loopDumpDir, name) : undefined },
                 parsedReq,
                 { url: upstreamUrl, headers: reqHeaders, wireTransform },
                 adapter,
@@ -5451,7 +5479,7 @@ async function forward(
             }
             res.end();
         } catch (e) {
-            emitStreamError(res, prepared.protocol, (e as Error)?.message ?? String(e), (m) => log("error", `[${prepared.session.id}] ${m}`));
+            emitStreamError(res, prepared.protocol, (e as Error)?.message ?? String(e), (m) => log("error", `[${prepared.session.id}] ${m}`), opts.streamErrorShape);
         } finally {
             clearUpstreamTimer();
             if (dumpRaw) await dumpRaw;

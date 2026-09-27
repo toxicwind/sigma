@@ -607,6 +607,12 @@ export type ProxyOptions = {
      *  forwarded body for upstreams without the developer role (#552). Empty =
      *  byte-for-byte transparent. */
     compat: { roles: Record<string, string> };
+    /** #1455: how upstream stream failures are presented to the client on the
+     *  anthropic/openai wire — "protocol" (default) = protocol-native error
+     *  frames; "completion" = legacy synthesized-completion shape for hosts
+     *  whose SDK cannot surface in-band errors. Env BILI_STREAM_ERROR_SHAPE
+     *  wins over the file's compat.streamErrorShape. */
+    streamErrorShape: "protocol" | "completion";
     /** Global-level image billing mode (#767); per-provider route entries
      *  override it, env BILI_IMAGE_BILLING overrides both. undefined = auto. */
     imageBilling?: ImageBillingMode;
@@ -909,6 +915,7 @@ export function loadOptions(env: NodeJS.ProcessEnv = process.env): ProxyOptions 
             routing: parsePromptCacheRouting(env.ACP_PROMPT_CACHE_ROUTING ?? fileConfig.promptCache?.routing),
         },
         compat: { roles: parseCompatRoles(fileConfig.compat?.roles) ?? {} },
+        streamErrorShape: parseStreamErrorShape(env.BILI_STREAM_ERROR_SHAPE ?? fileConfig.compat?.streamErrorShape),
         imageBilling: parseImageBilling(fileConfig.imageBilling),
         sessionHeader: env.ACP_SESSION_HEADER ?? fileConfig.sessionHeader ?? "x-acp-session",
         log: env.ACP_LOG !== "0" && fileConfig.log !== false,
@@ -1005,8 +1012,12 @@ type FileConfig = {
     stableSystemAnchor?: boolean;
     /** Global wire-compat block. `roles` maps message roles to the role name
      *  upstreams accept (e.g. `{"developer":"system"}`) — applied to the
-     *  final forwarded body for openai/responses requests (#552). */
-    compat?: { roles?: Record<string, string> };
+     *  final forwarded body for openai/responses requests (#552).
+     *  `streamErrorShape` (#1455): "protocol" (default) presents upstream
+     *  stream failures as protocol-native error frames; "completion" restores
+     *  the legacy shape that delivered the failure text inside a synthesized
+     *  successful completion. Env BILI_STREAM_ERROR_SHAPE wins over the file. */
+    compat?: { roles?: Record<string, string>; streamErrorShape?: string };
     /** Global image billing mode (#767): "auto" | "pixels" | "bytes".
      *  Per-provider `imageBilling` overrides it; env BILI_IMAGE_BILLING wins
      *  over both. See ProviderRoute.imageBilling. */
@@ -1216,6 +1227,10 @@ export function parseRouteEntry(v: unknown): ProviderRoute | undefined {
 
 export function parseImageBilling(value: unknown): ImageBillingMode | undefined {
     return value === "auto" || value === "pixels" || value === "bytes" ? value : undefined;
+}
+
+export function parseStreamErrorShape(value: unknown): "protocol" | "completion" {
+    return value === "completion" ? "completion" : "protocol";
 }
 
 export function parsePromptCacheRouting(value: string | undefined): PromptCacheRouting {

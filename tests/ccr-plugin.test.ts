@@ -96,15 +96,33 @@ function okJson(): string {
     });
 }
 
-async function startRig(mode?: "route-scoped" | "name-divergent" | "enabled-divergent"): Promise<Rig> {
+// [#1457] Anthropic wire shape for the same fake upstream (non-streaming).
+function okAnthropic(): string {
+    return JSON.stringify({
+        id: "msg_1", type: "message", role: "assistant", model: "test-model",
+        content: [{ type: "text", text: "ok" }], stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 3 },
+    });
+}
+
+async function startRig(mode?: "route-scoped" | "name-divergent" | "enabled-divergent", upstreamFail?: (body: string) => boolean): Promise<Rig> {
     const forwards: string[] = [];
     const upstream = http.createServer((req, res) => {
         let b = "";
         req.on("data", (c) => (b += c));
         req.on("end", () => {
             forwards.push(b);
+            // [#1457] Failure injection for the delivery-lifecycle tests. A 500
+            // is inert to both retry ladders in forward() (role ladder keys off
+            // 400 patterns, overflow refold off 400/413), so exactly one
+            // forward happens and the status passes through verbatim.
+            if (upstreamFail && upstreamFail(b)) {
+                res.writeHead(500, { "content-type": "application/json" });
+                res.end(JSON.stringify({ error: { message: "injected upstream failure (#1457)", type: "server_error", code: "injected" } }));
+                return;
+            }
             res.writeHead(200, { "content-type": "application/json" });
-            res.end(okJson());
+            res.end(req.url?.startsWith("/v1/messages") ? okAnthropic() : okJson());
         });
     });
     upstream.listen(0, "127.0.0.1");
@@ -162,6 +180,18 @@ async function postOpenai(rig: Rig, messages: unknown[], convId = "ccr-e2e-conv"
     });
     const txt = await res.text();
     if (res.status !== 200) throw new Error(`proxy returned ${res.status}: ${txt}`);
+}
+
+// [#1457] Non-throwing variant for failure-injection turns: the proxy passes
+// the upstream status back verbatim, so a 500 must be observable, not fatal.
+async function postRaw(rig: Rig, apiPath: string, body: Record<string, unknown>, convId: string): Promise<{ status: number; text: string }> {
+    const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}${apiPath}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bili-plugin": "test-agent", "x-acp-session": convId },
+        body: JSON.stringify(body),
+    });
+    return { status: res.status, text: await res.text() };
 }
 
 const BASE_MSGS = (): unknown[] => [
@@ -429,5 +459,130 @@ test("#1345 load-time diagnostic: one warn per divergent field at config load", 
         setLogCapture(null);
         if (prevCfg === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevCfg;
         rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+// [#1457] Appended last on purpose: these leave CCR-armed sessions in the
+// module-level session map, and earlier e2e tests assert GLOBAL armed counts
+// (the route-scoped test's zero-armed check would see these sessions).
+
+const BASE_MSGS_ANTHROPIC = (): unknown[] => [
+    { role: "user", content: "run a big build" },
+    { role: "assistant", content: [{ type: "tool_use", id: "call_1", name: "bash", input: { command: "npm run build" } }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "call_1", content: BIG_TEXT }] },
+];
+
+test("e2e #1457 openai plugin lane: drop note survives failed delivery, rides the next request, commits on 2xx", async () => {
+    let failNext = false;
+    const CONV = "ccr-1457-oai";
+    const GONE = BIG_TEXT.slice(4000, 4120);
+    const rig = await startRig(undefined, () => failNext);
+    try {
+        await postRaw(rig, "/v1/chat/completions", { model: MODEL, max_tokens: 64_000, messages: BASE_MSGS() }, CONV);
+        assert.equal(rig.forwards.length, 1, "one outbound forward after turn 1");
+        const sess = listSessions().find((s) => s.id === CONV);
+        assert.ok(sess && ccrEnabled(sess), "plugin session armed CCR");
+        const ref = Object.keys(contentStoreOf(sess!).byRef)[0]!;
+
+        const toolRes = await fetch(`http://127.0.0.1:${rig.proxyPort}/__bili/plugin/tool`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ conversationId: CONV, tool: "acp_retrieve", args: { ref } }),
+        });
+        const toolJson = JSON.parse(await toolRes.text()) as { ok: boolean; result?: string };
+        assert.ok(toolRes.status === 200 && toolJson.ok === true, `retrieve returned ${toolRes.status}: ${JSON.stringify(toolJson)}`);
+        const ack = toolJson.result!;
+        const msgs2 = [
+            ...BASE_MSGS(),
+            { role: "assistant", content: null, tool_calls: [{ id: "call_r", type: "function", function: { name: "acp_retrieve", arguments: JSON.stringify({ ref }) } }] },
+            { role: "tool", tool_call_id: "call_r", content: ack },
+        ];
+
+        // Turn 2: the full text rides this forward, but upstream rejects → the
+        // carrier is dropped AND the correction note stays pending (prepare's
+        // snapshot ran before any failure existed, so turn 2 carries no note).
+        failNext = true;
+        const r2 = await postRaw(rig, "/v1/chat/completions", { model: MODEL, max_tokens: 64_000, messages: msgs2 }, CONV);
+        assert.equal(r2.status, 500, "upstream failure passes through to the client");
+        assert.ok(!r2.text.includes("NOT delivered"), "turn-2 wire carries no note yet (nothing had failed)");
+        assert.ok(rig.forwards[1]!.includes(BIG_TEXT.slice(0, 120)), "full text rode the failed forward");
+        const notes2 = sess!.metadata.ccrDropNotes as Array<{ id: string; refs: string[]; reason: string }>;
+        assert.equal(notes2.length, 1, "one persistent correction note buffered");
+        assert.ok(notes2[0]!.id, "note carries a stable id");
+        assert.deepEqual(notes2[0]!.refs, [ref]);
+        assert.match(notes2[0]!.reason, /HTTP 500/);
+        assert.equal(sess!.stats.retrieveDropped, 1);
+        assert.equal(sess!.pendingRetrievals.length, 0, "carrier dropped with the ledger");
+
+        // Turn 3: the SAME note rides again and commits on the confirmed 2xx.
+        // The resent retrieve call+ack also re-issues the retrieval (by design:
+        // dropping the carrier never deletes stored content), so the full text
+        // is back on the wire because the model asked for it again — not a leak.
+        failNext = false;
+        const r3 = await postRaw(rig, "/v1/chat/completions", { model: MODEL, max_tokens: 64_000, messages: msgs2 }, CONV);
+        assert.equal(r3.status, 200);
+        const f3 = rig.forwards[2]!;
+        assert.ok(f3.includes("NOT delivered"), "turn-3 wire carries the correction note");
+        assert.ok(f3.includes(ref), "note names the lost ref");
+        assert.ok(f3.includes(GONE), "re-issued retrieve (resent call+ack) still serves the stored text");
+        assert.equal(sess!.metadata.ccrDropNotes, undefined, "note committed after confirmed delivery");
+        assert.equal(sess!.stats.retrieveDropped, 1, "counters untouched by the note lifecycle");
+        assert.equal(sess!.stats.retrieveDelivered ?? 0, 0, "a correction is not a delivery");
+
+        // Turn 4: nothing left to correct — no phantom note on the wire.
+        const r4 = await postRaw(rig, "/v1/chat/completions", { model: MODEL, max_tokens: 64_000, messages: msgs2 }, CONV);
+        assert.equal(r4.status, 200);
+        assert.ok(!rig.forwards[3]!.includes("NOT delivered"), "no phantom correction after commit");
+    } finally {
+        await closeRig(rig);
+    }
+});
+
+test("e2e #1457 anthropic plugin lane: same snapshot→attach→commit-on-2xx lifecycle", async () => {
+    let failNext = false;
+    const CONV = "ccr-1457-anth";
+    const GONE = BIG_TEXT.slice(4000, 4120);
+    const rig = await startRig(undefined, () => failNext);
+    try {
+        await postRaw(rig, "/v1/messages", { model: MODEL, max_tokens: 64_000, messages: BASE_MSGS_ANTHROPIC() }, CONV);
+        assert.equal(rig.forwards.length, 1, "one outbound forward after turn 1");
+        const sess = listSessions().find((s) => s.id === CONV);
+        assert.ok(sess && ccrEnabled(sess), "plugin session armed CCR on the anthropic wire");
+        const ref = Object.keys(contentStoreOf(sess!).byRef)[0]!;
+
+        const toolRes = await fetch(`http://127.0.0.1:${rig.proxyPort}/__bili/plugin/tool`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ conversationId: CONV, tool: "acp_retrieve", args: { ref } }),
+        });
+        const toolJson = JSON.parse(await toolRes.text()) as { ok: boolean; result?: string };
+        assert.ok(toolRes.status === 200 && toolJson.ok === true, `retrieve returned ${toolRes.status}: ${JSON.stringify(toolJson)}`);
+        const ack = toolJson.result!;
+        const msgs2 = [
+            ...BASE_MSGS_ANTHROPIC(),
+            { role: "assistant", content: [{ type: "tool_use", id: "call_r", name: "acp_retrieve", input: { ref } }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: "call_r", content: ack }] },
+        ];
+
+        failNext = true;
+        const r2 = await postRaw(rig, "/v1/messages", { model: MODEL, max_tokens: 64_000, messages: msgs2 }, CONV);
+        assert.equal(r2.status, 500, "upstream failure passes through");
+        assert.ok(rig.forwards[1]!.includes(BIG_TEXT.slice(0, 120)), "full text rode the failed forward");
+        const notes2 = sess!.metadata.ccrDropNotes as Array<{ refs: string[]; reason: string }>;
+        assert.equal(notes2.length, 1, "correction note buffered");
+        assert.match(notes2[0]!.reason, /HTTP 500/);
+        assert.equal(sess!.stats.retrieveDropped, 1);
+
+        failNext = false;
+        const r3 = await postRaw(rig, "/v1/messages", { model: MODEL, max_tokens: 64_000, messages: msgs2 }, CONV);
+        assert.equal(r3.status, 200);
+        const f3 = rig.forwards[2]!;
+        assert.ok(f3.includes("NOT delivered"), "turn-3 wire carries the correction note");
+        assert.ok(f3.includes(ref), "note names the lost ref");
+        assert.ok(f3.includes(GONE), "re-issued retrieve (resent call+ack) still serves the stored text");
+        assert.equal(sess!.metadata.ccrDropNotes, undefined, "committed after confirmed delivery");
+        assert.equal(sess!.stats.retrieveDelivered ?? 0, 0, "a correction is not a delivery");
+    } finally {
+        await closeRig(rig);
     }
 });

@@ -238,6 +238,16 @@ Rules:
 - The fixture MUST bring its own registry instance — never point it at an
   external (even internal) registry service.
 
+### Configuration Surface Discipline (owner-gated)
+
+The config surface — every field of `~/.config/billion-context/config.json`, every `BILI_*` env var, every CLI flag, mirrored across CONFIGURATION.md en/zh — is **owner-design territory**. Hard rules:
+
+1. **Any change that adds, renames, or re-semantics a config field MUST report it explicitly** in the PR description under a "config surface" heading: what is added/changed, why the existing surface cannot express it, which existing mechanisms were considered (providers table and its key species, the three-level `compress` hierarchy, env-var conventions, launcher↔extension channels), and the compat/migration story. A PR touching config without this section is incomplete by definition.
+2. **Agents do NOT invent new config shapes on their own initiative.** A new section/field proposed merely because it is locally convenient — without mapping it onto the existing system — is rejected on principle: **don't even build it**. File the proposal (issue, with the mapping above) and wait.
+3. **The only exception is explicit owner sign-off in the issue/PR thread, given BEFORE implementation**, recorded alongside the design rationale. "The agent thought it was a good idea" is never sufficient reason.
+
+Canonical cautionary case (#1437 → #1469): a one-off `plugin.nonHttpProviders` section was drafted alongside the existing `providers` table instead of inside it, collided with the table's design, and had to be reworked into `providers[<name>].compactionOptIn`. The first shape should never have existed.
+
 ### Code Quality
 
 - **No `as any`**, **No `@ts-ignore`**

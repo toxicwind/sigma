@@ -10,6 +10,7 @@ import {
     type CoreMessage,
     type MessageContentStore,
 } from "acp-kernel";
+import { randomUUID } from "node:crypto";
 import { log as loggerLog } from "./logger.js";
 import { getStore } from "./persist.js";
 import type { CompressSettings } from "./config.js";
@@ -177,7 +178,15 @@ export function executeRetrieve(args: Record<string, unknown>, session: Session)
 // to disk unchanged); the injection payloads stay in-memory only.
 
 type UndeliveredEntry = { ref: string; tokens: number; chars: number };
-type DropNote = { refs: string[]; reason: string };
+// [#1457] A corrective note carries a stable id assigned ONCE at creation:
+// notes are snapshotted onto outgoing requests without being consumed, and
+// committed by id only after upstream confirms delivery (2xx). The id
+// round-trips in session.metadata, so it survives restarts, and concurrent
+// same-session requests can't clobber each other's commits. Pre-#1457
+// persisted notes carry no id — readers normalize them to "" so they ride
+// the same path and clear on the first confirmed delivery.
+export type DropNote = { id: string; refs: string[]; reason: string; createdAt: number };
+const MAX_DROP_NOTES = 64;
 const DEFAULT_RETRIEVAL_TTL_MS = 10 * 60 * 1000;
 
 function readLedger(session: Session): UndeliveredEntry[] {
@@ -202,7 +211,13 @@ function retrievalTtlMs(): number {
 function bufferDropNote(session: Session, refs: string[], reason: string): void {
     const existing = session.metadata.ccrDropNotes;
     const arr = Array.isArray(existing) ? (existing as DropNote[]) : [];
-    arr.push({ refs, reason });
+    arr.push({ id: randomUUID(), refs, reason, createdAt: Date.now() });
+    // Bounded: undelivered notes are rare (one per loss event); the cap only
+    // guards a pathological never-delivered loop from growing metadata forever.
+    while (arr.length > MAX_DROP_NOTES) {
+        const evicted = arr.shift();
+        loggerLog("warn", `[ccr] corrective note buffer full (${MAX_DROP_NOTES}) — evicting oldest (${evicted?.refs.join(", ") ?? "?"}: ${evicted?.reason ?? "?"})`);
+    }
     session.metadata.ccrDropNotes = arr;
 }
 
@@ -293,16 +308,40 @@ export function reconcileReloadedRetrievals(session: Session): void {
     if (lost.length > 0) dropRetrievals(session, lost, "proxy restarted before delivery");
 }
 
-/** Consolidate buffered drop notes into ONE model-facing correction and clear
- *  them. Returns null when nothing is pending. Rides as an ephemeral trailing
- *  user message (same channel as nudges). */
-export function flushRetrievalNotes(session: Session): string | null {
+/** [#1457] Non-destructive snapshot of buffered drop notes: reading them must
+ *  not consume them — consumption happens ONLY when upstream confirms delivery
+ *  of the request that carried them (commitRetrievalNotes). Returns [] when
+ *  nothing is pending. Legacy entries without an id normalize to "". */
+export function snapshotRetrievalNotes(session: Session): DropNote[] {
     const v = session.metadata.ccrDropNotes;
-    if (!Array.isArray(v) || v.length === 0) return null;
-    const notes = v as DropNote[];
-    delete session.metadata.ccrDropNotes;
+    if (!Array.isArray(v) || v.length === 0) return [];
+    return (v as DropNote[]).map((n) => ({ ...n, id: typeof n.id === "string" ? n.id : "" }));
+}
+
+/** Render buffered drop notes into ONE model-facing correction (pure — does
+ *  not consume them). Returns null when nothing is pending. Rides as an
+ *  ephemeral trailing user message (same channel as nudges). */
+export function renderRetrievalNotes(notes: DropNote[]): string | null {
+    if (notes.length === 0) return null;
     const lines = notes.map((n) => `${n.refs.join(", ")}: ${n.reason}`).join("; ");
     return `[billion-context] Earlier acp_retrieve result(s) were NOT delivered, so their acks are stale and you do NOT have that content: ${lines}. Re-issue acp_retrieve for any ref above to fetch it.`;
+}
+
+/** Confirmed upstream success for the request that carried these notes: remove
+ *  exactly the given ids (idempotent — a note created after the snapshot is
+ *  untouched, a double-commit is a no-op). Notes that were never attached stay
+ *  pending for the next request. */
+export function commitRetrievalNotes(session: Session, ids: Iterable<string>): void {
+    const requested = [...new Set(ids)];
+    if (requested.length === 0) return;
+    const v = session.metadata.ccrDropNotes;
+    if (!Array.isArray(v) || v.length === 0) return;
+    const reqSet = new Set(requested);
+    const remaining = (v as DropNote[]).filter((n) => !reqSet.has(typeof n.id === "string" ? n.id : ""));
+    if (remaining.length === v.length) return;
+    if (remaining.length === 0) delete session.metadata.ccrDropNotes;
+    else session.metadata.ccrDropNotes = remaining;
+    loggerLog("info", `[ccr] ${v.length - remaining.length} corrective note(s) confirmed delivered`);
 }
 
 /** Proxy-mode drain: ack + injection are composed within ONE response flow (no

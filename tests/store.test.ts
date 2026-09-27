@@ -15,7 +15,7 @@ import {
 } from "acp-kernel";
 import { parseCompressSettings } from "../src/config.ts";
 import { applyCompressSettings, mergeCompress } from "../src/compress-settings.ts";
-import { adoptContentStore, drainPendingRetrievals, executeRetrieve, retrieveToolName, storeEffectiveCcr, contentStoreOf, snapshotPendingRetrievals, commitRetrievals, dropRetrievals, pruneExpiredRetrievals, reconcileReloadedRetrievals, flushRetrievalNotes } from "../src/store.ts";
+import { adoptContentStore, drainPendingRetrievals, executeRetrieve, retrieveToolName, storeEffectiveCcr, contentStoreOf, snapshotPendingRetrievals, commitRetrievals, dropRetrievals, pruneExpiredRetrievals, reconcileReloadedRetrievals, snapshotRetrievalNotes, renderRetrievalNotes, commitRetrievalNotes } from "../src/store.ts";
 import { RETRIEVE_TOOL_NAME } from "../src/compress-tool.ts";
 import { getSession } from "../src/session.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
@@ -45,6 +45,23 @@ function ccrConfig() {
 function turnWith(cfg: ReturnType<typeof applyCompressSettings>, store?: MessageContentStore) {
     const core = createCore();
     return core.processTurn({ messages: toolResult(), state: createInitialState(), config: cfg, tokenCount: 0, renderTags: "text-only", ...(store ? { contentStore: store } : {}) });
+}
+
+// Two oversized results in ONE turn ⇒ two distinct refs in one content store.
+// (Separate turns each start their own ref sequence, so their first stored
+// refs collide — two loss events need one shared state.)
+function turnTwoResults(cfg: ReturnType<typeof applyCompressSettings>) {
+    const core = createCore();
+    return core.processTurn({
+        messages: [
+            { id: "u1", role: "user", contentType: "text", text: "run two big builds" },
+            { id: "a-tc1", role: "assistant", contentType: "tool-call", toolName: "bash", toolCallId: "call_1", text: JSON.stringify({ command: "npm run build" }) },
+            { id: "t-res1", role: "tool", contentType: "tool-result", toolCallId: "call_1", toolName: "bash", text: BIG_TEXT },
+            { id: "a-tc2", role: "assistant", contentType: "tool-call", toolName: "bash", toolCallId: "call_2", text: JSON.stringify({ command: "npm test" }) },
+            { id: "t-res2", role: "tool", contentType: "tool-result", toolCallId: "call_2", toolName: "bash", text: "another very different build log ".repeat(700) },
+        ],
+        state: createInitialState(), config: cfg, tokenCount: 0, renderTags: "text-only",
+    });
 }
 
 test("parseCompressSettings: ccr key validates shape and types", () => {
@@ -237,9 +254,12 @@ test("#1343 W1 restart: reload reconciles acked-but-undelivered ledger entries (
     assert.equal(session.pendingRetrievals.length, 0);
     assert.deepEqual(session.metadata.ccrUndelivered, [], "ledger cleared after reconciliation");
     assert.equal(session.stats.retrieveDropped, 1, "loss counted, not silent");
-    const note = flushRetrievalNotes(session);
+    const snap = snapshotRetrievalNotes(session);
+    const note = renderRetrievalNotes(snap);
     assert.ok(note && note.includes(ref), `corrective names the lost ref: ${note}`);
-    assert.equal(flushRetrievalNotes(session), null, "note consumed once");
+    assert.equal(snapshotRetrievalNotes(session).length, 1, "snapshot does not consume (#1457)");
+    commitRetrievalNotes(session, snap.map((n) => n.id));
+    assert.equal(renderRetrievalNotes(snapshotRetrievalNotes(session)), null, "committed notes are gone");
 });
 
 test("#1343 W1b restart: a re-retrieved ref with a live carrier is left for normal delivery", () => {
@@ -262,7 +282,7 @@ test("#1343 W2 post-drain failure: snapshot keeps items until drop; failure is d
     assert.equal(session.pendingRetrievals.length, 0);
     assert.deepEqual(session.metadata.ccrUndelivered, []);
     assert.equal(session.stats.retrieveDropped, 1);
-    assert.ok((flushRetrievalNotes(session) ?? "").includes(ref));
+    assert.ok((renderRetrievalNotes(snapshotRetrievalNotes(session)) ?? "").includes(ref));
     dropRetrievals(session, [ref], "upstream network failure");
     assert.equal(session.stats.retrieveDropped, 1, "idempotent: no double-count");
 });
@@ -275,7 +295,7 @@ test("#1343 W3 disarm: pending deliveries terminate observably; no stale flush a
     assert.equal(session.pendingRetrievals.length, 0, "carrier terminated");
     assert.deepEqual(session.metadata.ccrUndelivered, []);
     assert.equal(session.stats.retrieveDropped, 1);
-    assert.ok((flushRetrievalNotes(session) ?? "").includes("disarmed"));
+    assert.ok((renderRetrievalNotes(snapshotRetrievalNotes(session)) ?? "").includes("disarmed"));
     storeEffectiveCcr(session, { enabled: true, toolName: "lookup", minToolTokens: 50 });
     assert.equal(snapshotPendingRetrievals(session).length, 0, "no stale injection after re-arm (#1273)");
 });
@@ -289,7 +309,7 @@ test("#1343 W4 TTL: an old queued retrieval expires loudly; range-restore riders
     assert.equal(session.pendingRetrievals.length, 1, "only the expired CCR item dropped");
     assert.equal(session.pendingRetrievals[0]!.ref, "range_b0_1-2", "restore rider survives TTL");
     assert.equal(session.stats.retrieveDropped, 1, "only CCR counted");
-    const note = flushRetrievalNotes(session);
+    const note = renderRetrievalNotes(snapshotRetrievalNotes(session));
     assert.ok(note && note.includes(ref));
     assert.ok(!note!.includes("range_b0"), "exempt restore rider produces no note");
 });
@@ -314,6 +334,130 @@ test("#1343 proxy lane: drain commits the hit (delivered) and preserves ack/inje
     assert.equal(session.stats.retrieveDelivered, 1, "proxy drain commits as delivered");
     assert.equal(session.stats.retrieveDropped, 0);
     assert.equal(drainPendingRetrievals(session).length, 0);
+});
+
+// ---- [#1457] corrective-note lifecycle: snapshot → attach → commit-on-2xx ----
+
+test("#1457 drop buffers an id'd persistent note; snapshot renders without consuming", () => {
+    const { session, ref } = seedCCR();
+    executeRetrieve({ ref }, session);
+    const attached = snapshotPendingRetrievals(session);
+    assert.equal(attached.length, 1);
+    dropRetrievals(session, attached.map((i) => i.ref), "upstream network failure");
+    const notes = session.metadata.ccrDropNotes as Array<{ id: string; refs: string[]; reason: string; createdAt: number }>;
+    assert.equal(notes.length, 1, "one persistent correction note per loss event");
+    assert.ok(typeof notes[0]!.id === "string" && notes[0]!.id.length > 0, "stable id assigned once at creation");
+    assert.deepEqual(notes[0]!.refs, [ref]);
+    assert.equal(notes[0]!.reason, "upstream network failure");
+    assert.equal(typeof notes[0]!.createdAt, "number");
+
+    const s1 = snapshotRetrievalNotes(session);
+    const s2 = snapshotRetrievalNotes(session);
+    assert.equal(s1.length, 1);
+    assert.equal(s2.length, 1, "repeated snapshots do not consume");
+    assert.equal(s2[0]!.id, s1[0]!.id, "same id across snapshots (stable across retries/restarts)");
+
+    const text = renderRetrievalNotes(s1)!;
+    assert.ok(text.includes(ref));
+    assert.ok(text.includes("NOT delivered"));
+    assert.ok(text.includes("Re-issue acp_retrieve"));
+});
+
+test("#1457 failed request keeps the note pending; next success delivers it exactly once", () => {
+    const { session, ref } = seedCCR();
+    executeRetrieve({ ref }, session);
+    dropRetrievals(session, snapshotPendingRetrievals(session).map((i) => i.ref), "upstream HTTP 503");
+
+    // Request A attaches the note but upstream rejects → NO commit.
+    const snapA = snapshotRetrievalNotes(session);
+    assert.equal(snapA.length, 1);
+    assert.equal(snapshotRetrievalNotes(session).length, 1, "note still pending after the failed request");
+
+    // Request B re-carries the SAME note; upstream accepts → commit.
+    const snapB = snapshotRetrievalNotes(session);
+    assert.equal(snapB[0]!.id, snapA[0]!.id, "the re-carried note keeps its identity");
+    commitRetrievalNotes(session, snapB.map((n) => n.id));
+    assert.equal(renderRetrievalNotes(snapshotRetrievalNotes(session)), null, "delivered once, then gone");
+    assert.equal(session.stats.retrieveDropped, 1, "note lifecycle never re-counts the loss");
+    assert.equal(session.stats.retrieveDelivered ?? 0, 0, "a correction is not a delivery");
+});
+
+test("#1457 concurrency: committing a stale snapshot cannot remove notes created later", () => {
+    const session = getSession(`t-conc-${Math.random().toString(36).slice(2)}`);
+    storeEffectiveCcr(session, { enabled: true, toolName: "lookup", minToolTokens: 50 });
+    adoptContentStore(session, turnTwoResults(ccrConfig()).contentStore);
+    const [ref, ref2] = Object.keys(contentStoreOf(session).byRef).sort();
+    assert.notEqual(ref2, ref, "two distinct oversized results ⇒ two distinct refs");
+
+    // Loss event A → note A; request A snapshots it while still in flight…
+    executeRetrieve({ ref }, session);
+    dropRetrievals(session, [ref], "upstream network failure");
+    const stale = snapshotRetrievalNotes(session);
+    assert.equal(stale.length, 1);
+    // …and loss event B lands before request A settles.
+    executeRetrieve({ ref: ref2 }, session);
+    dropRetrievals(session, [ref2], "upstream HTTP 500");
+    const current = snapshotRetrievalNotes(session);
+    assert.equal(current.length, 2);
+    assert.notEqual(current[1]!.id, stale[0]!.id);
+
+    commitRetrievalNotes(session, stale.map((n) => n.id));
+    const after = snapshotRetrievalNotes(session);
+    assert.equal(after.length, 1, "only the committed note removed");
+    assert.equal(after[0]!.id, current[1]!.id, "later note untouched by the stale commit");
+    commitRetrievalNotes(session, stale.map((n) => n.id));
+    assert.equal(snapshotRetrievalNotes(session).length, 1, "double-commit is a no-op");
+    commitRetrievalNotes(session, []);
+    assert.equal(snapshotRetrievalNotes(session).length, 1, "empty id set is a no-op");
+});
+
+test("#1457 cap: the note buffer is bounded; oldest evicted first", () => {
+    const { session, ref } = seedCCR();
+    const filler: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 64; i++) filler.push({ refs: [`m999${String(i).padStart(2, "0")}`], reason: "legacy filler" });
+    session.metadata.ccrDropNotes = filler;
+    executeRetrieve({ ref }, session);
+    dropRetrievals(session, snapshotPendingRetrievals(session).map((i) => i.ref), "upstream HTTP 500");
+    const notes = session.metadata.ccrDropNotes as Array<{ refs: string[] }>;
+    assert.equal(notes.length, 64, "buffer stays bounded at the cap");
+    assert.ok(!notes.some((n) => n.refs[0] === "m99900"), "oldest evicted first");
+    assert.ok(notes.some((n) => n.refs[0] === "m99963"), "newest filler kept");
+    assert.ok(notes.some((n) => n.refs[0] === ref), "fresh note kept");
+});
+
+test("#1457 legacy pre-fix notes (no id) ride the same path and clear on first confirmed delivery", () => {
+    const { session } = seedCCR();
+    session.metadata.ccrDropNotes = [{ refs: ["m00100"], reason: "persisted before ids existed" }];
+    const snap = snapshotRetrievalNotes(session);
+    assert.equal(snap.length, 1);
+    assert.equal(snap[0]!.id, "", "missing id normalizes to ''");
+    assert.ok(renderRetrievalNotes(snap)!.includes("m00100"));
+    commitRetrievalNotes(session, snap.map((n) => n.id));
+    assert.equal(renderRetrievalNotes(snapshotRetrievalNotes(session)), null, "legacy note clears on first confirmed delivery");
+});
+
+test("#1457 notes survive a restart (metadata round-trip through the session envelope)", () => {
+    const store = new SessionStore({ dir: PERSIST_TMP, debounceMs: 0 });
+    _setStoreForTest(store);
+    try {
+        const session = getSession(`ccr-note-${Math.random().toString(36).slice(2)}`);
+        storeEffectiveCcr(session, { enabled: true, minToolTokens: 50 });
+        adoptContentStore(session, turnWith(ccrConfig()).contentStore);
+        const ref = Object.keys(session.contentStore!.byRef)[0]!;
+        executeRetrieve({ ref }, session);
+        dropRetrievals(session, snapshotPendingRetrievals(session).map((i) => i.ref), "upstream network failure");
+        const before = snapshotRetrievalNotes(session);
+        assert.equal(before.length, 1);
+        store.flushSync(session);
+
+        const reloaded = getSession(session.id);
+        const after = snapshotRetrievalNotes(reloaded);
+        assert.equal(after.length, 1, "note survives the reload");
+        assert.equal(after[0]!.id, before[0]!.id, "stable id survives the restart");
+        assert.ok(renderRetrievalNotes(after)!.includes(ref));
+    } finally {
+        _setStoreForTest(new SessionStore({ enabled: false }));
+    }
 });
 
 function findEnvelope(root: string): string | null {

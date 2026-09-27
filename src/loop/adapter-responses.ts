@@ -1,18 +1,17 @@
 import type { CoreMessage } from "acp-kernel";
 import { injectResponsesDeveloperMessage, type ResponseInputItem, type ResponsesProjection } from "acp-kernel/wire";
 import { coreToResponsesWithToolImages as coreToResponses, patchResponsesInputWithToolImages as patchResponsesInput } from "../responses-tool-output.js";
-import { buildVisibilityMarker } from "../compress-loop.js";
+import { buildVisibilityMarker } from "./core.js";
 import { hoistTrappedToolItems } from "../tool-pair-order.js";
 import { hashId } from "../util.js";
 import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter, stripResponsesText, containsMarkerLineText, containsRenderTagText, ACP_NAME_ALT } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
-import { ACP_TEXT_OPEN, ACP_TEXT_CLOSE, ACP_STATUS_OPEN, ACP_STATUS_CLOSE, ACP_SEARCH_OPEN, ACP_SEARCH_CLOSE, ACP_DECOMPRESS_OPEN, ACP_DECOMPRESS_CLOSE, COMPRESS_TOOL_NAME, PROXY_TOOL_NAMES } from "../compress-tool.js";
+import { extractResponsesTextTriggers, PROXY_TOOL_NAMES } from "../compress-tool.js";
 import type { BiliMessage } from "acp-kernel/wire";
 import type {
     CompressLoopAdapter,
     EmitCompletionOpts,
-    ExtractedTextTriggers,
     ParsedStreamEvent,
     ToolCallEmit,
 } from "./core.js";
@@ -29,9 +28,13 @@ interface FunctionCallBuffer {
 const RESPONSES_ITEM_ID_MAX = 64;
 
 /**
- * Heal client rollouts already poisoned with over-long ids (they 400 every
- * request otherwise). Rewrites in place, deterministically, so repeated
- * requests keep referencing the same replacement id (#242).
+ * Heal client rollouts already poisoned with over-long Bili-generated ids
+ * (they 400 every request otherwise). Only the msg-proxy-* namespace bili
+ * owns is rewritten — in place and deterministically, so repeated requests
+ * keep referencing the same replacement id (#242). Provider-issued opaque
+ * ids (reasoning rs_*, function_call fc_*, ...) validate against their
+ * owner's shape rules and carry replay correspondence, so they must reach
+ * the upstream byte-identical (#1474).
  */
 export function normalizeResponsesMessageItems(input: unknown): number {
     if (!Array.isArray(input)) return 0;
@@ -64,7 +67,8 @@ export function sanitizeResponsesInputIds(input: unknown): void {
             delete rec.id;
             continue;
         }
-        if (typeof rec?.id === "string" && rec.id.length > RESPONSES_ITEM_ID_MAX) {
+        if (typeof rec?.id === "string" && rec.id.startsWith("msg-proxy-")
+            && rec.id.length > RESPONSES_ITEM_ID_MAX) {
             rec.id = `msg-fix-${hashId(rec.id)}`;
         }
     }
@@ -600,35 +604,7 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
         },
 
         extractTextTriggers(text) {
-            const calls: ToolCallEmit[] = [];
-            let clean = text;
-            let hadTrigger = false;
-            const triggers = [
-                { name: "compress", open: ACP_TEXT_OPEN, close: ACP_TEXT_CLOSE, requirePayload: true },
-                { name: "acp_status", open: ACP_STATUS_OPEN, close: ACP_STATUS_CLOSE, requirePayload: false },
-                { name: "search_context", open: ACP_SEARCH_OPEN, close: ACP_SEARCH_CLOSE, requirePayload: true },
-                { name: "decompress", open: ACP_DECOMPRESS_OPEN, close: ACP_DECOMPRESS_CLOSE, requirePayload: true },
-            ];
-            for (const t of triggers) {
-                let start = clean.indexOf(t.open);
-                while (start >= 0) {
-                    const end = clean.indexOf(t.close, start + t.open.length);
-                    if (end < 0) break;
-                    hadTrigger = true;
-                    const payload = clean.slice(start + t.open.length, end).trim();
-                    if (payload.length > 0 || !t.requirePayload) {
-                        const stamp = `${Date.now()}-${calls.length}`;
-                        calls.push({
-                            name: t.name,
-                            callId: `call_text_${stamp}`,
-                            arguments: payload.length > 0 ? payload : "{}",
-                        });
-                    }
-                    clean = clean.slice(0, start) + clean.slice(end + t.close.length);
-                    start = clean.indexOf(t.open);
-                }
-            }
-            return { clean: hadTrigger ? clean : text, calls } as ExtractedTextTriggers;
+            return extractResponsesTextTriggers(text);
         },
     };
 }
