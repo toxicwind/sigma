@@ -86,3 +86,62 @@ test("#853 summary output cap: 32k default, clamped to known model ceiling", asy
         }
     }
 });
+
+// #1440 end-to-end: a verbose upstream that ignores the requested length must
+// not cost the session a fold. Observed live: an assembled 35246-char summary
+// against a 20000 maxSummaryLength, routed to the unusable path, which skipped
+// the range and surfaced a hard 502 to the client. The kernel's check is on the
+// FINAL length, so trimming at a sentence boundary passes where the whole
+// summary did not.
+test("#1440 an over-length summary is trimmed to the cap and applied, not discarded", async () => {
+    const verbose = Array.from({ length: 800 }, (_, i) => `Sentence ${i} records a detail of the work.`).join(" ");
+    assert.ok(verbose.length > 20_000, `fixture must exceed the 20000 cap, got ${verbose.length}`);
+
+    const applied: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    const server = http.createServer((req, res) => {
+        let raw = "";
+        req.on("data", (c) => (raw += c));
+        req.on("end", () => {
+            const body = JSON.parse(raw);
+            bodies.push(body);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: verbose } }] }));
+        });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const { port } = server.address() as { port: number };
+
+    const session = getSession(`summary-trim-${randomUUID()}`);
+    const messages: CoreMessage[] = [
+        { id: "first", role: "user", contentType: "text", text: "Keep the task goal and acceptance criteria." },
+        { id: "large", role: "assistant", contentType: "text", text: "FILLER_".repeat(60000) },
+        { id: "last", role: "user", contentType: "text", text: "Continue the task." },
+    ];
+    const deps: PreflightDeps = {
+        core: createCore(), session,
+        config: defaultConfig(100_000, { preserveRecentMessages: 0, preserveRecentTokens: 0 }),
+        prompts: defaultPrompts, protocol: "openai",
+        url: `http://127.0.0.1:${port}/v1/messages`,
+        headers: {}, model: "verbose-model",
+        log: () => {},
+    };
+    try {
+        const result = await preflightCompress(deps, messages);
+        assert.equal(result.failure, undefined, "an over-length summary must not fail the preflight");
+        assert.ok(result.compressedRanges > 0, "the range is folded rather than skipped");
+        assert.equal(applied.length, 0, "the kernel applies internally; nothing is intercepted here");
+
+        // The cap must be requested in the prompt, not only enforced after the
+        // fact: the whole point of the two-part fix is that a compliant model
+        // never needs the trim.
+        assert.ok(bodies.length >= 1, "at least one summary call");
+        const asked = JSON.stringify(bodies[0]);
+        assert.ok(asked.includes("Hard limit: at most"), "the summarizer prompt states the output budget");
+        assert.ok(!/exceeds maxSummaryLength/.test(asked), "the unusable path was not taken");
+    } finally {
+        server.close();
+        await once(server, "close");
+    }
+});

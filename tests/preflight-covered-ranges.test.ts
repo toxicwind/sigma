@@ -98,13 +98,31 @@ test("unknown-baseline preflight relaxes protection using the conservative upper
 });
 
 
-for (const failure of ["missing", "over-limit"] as const) {
-    test(`preflight does not apply an incomplete segmented summary (${failure})`, async () => {
-        const { result, session } = await runCoveredRange(false, true, false, failure);
-        assert.equal(result.fitsWindow, false);
-        assert.ok(session.state.blocks.filter((block) => block.active).every((block) => !block.effectiveMessageIds.includes("large-result")), "the original tool result remains available when any summary part is missing or too long");
-    });
-}
+// #726 made each range ONE atomic assembly: a failed segment discards the
+// whole range, so a partially-covered range can never be applied. #1440
+// sharpened the "over-limit" half of that rule. Discarding a good summary for
+// exceeding the cap is strictly worse than trimming it — the kernel's check is
+// on the FINAL length, and live evidence showed 35246-char summaries against a
+// 20000 cap turning into a hard 502 the client could not recover from. So an
+// over-limit summary is now trimmed to the cap and the range IS applied, whole.
+// The coverage invariant is unchanged and is asserted for the over-limit case
+// too: the trimmed fold still covers large-result completely, never partly.
+test("preflight does not apply an incomplete segmented summary (missing)", async () => {
+    const { result, session } = await runCoveredRange(false, true, false, "missing");
+    assert.equal(result.fitsWindow, false);
+    assert.ok(session.state.blocks.filter((block) => block.active).every((block) => !block.effectiveMessageIds.includes("large-result")), "the original tool result remains available when any summary part is missing");
+});
+
+test("preflight trims an over-limit summary and still covers the range completely", async () => {
+    const { result, session } = await runCoveredRange(false, true, false, "over-limit");
+    assert.equal(result.fitsWindow, true, "a trimmed summary is applied rather than discarded");
+    const active = session.state.blocks.filter((block) => block.active);
+    assert.ok(active.length > 0, "the range produced a block");
+    assert.ok(active.some((block) => block.effectiveMessageIds.includes("large-result")), "the range is covered completely, not partially");
+    for (const block of active) {
+        assert.ok(block.summary.length <= 200, `every applied summary respects the 200-char cap, got ${block.summary.length}`);
+    }
+});
 
 for (const limit of [0, -1]) {
     test(`preflight accepts unlimited summary length (${limit})`, async () => {

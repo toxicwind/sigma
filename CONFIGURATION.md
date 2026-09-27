@@ -325,6 +325,13 @@ For each request, the proxy resolves the settings by longest-URL-prefix match (t
 - **Status:** ACTIVE
 - **Description:** Wall-clock ceiling on one preflight compression pass, in milliseconds. The per-invocation budget of 16 summarization calls bounds *calls*, not *time*, so it only bounds latency while the upstream answers quickly. A measured run spent 330735 ms across 3 ranges (about 44 tokens/second) and discarded the result when the client disconnected mid-flight. This ceiling ends the walk instead, and the turn fails fast with a **retryable** 502 naming the ceiling — a slow upstream is not a content dead end, so it earns no dead-end cooldown. `0` or a negative value disables the ceiling. Level: global, provider, and model.
 
+#### `maxSummaryLength`
+
+- **Type:** `number`
+- **Default:** `20000` (from the kernel's `defaultConfig`)
+- **Status:** ACTIVE
+- **Description:** Hard cap, in characters, on the length of one assembled compression summary. The preflight summarizer divides this cap across the chunks of a range and states each chunk's share in its own prompt, so a compliant model never needs intervention. When a model ignores that budget the assembled summary is **trimmed to the cap at a sentence boundary and applied**, not discarded. Trimming is the deliberate choice: the kernel's check is on the *final* length, so a trimmed summary is accepted where the whole one was not, and discarding cost a whole fold that then surfaced to the client as a hard 502. A range is still assembled atomically — a segment that returns nothing, or a cap too small to hold a usable summary after a trim, discards the entire range rather than applying it partly. Measured on live traffic before the change: eleven over-length assembled summaries (20659 to 45204 chars, three of them exactly 35246 against a 20000 cap), which turned into two unrecoverable 502s. `0` or a negative value disables the cap entirely.
+
 
 #### `minCompressRange`
 

@@ -249,7 +249,46 @@ Tests live in `tests/openrouter-published-window.test.ts`. They pin both directi
 the absence case, so an unpublished id cannot be silently resolved from a near neighbour.
 
 
+## 9. Fork-original code: bounded summary output, applied instead of discarded
+
+This section covers the change that fixed a hard 502 reported on 2026-09-27. Sections 7 and 8
+fixed a hang and a wrong window. This one fixed a summary that could not be used.
+
+The defect, read from the source rather than guessed at. `CHUNK_FRACTION` and `MIN_CHUNK_TOKENS`
+in `src/preflight.ts` bound the summarizer's **input** per chunk, not its output. `summarizeRange`
+stated no output budget, so a model that felt like writing 35,000 characters about a chunk worth
+2,000 tokens of input could, and did. The assembled summary then failed the kernel's
+`maxSummaryLength` of 20,000, and the only recovery was the unusable path, which skips the range.
+When the range sat below the halving floor of `2 * MIN_CHUNK_TOKENS` there was nothing left to
+retry, so the turn failed. The user-visible error named the cap and the budget, and read as a
+content problem. It was not. It was a length instruction that was never issued.
+
+The fix works at both ends, because either alone leaves a gap.
+
+**At the source, the budget is now stated.** `summarizeRange` takes a per-part character budget and
+includes it in the prompt. The caller divides `maxSummaryLength` across the chunk count and
+subtracts the join separators, so the sum of every part lands under the cap by construction. A
+compliant model needs no intervention at all.
+
+**At the backstop, the assembly is trimmed, not vetoed.** An assembled summary over the cap is cut
+at a sentence boundary and applied. The reasoning is that the kernel checks the *final* length, so
+a trimmed summary is accepted where the whole one was refused. Discarding it cost an entire fold
+and saved nothing, because the request still went out and came back over budget. Before this
+change, eleven over-length assembled summaries were recorded on live traffic, ranging from 20,659
+to 45,204 characters, three of them exactly 35,246 against the 20,000 cap. Two became hard 502s.
+
+Atomicity is unchanged where it earns its keep. A segment that returns nothing still discards the
+whole range, and a cap too small to hold a usable summary after a trim still discards it. Applying
+a partial fold is the one outcome that is never allowed, because the kernel would then own a block
+whose provenance it cannot describe.
+
+The regression test pins the new behavior and was proven to fail without it. One pre-existing
+assertion had to be inverted rather than deleted: it asserted that an over-limit summary left the
+original tool result uncovered, which is the behavior this change removes. It still asserts the
+coverage invariant that mattered, namely that the range is covered completely or not at all.
+
 ---
+
 
 ## Provenance of this file
 

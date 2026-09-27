@@ -31,6 +31,24 @@ export const MAX_PREFLIGHT_ROUNDS = 16;
 const CHUNK_FRACTION = 0.6;
 const MIN_CHUNK_TOKENS = 2000;
 const MIN_SUMMARY_CHARS = 50;
+// #1440: trim an over-length summary to the kernel's cap at a sentence
+// boundary instead of discarding it. The old post-hoc veto threw away a
+// perfectly good 35k-char summary for being 15k over the 20k cap, which
+// surfaced to the client as a hard 502 and, because the range was already
+// below the halving floor, as an unhalvable skip. The kernel rejects on the
+// FINAL length, so a trimmed summary is accepted where the whole one was
+// not — truncation strictly dominates discarding here. Returns null when the
+// budget cannot hold even one sentence, leaving the caller's unusable path.
+function trimToSummaryCap(summary: string, maxChars: number): string | null {
+    if (maxChars <= 0 || summary.length <= maxChars) return summary;
+    const head = summary.slice(0, maxChars);
+    // Prefer the last sentence end in the head; fall back to the last
+    // paragraph break, then to a hard cut so a run-on summary still fits.
+    const sentenceEnd = Math.max(head.lastIndexOf(". "), head.lastIndexOf(".\n"), head.lastIndexOf("! "), head.lastIndexOf("? "));
+    const cut = sentenceEnd > 0 ? sentenceEnd + 1 : Math.max(head.lastIndexOf("\n\n"), maxChars - 1);
+    const trimmed = head.slice(0, cut).trimEnd();
+    return trimmed.length >= MIN_SUMMARY_CHARS ? trimmed : null;
+}
 // #853: thinking-on-by-default models spend the shared output budget on
 // reasoning_content before any answer text (observed ~9.5k reasoning tokens on
 // deepseek-flash, whose real output ceiling is 384k) — the old 8192 cap
@@ -655,10 +673,18 @@ function emptyCompletionDetail(json: Record<string, unknown>): string | null {
     return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 
-async function summarizeRange(deps: PreflightDeps, content: string, startRef: string, endRef: string): Promise<SummaryOutcome> {
+async function summarizeRange(deps: PreflightDeps, content: string, startRef: string, endRef: string, maxChars = 0): Promise<SummaryOutcome> {
+    // #1440: the prompt used to state no output budget at all, so a verbose
+    // model could spend 35k chars on a chunk worth 2k tokens of input. The
+    // caller divides compress.maxSummaryLength across the chunk count, so the
+    // sum of every part is bounded by the cap the kernel enforces. Bound the
+    // OUTPUT, not just the input: CHUNK_FRACTION below only bounds input.
+    const lengthRule = maxChars > 0
+        ? ` Hard limit: at most ${maxChars} characters. Compress harder rather than exceed it.`
+        : "";
     const system =
         buildCompressSystemPrompt(deps.prompts, deps.surface?.promptSections) +
-        `\n\nTASK: The conversation segment below (messages ${startRef}–${endRef}) must be compressed because the session context exceeds the current model's window. Write a tier-1 compression summary of the segment following every rule above. Output ONLY the summary text — no preamble, no closing remarks, no tool calls.`;
+        `\n\nTASK: The conversation segment below (messages ${startRef}–${endRef}) must be compressed because the session context exceeds the current model's window. Write a tier-1 compression summary of the segment following every rule above. Output ONLY the summary text — no preamble, no closing remarks, no tool calls.${lengthRule}`;
     // #626: the session remembers upstreams that require stream:true, so the
     // extra 400 round-trip is paid at most once per session (persisted with
     // the session metadata). #663: likewise, per URL+model, upstreams that
@@ -1073,6 +1099,13 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                 try {
                     const parts: string[] = [];
                     const chunks = splitSummaryContent(content, budget, countText);
+                    // #1440: divide the kernel's cap across the parts so the
+                    // ASSEMBLED summary fits, not just each one. Leave headroom
+                    // for the "\n\n" joins so the joined length is bounded too.
+                    const summaryCap = activeConfig.compress.maxSummaryLength;
+                    const perPartChars = summaryCap > 0
+                        ? Math.max(MIN_SUMMARY_CHARS, Math.floor((summaryCap - 2 * Math.max(0, chunks.length - 1)) / chunks.length))
+                        : 0;
                     for (const chunk of chunks) {
                         if (summaryCalls >= MAX_SUMMARY_CALLS_PER_PREFLIGHT) {
                             budgetHit = true;
@@ -1084,7 +1117,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                             break;
                         }
                         summaryCalls += 1;
-                        const part = await summarizeRange(deps, chunk, startRef, endRef);
+                        const part = await summarizeRange(deps, chunk, startRef, endRef, perPartChars);
                         if ("unusable" in part) {
                             outcome = part;
                             break;
@@ -1093,13 +1126,22 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                     }
                     if (!budgetHit && !outcome && parts.length === chunks.length) {
                         const candidate = parts.join("\n\n");
-                        // #861: a summary the kernel would reject on length wastes the apply
-                        // attempt and its failure log — route it through the same
-                        // halving/skip path as any unusable output.
-                        if (activeConfig.compress.maxSummaryLength <= 0 || candidate.length <= activeConfig.compress.maxSummaryLength) {
-                            summary = candidate;
+                        // #861 kept a post-hoc veto so the kernel would not
+                        // reject the apply. #1440 supersedes the veto itself:
+                        // rejecting an over-long summary is strictly worse than
+                        // trimming it, because the kernel's check is on the
+                        // FINAL length and a trimmed summary passes where the
+                        // whole one did not. Discarding cost a full fold and,
+                        // once the range sat below the halving floor, produced
+                        // the client's hard 502.
+                        const trimmed = trimToSummaryCap(candidate, activeConfig.compress.maxSummaryLength);
+                        if (trimmed !== null) {
+                            if (trimmed.length < candidate.length) {
+                                deps.log("warn", `[preflight] range ${skipKey} summary was ${candidate.length} chars, over maxSummaryLength (${activeConfig.compress.maxSummaryLength}); trimmed to ${trimmed.length} at a sentence boundary`);
+                            }
+                            summary = trimmed;
                         } else {
-                            outcome = { unusable: `assembled summary (${candidate.length} chars) exceeds maxSummaryLength (${activeConfig.compress.maxSummaryLength})` };
+                            outcome = { unusable: `assembled summary (${candidate.length} chars) could not be trimmed to maxSummaryLength (${activeConfig.compress.maxSummaryLength}) without discarding it entirely` };
                         }
                     }
                 } catch (err) {
