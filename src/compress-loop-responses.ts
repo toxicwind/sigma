@@ -149,14 +149,21 @@ function replaceResponsesJsonText(parts: Array<Record<string, unknown>>, text: s
     });
 }
 
-function surfaceReadonlyJson(
+// #1459: executes + surfaces EVERY proxy call in a round that does not
+// re-request — read-only AND mutating. Mirrors the streaming loop
+// (loop/core.ts), which executes proxy tools before its `realCalls === 0`
+// re-request gate: a mixed round (e.g. compress text trigger + real tool
+// call) executes the compress, surfaces the marker, and relays the response
+// instead of silently dropping the trigger. Mutating calls run under
+// withSessionLock, same as the re-request branch below and the streaming loop.
+async function surfaceProxyJson(
     current: Record<string, unknown>,
     proxyCalls: FunctionCallAccumulator[],
     ctx: CompressLoopResponsesCtx,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
     const markers: string[] = [];
     for (const call of proxyCalls) {
-        if (MUTATING_PROXY_TOOLS.has(call.name)) continue;
+        const mutating = MUTATING_PROXY_TOOLS.has(call.name);
         let args: Record<string, unknown> = {};
         try {
             args = JSON.parse(call.arguments) as Record<string, unknown>;
@@ -165,17 +172,19 @@ function surfaceReadonlyJson(
         }
         let result: string;
         try {
-            result = executeProxyTool(call.name, args, ctx);
-            ctx.log(`[acp-proxy: responses JSON ${call.name} (read-only) → ${result.slice(0, 120).replace(/\n/g, " ")}]`);
+            result = mutating
+                ? await withSessionLock(ctx.session, () => executeProxyTool(call.name, args, ctx))
+                : executeProxyTool(call.name, args, ctx);
+            ctx.log(`[acp-proxy: responses JSON ${call.name}${mutating ? "" : " (read-only)"} → ${result.slice(0, 120).replace(/\n/g, " ")}]`);
         } catch (e) {
             result = `\u274c [ACP] ${call.name} FAILED: ${String(e)}`;
-            ctx.log(`[acp-proxy: responses JSON ${call.name} (read-only) FAILED: ${String(e)}]`);
+            ctx.log(`[acp-proxy: responses JSON ${call.name}${mutating ? "" : " (read-only)"} FAILED: ${String(e)}]`);
         }
         if (ctx.visibilityMarkers !== false) markers.push(buildVisibilityMarker(call.name, result));
     }
     if (markers.length === 0) return current;
     const out = Array.isArray(current.output) ? [...(current.output as unknown[])] : [];
-    const markerItem = { type: "message", id: `msg_acp_ro_${Date.now()}_${markers.length}`, role: "assistant", content: [{ type: "output_text", text: markers.join("\n") }] };
+    const markerItem = { type: "message", id: `msg_acp_proxy_${Date.now()}_${markers.length}`, role: "assistant", content: [{ type: "output_text", text: markers.join("\n") }] };
     // #766: append AFTER a function_call wedges the marker between the call and
     // its output once the client records it → strict backends reject ("No tool
     // output found"). Insert before the first tool call so pairs stay adjacent.
@@ -203,10 +212,15 @@ export async function compressLoopResponsesJson(
         const proxyCalls = allCalls.filter((call) => PROXY_TOOL_NAMES.has(call.name));
         const realCalls = allCalls.filter((call) => !PROXY_TOOL_NAMES.has(call.name));
         const mutatingProxy = proxyCalls.filter((call) => MUTATING_PROXY_TOOLS.has(call.name));
+        // #1459: the gate decides ONLY whether to re-request. Proxy tools are
+        // executed in BOTH branches — mirroring the streaming loop, which runs
+        // every proxy call before its `realCalls === 0` decision. A mixed
+        // round (compress trigger + real tool call) executes the compress and
+        // relays the response WITHOUT re-requesting, same as streaming.
         if (mutatingProxy.length === 0 || realCalls.length > 0) {
             if (proxyCalls.length > 0) {
                 replaceResponsesJsonText(output.textParts, extracted.clean);
-                current = surfaceReadonlyJson(current, proxyCalls, ctx);
+                current = await surfaceProxyJson(current, proxyCalls, ctx);
             }
             return current;
         }
