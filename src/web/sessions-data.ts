@@ -35,6 +35,11 @@ export interface WebSessionSummary {
     hasLedger?: boolean;
     /** Display-name fallback: collapsed lead of the first compression block's topic/summary. */
     firstBlockHint?: string;
+    /** Which client produced this session: plugin agents stamp metadata.pluginAgent,
+     *  non-plugin clients get a sniffed/UA-derived metadata.clientHint (server.ts #1426). */
+    clientHint?: string;
+    /** Number of compression events recorded in the per-request cache ledger (folds). */
+    foldCount?: number;
     /** Σ (S−σ)×requestsAfter across ledger folds — input tokens not billed thanks to
      *  compression (acp-kernel EconomicsSummary.grossSaved semantics). */
     grossSaved?: number;
@@ -170,9 +175,10 @@ function summaryOf(s: Session, live: boolean): WebSessionSummary {
     // Fold economics straight off the stored ledger (read-only — no report build):
     // mirrors acp-kernel summarizeFoldEconomics() so the dashboard can split
     // "compressed away" (gross) from "net saving after re-pay & summary cost".
-    let hasFolds = false, grossSaved = 0, netSaved = 0, repayCost = 0, summaryCost = 0;
+    let hasFolds = false, grossSaved = 0, netSaved = 0, repayCost = 0, summaryCost = 0, foldCount = 0;
     for (const f of led?.folds ?? []) {
         hasFolds = true;
+        foldCount += 1;
         const S = f.S ?? 0, sig = f.sigma ?? 0, rep = f.T ?? 0, ra = f.requestsAfter ?? 0;
         const avoided = (S - sig) * ra;
         grossSaved += avoided;
@@ -187,6 +193,11 @@ function summaryOf(s: Session, live: boolean): WebSessionSummary {
         firstBlockHint = String(fb.topic || fb.summary).replace(/\s+/g, " ").trim();
         if (firstBlockHint.length > 48) firstBlockHint = firstBlockHint.slice(0, 48) + "…";
     }
+    // #1426: which client this session came from (plugin stamp wins, then sniff/UA hint).
+    const metaRec = s.metadata as Record<string, unknown>;
+    const clientHint = typeof metaRec["pluginAgent"] === "string" && metaRec["pluginAgent"]
+        ? metaRec["pluginAgent"] as string
+        : typeof metaRec["clientHint"] === "string" && metaRec["clientHint"] ? metaRec["clientHint"] as string : "";
     return {
         id: s.id,
         ...(s.meta.title ? { title: s.meta.title } : {}),
@@ -207,7 +218,8 @@ function summaryOf(s: Session, live: boolean): WebSessionSummary {
         ...(s.restored ? { restored: true } : {}),
         ...(hasLedger ? { hasLedger: true } : {}),
         ...(firstBlockHint ? { firstBlockHint } : {}),
-        ...(hasFolds ? { grossSaved, netSaved, repayCost, summaryCost } : {}),
+        ...(hasFolds ? { grossSaved, netSaved, repayCost, summaryCost, foldCount } : {}),
+        ...(clientHint ? { clientHint } : {}),
     };
 }
 

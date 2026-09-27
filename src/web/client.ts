@@ -121,13 +121,20 @@ export const WEB_CLIENT = `(function () {
             + (s.restored ? ' <span class="dim small">' + t("common.restored") + "</span>" : "")
             + '<span class="row-id">' + escapeHtml(s.id) + "</span>";
     }
+    // SAVED column prefers ledger-derived net savings; pre-tagging sessions fall back
+    // to the local tokensSaved estimate; neither present => honest dash, never fake 0.
+    function savedTd(x) {
+        const v = x.netSaved != null ? x.netSaved : (x.tokensSaved || 0);
+        return v ? '<td class="num good-num">' + fmtW(v) + "</td>" : '<td class="num dim">' + t("common.none") + "</td>";
+    }
+
     function sessionRow(s, compact) {
         const tr = document.createElement("tr");
         tr.title = s.id;
         if (compact) {
-            tr.innerHTML = "<td>" + sessionTitleCell(s) + '</td><td>' + protoBadge(s.protocol) + '</td><td class="num">' + fmtW(s.contextTokens) + '</td><td class="num good-num">' + fmtW(s.tokensSaved) + '</td><td class="dim">' + timeAgo(s.lastSeen) + "</td>";
+            tr.innerHTML = "<td>" + sessionTitleCell(s) + '</td><td>' + protoBadge(s.protocol) + '</td><td class="num">' + fmtW(s.contextTokens) + '</td>' + savedTd(s) + '<td class="dim">' + timeAgo(s.lastSeen) + "</td>";
         } else {
-            tr.innerHTML = "<td>" + sessionTitleCell(s) + '</td><td>' + protoBadge(s.protocol) + '</td><td class="mono dim small">' + escapeHtml(hostOf(s.upstreamOrigin)) + '</td><td class="num">' + fmtW(s.requests) + '</td><td class="num">' + fmtW(s.contextTokens) + '</td><td class="num good-num">' + fmtW(s.tokensSaved) + '</td><td class="num">' + (s.cacheHitPct == null ? t("common.none") : s.cacheHitPct.toFixed(1) + "%") + '</td><td class="num">' + (s.blocks || 0) + '</td><td class="dim">' + timeAgo(s.lastSeen) + "</td>";
+            tr.innerHTML = "<td>" + sessionTitleCell(s) + '</td><td>' + (s.clientHint ? '<span class="mono small">' + escapeHtml(s.clientHint) + "</span>" : '<span class="dim">' + t("common.none") + "</span>") + '</td><td>' + protoBadge(s.protocol) + '</td><td class="mono dim small">' + escapeHtml(hostOf(s.upstreamOrigin)) + '</td><td class="num">' + (s.requests ? s.requests : t("common.none")) + '</td><td class="num">' + fmtW(s.contextTokens) + '</td><td class="num">' + (s.inputTokens ? fmtW(s.inputTokens) : '<span class="dim">' + t("common.none") + "</span>") + "</td>" + savedTd(s) + '<td class="num">' + (s.cacheHitPct == null ? t("common.none") : s.cacheHitPct.toFixed(1) + "%") + '</td><td class="num">' + (s.foldCount || 0) + '</td><td class="num">' + (s.blocks || 0) + '</td><td class="dim">' + timeAgo(s.lastSeen) + "</td>";
         }
         tr.addEventListener("click", () => { location.hash = "#/session/" + encodeURIComponent(s.id); });
         return tr;
@@ -386,9 +393,10 @@ export const WEB_CLIENT = `(function () {
     function buildDetailHtml(d) {
         const parts = [];
         parts.push('<a class="btn sm" href="#/sessions">' + t("common.back") + "</a>");
-        parts.push('<div class="page-head"><div><h1>' + escapeHtml(d.title || d.label || d.id.slice(0, 16)) + '</h1><div class="sub mono">' + escapeHtml(d.id) + "</div></div><div>" + detailBadges(d) + "</div></div>");
+        parts.push('<div class="page-head"><div><h1 title="' + escapeHtml(d.title || d.label || d.id) + '">' + escapeHtml(d.title || d.label || d.id.slice(0, 16)) + '</h1><div class="sub mono">' + escapeHtml(d.id) + "</div></div><div>" + detailBadges(d) + "</div></div>");
         parts.push('<div class="card"><div class="card-h"><span>' + t("det.identity") + '</span></div><div class="card-b"><dl class="kv">');
-        kv(parts, t("common.title"), d.title || null);
+        // Full title wraps in place, is hoverable (title attr) and carries a copy button.
+        parts.push('<div class="k">' + t("common.title") + '</div><div class="v" title="' + escapeHtml(d.title || "") + '">' + (d.title ? escapeHtml(d.title) + ' <button id="title-copy" class="btn sm">' + t("common.copy") + "</button>" : '<span class="faint">' + t("common.none") + "</span>") + "</div>");
         kv(parts, t("common.label"), d.label || null);
         kv(parts, t("common.protocol"), d.protocol || null, true);
         kv(parts, t("det.client_hint"), d.clientHint || null, true);
@@ -401,7 +409,8 @@ export const WEB_CLIENT = `(function () {
         mini(parts, t("ov.input_tokens"), d.inputTokens ? fmtW(d.inputTokens) : null);
         mini(parts, t("ov.cached_tokens"), d.cachedTokens ? fmtW(d.cachedTokens) : null);
         mini(parts, t("ov.output_tokens"), d.outputTokens ? fmtW(d.outputTokens) : null);
-        mini(parts, t("ov.tokens_saved"), d.tokensSaved ? fmtW(d.tokensSaved) : null, true);
+        const dSavedV = d.netSaved != null ? d.netSaved : d.tokensSaved;
+        mini(parts, t("ov.tokens_saved"), dSavedV ? fmtW(dSavedV) : null, true);
         mini(parts, t("det.last_input"), (d.lastInputTokens || 0) > 0 ? fmtW(d.lastInputTokens) : null);
         parts.push("</div>");
         if (d.contextWindow && d.contextWindow > 0) {
@@ -470,16 +479,16 @@ export const WEB_CLIENT = `(function () {
         if (!blocks.length) {
             parts.push('<div class="dim small" style="padding:8px 0">' + t("det.blocks_empty") + "</div>");
         } else {
-            // #1426: all compression blocks downloadable as standalone markdown
-            parts.push('<div style="display:flex;gap:8px;margin-bottom:10px"><button id="blocks-dl" class="btn sm">' + t("det.blocks_download") + "</button></div>");
-            blocks.forEach((b) => {
+            // #1426: copy-all / download blocks-markdown actions
+            parts.push('<div style="display:flex;gap:8px;margin-bottom:10px"><button id="blocks-copy" class="btn sm">' + t("det.blocks_copy_md") + '</button><button id="blocks-dl" class="btn sm">' + t("det.blocks_download") + "</button></div>");
+            blocks.forEach((b, i) => {
                 // #1426: expose the compressed conversation span (mNNNNN refs) when the kernel tagged it
                 const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
                 // Active = still inside the current context window; inactive = archived history.
                 const badge = b.active
                     ? '<span class="badge ok">' + t("det.block_active") + "</span>"
                     : '<span class="badge disk">' + t("det.block_inactive") + "</span>";
-                parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span>' + badge + '<span class="topic">' + escapeHtml(blockTopic(b)) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
+                parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span>' + badge + '<span class="topic">' + escapeHtml(blockTopic(b)) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span><button class="btn sm blk-copy" data-bi="' + i + '" style="margin-left:auto">' + t("common.copy") + '</button></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
             });
         }
         parts.push("</div></div>");
@@ -508,33 +517,61 @@ export const WEB_CLIENT = `(function () {
             host.innerHTML = buildDetailHtml(d);
             bindHandoffActions(d);
             bindBlocksActions(d);
+            const tc = $("title-copy");
+            if (tc && d.title) tc.addEventListener("click", () => copyText(d.title, tc));
         } catch (e) {
             host.innerHTML = '<a class="btn sm" href="#/sessions">' + t("common.back") + '</a><div class="card" style="margin-top:12px"><div class="card-b"><div class="empty">⚠️ ' + escapeHtml(e.message) + "</div></div></div>";
         }
     }
+    // Shared clipboard helper: flash "copied" on the clicked button.
+    function copyText(text, btn) {
+        const done = () => {
+            const orig = btn.textContent;
+            btn.textContent = "✓ " + t("common.copied");
+            setTimeout(() => { btn.textContent = orig; }, 1200);
+        };
+        const fallback = () => {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand("copy"); } catch (e) {}
+            ta.remove();
+            done();
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
+        else fallback();
+    }
+    function refRangeOf(b) {
+        return b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
+    }
+    function buildBlockMd(b) {
+        const rr = refRangeOf(b);
+        const L = [];
+        L.push("## Block " + b.blockId + (b.topic ? " — " + b.topic : "") + (b.active ? "" : " (inactive)"));
+        L.push("");
+        L.push("tier " + b.tier + " · ~" + fmtW(b.compressedTokens) + " tokens" + (b.createdAt ? " · " + fmtDT(b.createdAt) : "") + (rr ? " · " + rr : ""));
+        L.push("");
+        L.push(String(b.summary || "").trim());
+        return L.join("\\n");
+    }
+    function buildBlocksMd(d) {
+        const L = [];
+        L.push("# billion-context compression blocks");
+        L.push("");
+        if (d.title) L.push("- title: " + d.title);
+        L.push("- session id: " + d.id);
+        L.push("- blocks: " + d.blockDetails.length + " (" + d.blockDetails.filter((x) => x.active).length + " active)");
+        d.blockDetails.forEach((b) => { L.push(""); L.push(buildBlockMd(b)); });
+        return L.join("\\n");
+    }
     function bindBlocksActions(d) {
-        // #1426: download every compression block as standalone markdown
+        if (!d.blockDetails || !d.blockDetails.length) return;
+        const cp = $("blocks-copy");
+        if (cp) cp.addEventListener("click", () => copyText(buildBlocksMd(d), cp));
         const dl = $("blocks-dl");
-        if (!dl) return;
-        if (!d.blockDetails || !d.blockDetails.length) { dl.hidden = true; return; }
-        dl.addEventListener("click", () => {
-            const L = [];
-            L.push("# billion-context compression blocks");
-            L.push("");
-            if (d.title) L.push("- title: " + d.title);
-            L.push("- session id: " + d.id);
-            L.push("- blocks: " + d.blockDetails.length + " (" + d.blockDetails.filter((x) => x.active).length + " active)");
-            L.push("");
-            d.blockDetails.forEach((b) => {
-                const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
-                L.push("## Block " + b.blockId + (b.topic ? " — " + b.topic : "") + (b.active ? "" : " (inactive)"));
-                L.push("");
-                L.push("tier " + b.tier + " · ~" + fmtW(b.compressedTokens) + " tokens" + (b.createdAt ? " · " + fmtDT(b.createdAt) : "") + (refRange ? " · " + refRange : ""));
-                L.push("");
-                L.push(String(b.summary || "").trim());
-                L.push("");
-            });
-            const url = URL.createObjectURL(new Blob([L.join("\\n")], { type: "text/markdown;charset=utf-8" }));
+        if (dl) dl.addEventListener("click", () => {
+            const url = URL.createObjectURL(new Blob([buildBlocksMd(d)], { type: "text/markdown;charset=utf-8" }));
             const a = document.createElement("a");
             a.href = url;
             a.download = "billion-context-blocks-" + String(d.id).replace(/[^A-Za-z0-9._-]/g, "_") + ".md";
@@ -542,6 +579,13 @@ export const WEB_CLIENT = `(function () {
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 4000);
+        });
+        // Per-block copy buttons live inside <summary>, so stop propagation/toggle.
+        document.querySelectorAll(".blk-copy").forEach((btn) => {
+            const bi = Number(btn.getAttribute("data-bi") || 0);
+            const b = d.blockDetails[bi];
+            if (!b) return;
+            btn.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); copyText(buildBlockMd(b), btn); });
         });
     }
     function bindHandoffActions(d) {
