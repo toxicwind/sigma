@@ -117,6 +117,7 @@ package.json       merge=weave
 package-lock.json  merge=weave
 *.json             merge=weave
 *.yaml             merge=weave
+*.yml              merge=weave
 *.toml             merge=weave
 *.md               merge=weave
 ```
