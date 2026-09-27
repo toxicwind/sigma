@@ -12,8 +12,8 @@ rewrites model traffic to `<proxy>/bili/<upstream-url>`, registers
 `compress` / `decompress` / `acp_status` as native client tools (plugin
 mode), and binds the `/acp` panel to the current session. It also reports
 the client's **own model config** to the proxy (runtime-info protocol,
-#955) so compression budgets use the real window instead of a registry
-guess. Opt-out envs: `BILI_NATIVE_PI=0`, `BILI_NATIVE_OMP=0`,
+see #955) so compression budgets use the real window instead of a
+registry guess. Opt-out envs: `BILI_NATIVE_PI=0`, `BILI_NATIVE_OMP=0`,
 `BILI_NATIVE_OPENCODE=0`, `BILI_NATIVE_DSH=0`, `BILI_NATIVE_KIMI=0`.
 
 ## Runtime-info protocol (#955)
