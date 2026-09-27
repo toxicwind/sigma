@@ -40,11 +40,29 @@ export function markdownToHtml(md: string): string {
         const h = line.match(/^(#{1,6})\s+(.*)$/);
         if (h) {
             const level = h[1].length;
-            html.push(`<h${level}>${inlineMd(h[2])}</h${level}>`);
+            const inner = h[2].trim();
+            // Message roles from the kernel handoff format get divider-styled badges.
+            const role = level === 3 && /^(user|assistant|tool)$/i.test(inner) ? inner.toLowerCase() : null;
+            html.push(role ? `<h3 class="msg-role ${role}">${inlineMd(inner)}</h3>` : `<h${level}>${inlineMd(h[2])}</h${level}>`);
             i += 1;
             continue;
         }
         if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { html.push("<hr/>"); i += 1; continue; }
+        // Indented runs (machine-emitted tool arguments, nested lists) stay verbatim in
+        // <pre> instead of being merged into one run-on paragraph by space-joining.
+        if (/^\s{2,}\S/.test(line)) {
+            const buf: string[] = [];
+            let indent = Infinity;
+            while (i < lines.length && /^\s{2,}\S/.test(lines[i])) {
+                buf.push(lines[i]);
+                const m = lines[i].match(/^\s*/);
+                if (m && m[0].length < indent) indent = m[0].length;
+                i += 1;
+            }
+            const cut = Math.min(indent, 4);
+            html.push(`<pre><code>${escapeHtml(buf.map((l) => l.slice(cut)).join("\n"))}</code></pre>`);
+            continue;
+        }
         if (/^\s*&gt;\s?/.test(line) || /^\s*>\s?/.test(line)) {
             const buf: string[] = [];
             while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i += 1; }
@@ -70,7 +88,9 @@ export function markdownToHtml(md: string): string {
             para.push(lines[i]);
             i += 1;
         }
-        html.push(`<p>${inlineMd(para.join(" "))}</p>`);
+        // Preserve source line breaks within a paragraph (handoff message bodies keep
+        // their newlines meaningful) instead of collapsing them into spaces.
+        html.push(`<p>${para.map(inlineMd).join("<br/>")}</p>`);
     }
     return html.join("\n");
 }

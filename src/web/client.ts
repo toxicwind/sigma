@@ -289,7 +289,7 @@ export const WEB_CLIENT = `(function () {
         // by its most likely cause so gaps on the chart explain themselves.
         // Heuristics use only fields every ledger era carries (at/input/cached + fold times).
         const GAP_MS = 600_000;
-        const CAUSE_COLOR = { cold: "#6e7681", comp: "#bf8700", ttl: "#cf222e" };
+        const CAUSE_COLOR = { cold: "#6e7681", comp: "#bf8700", ttl: "#8250df" };
         const CAUSE_KEY = { cold: "det.cause_cold", comp: "det.cause_comp", ttl: "det.cause_ttl" };
         const causes = lines.map((l, i) => {
             if (i === 0) return !(l.cached || 0) ? "cold" : "new";
@@ -366,8 +366,8 @@ export const WEB_CLIENT = `(function () {
             + '<path d="' + stroke.trim() + '" fill="none" stroke="var(--accent)" stroke-width="1.8"/>'
             + foldMarks + ceiling + baseline + ticks + xt + xtTime + "</svg>";
     }
-    function legendItem(style, label, dashed, dashColor) {
-        if (dashed) return '<span><span class="dot" style="background:none;border-top:2px dashed ' + (dashColor || "#cf222e") + ';height:0;border-radius:0;width:14px"></span>' + label + "</span>";
+    function legendItem(style, label, dashed) {
+        if (dashed) return '<span><span class="dot" style="background:none;border-top:2px dashed #cf222e;height:0;border-radius:0;width:14px"></span>' + label + "</span>";
         return '<span><span class="dot" style="' + style + '"></span>' + label + "</span>";
     }
     function blockTopic(b) {
@@ -426,10 +426,11 @@ export const WEB_CLIENT = `(function () {
             parts.push(legendItem("background:var(--accent);opacity:.4", t("det.legend_cached"), false));
             parts.push(legendItem("#cf222e", t("det.legend_fold"), true));
             parts.push(legendItem("#cf222e", t("det.legend_window"), true));
-            parts.push(legendItem("#bf8700", t("det.cause_comp")));
-            parts.push(legendItem("#cf222e", t("det.cause_ttl")));
-            parts.push(legendItem("#6e7681", t("det.cause_cold")));
-            if (d.systemPromptTokens || lines.length >= 20) parts.push(legendItem("", d.systemPromptTokens ? t("det.legend_base") : t("det.legend_base_est"), true, "#8b949e"));
+            // Swatches carry real backgrounds (a bare hex in style= renders nothing):
+            parts.push(legendItem("background:#bf8700", t("det.cause_comp")));
+            parts.push(legendItem("background:#8250df", t("det.cause_ttl")));
+            parts.push(legendItem("background:#6e7681", t("det.cause_cold")));
+            if (d.systemPromptTokens || lines.length >= 20) parts.push(legendItem("border:1.5px solid #8b949e;background:#f2f5f7;", d.systemPromptTokens ? t("det.legend_base") : t("det.legend_base_est")));
             parts.push("</div>");
             if ((ledger.linesOmitted || 0) > 0) parts.push('<div class="dim small" style="margin-top:6px">' + t("det.omitted", { n: ledger.linesOmitted }) + "</div>");
         }

@@ -205,6 +205,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-fam
 .handoff li { margin: 3px 0; }
 .handoff blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--border); color: var(--text-muted); background: var(--bg-muted); border-radius: 0 8px 8px 0; }
 .handoff hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+/* #1426: message-role dividers in the handoff doc (### user / assistant / tool) */
+.handoff h3.msg-role { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; margin: 20px 0 4px; padding-top: 12px; border-top: 1px solid var(--border); }
+.handoff h3.msg-role::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+.handoff h3.msg-role.user::before { background: #1a7f37; }
+.handoff h3.msg-role.tool::before { background: #bf8700; }
+.handoff pre { max-height: 340px; }
 .handoff a { color: var(--accent); }
 
 .empty { text-align: center; color: var(--text-muted); padding: 48px 16px; font-size: 13.5px; }
