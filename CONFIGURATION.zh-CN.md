@@ -165,6 +165,17 @@
 
   内置上下文表是随每个版本发布的静态数据，可能过期 —— 例如 DeepSeek 的规范请求 id `deepseek-flash` 在 models.dev 上没有以该名列出（其窗口列在 `deepseek-v4-flash` 名下），因此只有兜底表能回答它（#852）。日志会为每个模型记录一次胜出来源（`[window] ... fallback=true` 表示值来自内置表）。若解析出的窗口不对，按上文声明 `models.<name>.context`（它优先于注册表和内置表），或固定 `compress.modelContextLimit`；注意 provider 键必须带流量的 scheme（MITM 登录态客户端流量用 `mitm://<host>`，`/bili/` 流量用 `https://<host>`）。
 
+### `context`
+
+- **类型：** `number`（token）
+- **默认值：** *（无）*
+- **状态：** ACTIVE
+- **说明：** 该路由上所有未在 [`models`](#models) 中单独声明的模型所使用的上下文窗口。按模型的 `context` 优先于它。
+
+  上下文窗口是**服务进程**的属性，而不是模型家族的属性。一个 Ollama 或 vLLM 服务器在单一的 `num_ctx` 或 `--ctx-size` 下承载许多 tag，因此路由才是声明它的正确单位。常见写法是 `"http://127.0.0.1:11434": { "context": 32768 }`。
+
+  与按模型字段一样，它优先于热的 models.dev 注册表和内置表，因此本地服务的模型不会被家族猜测误判大小。内置表因为 `qwen2.5:7b` 是 qwen 家族 id 而给它 200K，而本地进程实际可能只有 32K。非正数和非有限值会被忽略。已声明的窗口具有权威性，因此不会被压到兜底窗口下限。
+
 ### `proxy`
 
 - **类型：** `string`

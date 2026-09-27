@@ -167,6 +167,17 @@ A shallow key (`https://open.bigmodel.cn`) matches every path on that host. A de
 
   The built-in context table (step 4) is static data shipped with each release and can go stale — e.g. DeepSeek's canonical request id `deepseek-flash` is not listed on models.dev under that name (its window is listed under `deepseek-v4-flash`), so only the table answered for it (#852). The log records which source won, once per model per process (`[window] ... fallback=true` means the value came from the built-in table). If the resolved window looks wrong, declare `models.<name>.context` as above — it outranks both the registry and the table — or pin `compress.modelContextLimit`; and remember the provider key must carry the traffic's scheme (`mitm://<host>` for MITM login-client traffic, `https://<host>` for `/bili/` traffic).
 
+### `context`
+
+- **Type:** `number` (tokens)
+- **Default:** *(none)*
+- **Status:** ACTIVE
+- **Description:** Context window for every model on this route that has no entry of its own under [`models`](#models). A per-model `context` wins over it.
+
+  A context window is a property of the **serving process**, not of the model family. One Ollama or vLLM server holds many tags behind a single `num_ctx` or `--ctx-size`, so the route is the honest unit to declare it on. `"http://127.0.0.1:11434": { "context": 32768 }` is the common case.
+
+  It outranks the warm models.dev registry and the built-in table, exactly as the per-model field does, so a locally served model is not mis-sized by a family guess. The built-in table gives `qwen2.5:7b` 200K because it is a qwen-family id, while the local process may be holding 32K. Non-positive and non-finite values are ignored. A declared window is authoritative, so it is never floored to the fallback window floor.
+
 ### `proxy`
 
 - **Type:** `string`

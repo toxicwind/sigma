@@ -177,6 +177,59 @@ test("configured context lookup stays separate from registry/built-in fallbacks"
     assert.equal(resolveContextLimit(routes, "https://api.openai.com/v1/responses", "gpt-5"), 400_000);
 });
 
+// A context window is a property of the serving process, not of the model
+// family. One Ollama/vLLM server holds many tags behind a single num_ctx /
+// --ctx-size, so the route is the honest unit to declare it on.
+test("route-level context applies to every model the route serves", () => {
+    const routes = { "http://127.0.0.1:11434": { context: 32_768 } };
+    // qwen2.5:7b is a qwen-family id, so the built-in table claims 200K
+    // (#852). The route declares the window the process actually serves.
+    assert.equal(resolveContextLimit(routes, "http://127.0.0.1:11434/v1/messages", "qwen2.5:7b"), 32_768);
+    assert.equal(resolveConfiguredContextLimit(routes, "http://127.0.0.1:11434/v1/messages", "qwen2.5:7b"), 32_768);
+});
+
+test("per-model context outranks the route-level default", () => {
+    const routes = {
+        "http://127.0.0.1:11434": { context: 32_768, models: { "qwen2.5:7b": { context: 131_072 } } },
+    };
+    assert.equal(resolveContextLimit(routes, "http://127.0.0.1:11434/v1/messages", "qwen2.5:7b"), 131_072, "declared model wins");
+    assert.equal(resolveContextLimit(routes, "http://127.0.0.1:11434/v1/messages", "qwen3:8b"), 32_768, "sibling tag takes the route default");
+});
+
+test("route-level context does not bleed to a different host", () => {
+    const routes = { "http://127.0.0.1:11434": { context: 32_768 } };
+    assert.equal(resolveConfiguredContextLimit(routes, "http://127.0.0.1:11435/v1/messages", "qwen2.5:7b"), undefined);
+});
+
+test("a route context that is not a usable window is ignored", () => {
+    for (const bad of [0, -1, Number.NaN]) {
+        const routes = { "http://127.0.0.1:11434": { context: bad } };
+        assert.equal(resolveConfiguredContextLimit(routes, "http://127.0.0.1:11434/v1/messages", "qwen2.5:7b"), undefined, `context=${bad}`);
+    }
+});
+
+// parseRouteEntry copies object fields selectively, so adding the field to the
+// type alone is silently dropped on the floor. Every declaration above is a
+// no-op unless the copy list carries it.
+test("parseRouteEntry carries route-level context through, and floors it", () => {
+    assert.deepEqual(parseRouteEntry({ context: 32_768 }), { models: undefined, context: 32_768 });
+    assert.deepEqual(parseRouteEntry({ context: 32768.9 }), { models: undefined, context: 32_768 }, "fractional floors");
+    assert.deepEqual(parseRouteEntry({ context: 0 }), { models: undefined }, "zero is not a window");
+    assert.deepEqual(parseRouteEntry({ context: -5 }), { models: undefined }, "negative is not a window");
+    assert.deepEqual(parseRouteEntry({ context: "32768" }), { models: undefined }, "a string is not a window");
+    assert.deepEqual(parseRouteEntry({ context: Number.POSITIVE_INFINITY }), { models: undefined }, "infinite is not a window");
+});
+
+test("ACP_PROVIDERS round-trips a route-level context end to end", () => {
+    const p = writeRoutes("route-context", { "http://127.0.0.1:11434": { context: 32_768 } });
+    try {
+        const opts = loadOptions({ ACP_PROVIDERS: p });
+        assert.equal(opts.routes["http://127.0.0.1:11434"]?.context, 32_768);
+    } finally {
+        unlinkSync(p);
+    }
+});
+
 // #924: configured ModelEntry.output feeds the output-headroom fallback chain
 // (request carries no budget → configured output → registry ceiling → 0).
 test("resolveConfiguredOutputLimit mirrors the context-limit resolution", () => {

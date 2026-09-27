@@ -37,6 +37,15 @@ export function safeReadJson(path: string): unknown {
  */
 export type ProviderRoute = {
     models?: Record<string, ModelEntry>;
+    /** Default context window for every model this upstream serves, used when
+     * the model has no entry of its own under `models` above. A context window
+     * is a property of the serving process, not of the model family: one
+     * Ollama or vLLM server serves many tags at whatever `num_ctx` /
+     * `--ctx-size` it was started with, so the route is the honest unit to
+     * declare it on. A per-model `context` wins over this. Unlike the built-in
+     * table, a declared window is authoritative and is never floored to
+     * FALLBACK_EFFECTIVE_WINDOW_FLOOR. */
+    context?: number;
     /** Per-URL upstream HTTP proxy. Overrides the global `proxy`. Empty string
      *  means "explicitly direct" (override global with no proxy). Format:
      *  `http://host:port`. SOCKS5 is not supported yet. */
@@ -483,14 +492,16 @@ export function tierGatedStandardWindow(model: string | undefined): number | und
 export const FALLBACK_EFFECTIVE_WINDOW_FLOOR = 100_000;
 
 /** Resolve the context-window limit for a request. Priority:
- *  1. Per-URL per-model declaration in config (user-controlled, most accurate).
- *     The upstreamUrl is matched against config keys by **longest-prefix wins**
- *     (the key is a string the user wrote, identical to what follows /bili/ in
- *     the zero-config baseURL). A shallow key like "https://open.bigmodel.cn"
- *     matches all paths on that host; a deep key like
- *     "https://open.bigmodel.cn/api/anthropic" matches only that endpoint.
- *  2. Built-in CONTEXT_LIMIT_TABLE (by model name prefix)
- *  Returns undefined if neither matches — caller falls back to the env default. */
+ * 1. Per-URL per-model declaration in config (user-controlled, most accurate).
+ *    The upstreamUrl is matched against config keys by **longest-prefix wins**
+ *    (the key is a string the user wrote, identical to what follows /bili/ in
+ *    the zero-config baseURL). A shallow key like "https://open.bigmodel.cn"
+ *    matches all paths on that host; a deep key like
+ *    "https://open.bigmodel.cn/api/anthropic" matches only that endpoint.
+ *    A route-level `context` declares the serving process's window for every
+ *    model on that upstream that carries no per-model entry.
+ * 2. Built-in CONTEXT_LIMIT_TABLE (by model name prefix)
+ * Returns undefined if neither matches — caller falls back to the env default. */
 export function resolveContextLimit(
     routes: ProviderRoutes,
     upstreamUrl: string | undefined,
@@ -516,14 +527,22 @@ export function findRoute(routes: ProviderRoutes, upstreamUrl: string | undefine
     return bestKey ? routes[bestKey] : undefined;
 }
 
+/** Operator-declared context window, two levels with the per-model entry
+ * first: `models[<model>].context` wins, then the route-level `context`
+ * default — the unit that matters for a locally served model, where one
+ * server holds many tags behind a single `num_ctx`. Either level is
+ * authoritative, so the caller never floors the result (see
+ * FALLBACK_EFFECTIVE_WINDOW_FLOOR). */
 export function resolveConfiguredContextLimit(
     routes: ProviderRoutes,
     upstreamUrl: string | undefined,
     model: string | undefined,
 ): number | undefined {
     if (!model || !upstreamUrl) return undefined;
-    const m = findRoute(routes, upstreamUrl)?.models?.[model];
+    const route = findRoute(routes, upstreamUrl);
+    const m = route?.models?.[model];
     if (m?.context && m.context > 0) return m.context;
+    if (route?.context && route.context > 0) return route.context;
     return undefined;
 }
 
@@ -1170,8 +1189,9 @@ export function parseRouteEntry(v: unknown): ProviderRoute | undefined {
     // is the KEY in the providers map (identical to the /bili/<url> string),
     // so it is NOT repeated inside the value.
     if (v && typeof v === "object" && !Array.isArray(v)) {
-        const obj = v as { models?: Record<string, ModelEntry>; proxy?: string; compressProtocol?: string; compress?: CompressSettings; compat?: { roles?: unknown }; passthrough?: boolean; imageBilling?: unknown };
+        const obj = v as { models?: Record<string, ModelEntry>; context?: number; proxy?: string; compressProtocol?: string; compress?: CompressSettings; compat?: { roles?: unknown }; passthrough?: boolean; imageBilling?: unknown };
         const route: ProviderRoute = { models: obj.models };
+        if (typeof obj.context === "number" && Number.isFinite(obj.context) && obj.context > 0) route.context = Math.floor(obj.context);
         if (typeof obj.proxy === "string") route.proxy = obj.proxy;
         if (obj.compressProtocol === "marker" || obj.compressProtocol === "tools") route.compressProtocol = obj.compressProtocol;
         if (obj.compress) route.compress = obj.compress;
