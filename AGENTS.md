@@ -611,7 +611,7 @@ after that succeeded was the Windows fix shipped in a follow-up release.
   intent, then prove it by running tests (#517↔#587, #571↔#558).
 - **One linear commit, clean diff.** No merge commits or rebases that explode
   the diff and bury the real change; no incidental whitespace re-alignment.
-  Every line must relate to the PR's purpose (#571 "diff-爆炸", #467).
+  Every line must relate to the PR's purpose (#571 "diff explosion", #467).
 - **Done = evidence, not "should work".** Double-review the code, then actually
   run the changed behavior and observe it matches expectation. For fixes that
   change context/wire behavior, prefer a real end-to-end A/B against the issue
@@ -623,7 +623,7 @@ after that succeeded was the Windows fix shipped in a follow-up release.
 
 ### 7.3 Correctness Guardrails
 
-- **Root cause, not symptom (疏, not 堵 — first principle for every fix).**
+- **Root cause, not symptom (dredge the channel, don't dam it — first principle for every fix).**
   A fix removes the mechanism that PRODUCES the defect; it never merely hides
   the defect's visible trace at whatever layer is cheapest to intercept.
   Before writing any fix, name the producer of the offending bytes/behavior
@@ -727,7 +727,7 @@ decision).
 > **Scope note:** auto-merge applies to THIS repo only. Cross-repo changes
 > (acp-kernel bumps, anything spanning repos) remain manual/human for now.
 
-### 7.5 Reviewer Focus — the "重灾区" (second-round zones)
+### 7.5 Reviewer Focus — the recurring trouble spots (second-round zones)
 
 Of 326 analyzed merged PRs, 26 (~7%) needed a second+ human review round. Two
 drivers dominate, and they are exactly where auto-merge is unsafe:

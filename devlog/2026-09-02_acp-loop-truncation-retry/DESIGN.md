@@ -30,7 +30,7 @@ happened. All of these must hold at the end of the parse loop:
     round produced text);
 - `!signal?.aborted` — the client is still connected;
 - `!truncationRetried` — function-level flag: at most ONE retry per request
-  (the issue says "走一次"). The flag is never reset, so a second truncated
+  (the issue says "just once"). The flag is never reset, so a second truncated
   round (round 2+) also fails fast.
 
 Placement: the check runs **after** the parse loop and **before**

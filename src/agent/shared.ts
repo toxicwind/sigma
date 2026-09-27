@@ -1,4 +1,5 @@
-// Shared thin-plugin core for agent-side extensions ("内外呼应", issue #1).
+// Shared thin-plugin core for agent-side extensions ("the agent and the proxy
+// answering each other across the process boundary", issue #1).
 // The agent plugin is a PURE PROTOCOL CLIENT: no acp-kernel import, no
 // compression logic. The proxy stays the single compression authority; the
 // plugin only (1) detects the proxy, (2) fetches the tool manifest (single

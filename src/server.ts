@@ -540,7 +540,7 @@ export async function startServer(opts: ProxyOptions): Promise<http.Server> {
                     `(source: ${opts.passthroughSource === "env" ? "ACP_PASSTHROUGH env var or --passthrough flag" : `config file ${configFile()}`}). ` +
                     (opts.passthroughSource === "env"
                         ? "Unset ACP_PASSTHROUGH (or drop --passthrough) and restart to re-enable compression."
-                        : "Clear it in the web UI (概览 page) or remove \"passthrough\": true from the config file to re-enable compression."),
+                        : "Clear it in the web UI (the 概览 / Overview page) or remove \"passthrough\": true from the config file to re-enable compression."),
             );
         }
         const envKnobs: string[] = [];
@@ -1467,7 +1467,8 @@ async function handle(
     // passthrough path below forwards it verbatim.
     if (!opts.passthrough && !routePassthrough && hopMarker === undefined && protocol && parsed && typeof parsed === "object") {
         const sessionHeader = headerValue(req, opts.sessionHeader);
-        // Plugin mode (issue #1, "内外呼应"): a cooperative agent-side plugin
+        // Plugin mode (issue #1, "the agent and the proxy answering each other
+        // across the process boundary"): a cooperative agent-side plugin
         // announces itself with x-bili-plugin. The proxy then treats the
         // session's tool surface as NATIVE (plugin-registered from the
         // manifest) — wire tool injection is suppressed and the compress loop

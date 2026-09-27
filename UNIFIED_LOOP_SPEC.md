@@ -1,7 +1,7 @@
 # Unified Compress-Loop — Design Spec (Phase 1+2)
 
 ## Problem
-The generic billion-context proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the 炸锅). Root cause confirmed by the user.
+The generic billion-context proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the blowup). Root cause confirmed by the user.
 
 `executeProxyTool` is also copy-pasted ×3 (compress-loop.ts:47, compress-loop-anthropic.ts:59, compress-loop-responses.ts:85).
 
@@ -9,7 +9,7 @@ The generic billion-context proxy's three `compress-loop-*.ts` files have an **i
 **billion-context-pi** (`/home/dog/projects/billion-context-pi/src/`), the Pi adapter. It uses an **executor model** (one tool call = one Pi turn, no loop). Key principles to mirror in the loop:
 - `wireSystemPrompt` (index.ts:229-235): philosophy is a **transient system prompt** returned via Pi's `before_agent_start` event — rebuilt fresh each turn, NOT in message history, does NOT accumulate.
 - `wireContextTransform` (index.ts:103-227): runs `core.processTurn({messages, state, config, tokenCount})` once per LLM call; nudge is a **per-turn append** (comment index.ts:178-179: "the next context event rebuilds the array from scratch, so it does NOT permanently pollute context").
-- Kernel `hideConsumedCompressCalls(state, messages)` runs inside processTurn each turn (hide-consumed.ts, exported index.ts:51) — hides consumed/failed compress records, keeps active-block compress calls ("压缩成功留着"), rewrites kept compress text to live ranges.
+- Kernel `hideConsumedCompressCalls(state, messages)` runs inside processTurn each turn (hide-consumed.ts, exported index.ts:51) — hides consumed/failed compress records, keeps active-block compress calls ("keep the successful compressions"), rewrites kept compress text to live ranges.
 - Kernel `protected.ts`: `ALWAYS_PROTECTED_TOOLS=["compress"]`, recent-zone + last-user protection.
 
 **Alignment goal**: the proxy's loop must apply the SAME per-turn hygiene bili-pi gets for free (transient philosophy + hideConsumed), but per ROUND of the loop.
@@ -82,7 +82,7 @@ Round logic (per bili-pi hygiene):
       - Else (real tool): `yield adapter.emitToolCall(...)`, increment `realCalls`.
     - After stream done: run `hideConsumedCompressCalls(ctx.session.state, coreMessages)` (per-round hygiene, skipped for textProtocol).
     - Decision: if `proxyResults.length > 0 && realCalls === 0` → re-request: rebuild body via `adapter.buildRequest(coreMessages, systemPrompt, requestBody)`, fetch new upstream, loop. Else → `yield adapter.emitCompletion(...)`, return.
-      - Note: ALL proxy tools (including read-only acp_status/search_context) drive re-request. This differs from baseline (`hasMutatingOnly`) which only re-requested for compress/decompress. V2 re-requests for read-only tools to feed the result back to the model (fixes the tool_calls-no-body hang, commit d8a1e0d). Safety net: MAX_LOOP_ROUNDS=10 graceful completion (never the degenerate empty completion that caused 炸锅).
+      - Note: ALL proxy tools (including read-only acp_status/search_context) drive re-request. This differs from baseline (`hasMutatingOnly`) which only re-requested for compress/decompress. V2 re-requests for read-only tools to feed the result back to the model (fixes the tool_calls-no-body hang, commit d8a1e0d). Safety net: MAX_LOOP_ROUNDS=10 graceful completion (never the degenerate empty completion that caused the blowup).
 2. Limit reached: `yield adapter.emitCompletion(...)` **gracefully** (NOT a degenerate empty completion). Log it. This is the key fix — never discard the turn.
 
 ### Shared executeProxyTool (de-dup ×3 → ×1)
@@ -148,7 +148,7 @@ The transient `systemPrompt` = `buildCompressSystemPrompt()` (or `buildCompressT
 
 ## Test plan (Phase 3)
 247 tests total (219 baseline + 28 new in `tests/loop-*.test.ts`). Updated to match d8a1e0d (read-only tools now drive re-request):
-1. **acp_status-only round**: model calls only acp_status → assert (a) marker surfaced to client, (b) re-request happens (result fed back to model), (c) graceful completion at limit, (d) no hang. **No 炸锅.** *(Changed from "NO re-request" after d8a1e0d fixed the tool_calls-no-body hang.)*
+1. **acp_status-only round**: model calls only acp_status → assert (a) marker surfaced to client, (b) re-request happens (result fed back to model), (c) graceful completion at limit, (d) no hang. **No blowup.** *(Changed from "NO re-request" after d8a1e0d fixed the tool_calls-no-body hang.)*
 2. **search_context-only round**: same shape as #1 (re-request + graceful completion).
 3. **compress round**: model calls compress → assert re-request happens (mutating), result fed back, hideConsumed ran (consumed compress records hidden in round 2 input).
 4. **decompress round**: re-request happens.

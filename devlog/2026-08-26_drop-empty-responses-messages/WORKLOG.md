@@ -2,35 +2,35 @@
 
 ## 2026-08-26
 
-### 诊断
+### Diagnosis
 
-1. **会话文件取证** `~/.omp/agent/sessions/-tmp/2026-08-26T10-35-43-161Z_01a03da3-....jsonl`：
-   - 本地一条 assistant 消息 = content 块数组 `[thinking, text("\n\n"), toolCall(read), text("\n"), toolCall(read)]`
-   - 全程 JSON，**不是按回车拆分**
-2. **wire 层摊平**：Responses API `input` 是扁平条目列表（message / function_call / function_call_output 各自顶层），没有 anthropic 那种"一条消息内混排块"的表达 → omp 序列化时每个 text 块摊成独立 message item。空白 text 块（模型工具调用前的 `\n\n`）就成了独立空消息。协议必然，非 omp bug。
-3. **pi 对照**（6 个真实会话）：anthropic wire 的 content 本来就是块数组，可原样放一条消息 → 162 处空白块全部在混合消息内部，**0 条独立空消息**。pi 不受影响。
-4. **责任三层**：模型吐 `\n\n`（SGLang 习惯，正常）/ omp 摊平（协议必然）/ **bili 给 1-token 空白盖 42 字符标签+编号（唯一该修层）**。
-5. **粘性发现**：请求 dump（`~/.local/state/billion-context/dumps/req-*-9d41f1d8aa9cd4f3.json`，8 份）验证纯 `trim()` 判空白 dropped=0 —— 上轮盖的标签已把空白变成 43 字符"非空"文本被 omp 原样回放 → 必须**剥标签后再判空白**。
+1. **Session file forensics** `~/.omp/agent/sessions/-tmp/2026-08-26T10-35-43-161Z_01a03da3-....jsonl`:
+   - One local assistant message = a content block array `[thinking, text("\n\n"), toolCall(read), text("\n"), toolCall(read)]`
+   - Valid JSON throughout, **not split on carriage returns**.
+2. **The wire layer flattens**: the Responses API `input` is a flat list of entries (message / function_call / function_call_output, each at the top level). There is no anthropic-style "one message with mixed blocks" expression, so when omp serializes, each text block becomes its own message item. A whitespace text block (the `\n\n` the model emits before a tool call) therefore becomes a standalone empty message. This is forced by the protocol, not an omp bug.
+3. **pi comparison** (6 real sessions): an anthropic-wire content field is already a block array, so a whitespace block sits inside a mixed message as-is → 162 whitespace blocks, all internal to mixed messages, **0 standalone empty messages**. pi is unaffected.
+4. **Three layers of responsibility**: the model emits `\n\n` (a SGLang habit, normal) / omp flattens (forced by the protocol) / **bili stamps a 42-character tag plus a number onto 1-token whitespace (the only layer worth fixing)**.
+5. **A stickiness finding**: replaying the request dumps (`~/.local/state/billion-context/dumps/req-*-9d41f1d8aa9cd4f3.json`, 8 of them) showed a plain `trim()` emptiness check dropped 0 items, because the tag stamped in an earlier round had already turned the whitespace into 43 characters of "non-empty" text that omp replays verbatim → the tag must be **stripped before the emptiness check**.
 
-### 修复
+### Fix
 
-- `src/loop/adapter-responses.ts`：
-  - `dropWhitespaceResponsesMessages(input): number` — 倒序遍历；`type === "message" || undefined`（omp user 条目无 type）+ role user/assistant + 纯文本 content（数组遇非 text/input_text/output_text 部件标记 mixed 保留）+ `stripRenderTags` 后 trim 为空 → splice
-  - `RENDER_TAG_RE`（hex 转义源码铁律）+ `stripRenderTags()`：剥 `<acp ...>ref</acp>` 与自闭合形态；标签包真内容（如 `m00002` 实文）永不删
-- `src/server.ts` `prepareResponses`：`sanitizeResponsesInputIds` 之后调用；dropped>0 打日志 `dropped N whitespace-only message item(s) before projection (flattened-turn artifact)`
-- `tests/responses-empty-messages.test.ts` 4 测试：混合形态删 3 保 6 / 剥标签判空白（tag-over-nothing 删、tag-over-content 留）/ string content 与 developer/system 角色永不删 / 非数组容忍 + refusal 部件保留
+- `src/loop/adapter-responses.ts`:
+  - `dropWhitespaceResponsesMessages(input): number` — walks in reverse; requires `type === "message" || undefined` (omp's user entries carry no type) + role user/assistant + pure-text content (an array containing anything other than text/input_text/output_text parts is marked mixed and kept) + `stripRenderTags` followed by a trim to empty → splice.
+  - `RENDER_TAG_RE` (per the source rule that any `<acp>` XML is hex-escaped) + `stripRenderTags()`: strips `<acp ...>ref</acp>` and its self-closing form. A tag wrapping real content (such as the actual text `m00002`) is never deleted.
+- `src/server.ts` `prepareResponses`: called after `sanitizeResponsesInputIds`. When dropped > 0 it logs `dropped N whitespace-only message item(s) before projection (flattened-turn artifact)`.
+- `tests/responses-empty-messages.test.ts` 4 tests: a mixed shape drops 3 and keeps 6 / emptiness is judged after stripping the tag (tag over nothing is dropped, tag over content is kept) / string content and developer/system roles are never dropped / non-array content is tolerated and refusal parts are kept.
 
-### 验证
+### Verification
 
-- 真实 dump 回放：8 份历史请求 dropped `0/0/2/2/3/3/4/2`——每请求剥 2-4 个空壳
-- `632/632` tests + typecheck + build 全绿
+- Real dump replay: 8 historical requests dropped `0/0/2/2/3/3/4/2` — 2 to 4 empty shells stripped per request.
+- `632/632` tests + typecheck + build all green.
 
-### 决策
+### Decision
 
-- **不并入 PR#257**（omp 原生插件，CI 绿等合并；文件零重叠，定位不同：#257 = 恢复原生模式，本修 = wire 模式上下文卫生，对所有未绑插件的 Responses 客户端长期有效——原生模式下首次请求（未绑定）仍会出现空消息，修复互补）
-- 分支 `2026-08-26_drop-empty-responses-messages` 自 master `5982720`
+- **Not folded into PR #257** (the omp native plugin, CI green and awaiting merge). There is zero file overlap and the two have different purposes: #257 restores native mode, while this fix is wire-mode context hygiene that stays useful for every Responses client that is not bound to the plugin — in native mode the first request (before binding) still produces empty messages, so the two fixes are complementary.
+- Branch `2026-08-26_drop-empty-responses-messages` from master `5982720`.
 
-### 教训
+### Lessons
 
-- dump 请求里"非空"的空白消息 = 标签粘性，判空必须先剥标签
-- 源码内任何 `<acp>` XML 一律 `\x3c/\x3e` hex 转义（AGENTS.md 铁律）
+- A whitespace message that reads as "non-empty" in a dump is tag stickiness. The emptiness check must strip the tag first.
+- Any `<acp>` XML inside source must be hex-escaped as `\x3c/\x3e` (an AGENTS.md rule).

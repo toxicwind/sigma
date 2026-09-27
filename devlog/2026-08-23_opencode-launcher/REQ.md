@@ -47,8 +47,8 @@ remained:
   fallback is correct for the single-session interactive flow).
 
 ## References
-- Issue: bili opencode "看不到 acp 了" (user report after opencode-acp
-  self-disable landed)
+- Issue: bili opencode "can't see acp anymore" (user report filed after
+  opencode-acp's self-disable landed)
 - Upstream: https://github.com/ranxianglei/opencode-acp/pull/335 (self-disable)
 - Plugin API: `command.execute.before` + `config` hooks, `session.prompt`
   with `noReply`/`ignored` parts (mirrors opencode-acp's own notification path)

@@ -90,24 +90,32 @@ additive and ignored by older callers.
 - The ignored-message render path (`noReply` + `parts[].ignored`) is the
   opencode-sanctioned way to print UI text from a plugin.
 
-## Follow-up 3: /acp 无反应 — this 绑定丢失 (2026-08-23 23:06)
+## Follow-up 3: /acp did nothing, the `this` binding was lost (2026-08-23 23:06)
 
-**症状**: `bili opencode` 下选 /acp 发送无任何反应（无报错、无输出）。
+**Symptom**: under `bili opencode`, choosing /acp and sending produced no reaction at all, with no
+error and no output.
 
-**排查** (tmux + console.error 打点 dist):
-- 第一次 Enter 只是选中 slash 弹出菜单，第二次 Enter 才真正提交 —— TUI 正常行为，非 bug。
-- 提交后 hook 正常触发、status HTTP 200、panel 422 字节到手，但 `prompt() THREW: undefined is not an object (evaluating 'this._client')`，且旧代码 `catch {}` 把错误吞了 → 完全静默。
+**Investigation** (tmux plus console.error markers in dist):
+- The first Enter only selects the slash command and pops open the menu. The second Enter is what
+  actually submits. That is normal TUI behavior, not a bug.
+- After submitting, the hook fired correctly, the status HTTP call returned 200, and the 422-byte
+  panel arrived. But `prompt() THREW: undefined is not an object (evaluating 'this._client')`, and
+  the old `catch {}` swallowed the error, so the failure was completely silent.
 
-**根因**: `showText` 把 SDK 方法解构出来调用：
+**Root cause**: `showText` destructured the SDK method out of its object and then called it:
 ```ts
 const prompt = ctx.client?.session?.prompt;
-await prompt({...});        // this === undefined → this._client 抛错
+await prompt({...});        // this === undefined → this._client throws
 ```
-上游 opencode-acp 是 `client.session.prompt(...)` 直接方法调用（this = session）。
+Upstream opencode-acp calls `client.session.prompt(...)` as a method, so `this` is the session.
 
-**修复** (src/agent/opencode.ts): 先守卫 `const session = ctx.client?.session; if (!session || typeof session.prompt !== "function") ...`，再 `await session.prompt({...})` 方法调用；catch 改为 console.error 输出真实错误，不再静默吞。
+**Fix** (src/agent/opencode.ts): guard first with `const session = ctx.client?.session; if
+(!session || typeof session.prompt !== "function") ...`, then call `await session.prompt({...})` as
+a method. The catch now uses console.error to print the real error instead of swallowing it.
 
-**验证**: tmux 内 `/acp` ×2 Enter → 面板渲染成功（billion-context@0.1.46 / Context 0% (0/200k) / Blocks none / Tag visibility）；stderr 无 THREW。typecheck/530 tests/build 全绿。
+**Verification**: two Enters on /acp inside tmux rendered the panel successfully
+(billion-context@0.1.46 / Context 0% (0/200k) / Blocks none / Tag visibility), and stderr showed no
+THREW. Typecheck, 530 tests, and build all green.
 
 ## Follow-up 4: codex/claude launcher verification + claude /bili/ switch (2026-08-23 23:30)
 

@@ -1,90 +1,90 @@
-# 自动合并护栏（Auto-Merge Guardrails）— 证据附录
+# Auto-Merge Guardrails — Evidence Appendix
 
-> **来源**：[#801](https://github.com/ranxianglei/billion-context/issues/801)「自动合并材料收集」。
-> **方法**：拉取三个仓库（billion-context / billion-context-pi / acp-kernel）**全部 issue + PR + 评论**（共 1543 项、1072 个 PR、3645 条评论），叠加本仓 `devlog/` 31 条迭代记录、`AGENTS.md` 完整 git 演进史、commit 类型分布，交叉比对得出。
-> **目标**：让 ~90% 的 bugfix 可自动合并，同时守住大方向不偏移。
-> **定位（重要）**：规则的**权威文本在 [`AGENTS.md` §7](./AGENTS.md#7-review--auto-merge-discipline) Review & Auto-Merge Discipline**（每次会话自动加载，是唯一操作依据）。本文件只做**证据附录**——保留基线数据、逐条 issue/PR 出处、重灾区数据分析、以及内核 vs 本仓库的归属判断。**凡是规则 / Gate / Checklist 的操作文本，一律以 §7 为准，本文不复述**，避免两处漂移。范围限定：**本次仅改本仓库**，跨仓库改动暂留人工。
+> **Source**: [#801](https://github.com/ranxianglei/billion-context/issues/801) "collect auto-merge material."
+> **Method**: Pulled every issue, PR, and comment from all three repos (billion-context / billion-context-pi / acp-kernel) — 1,543 items, 1,072 PRs, 3,645 comments — then cross-referenced against this repo's 31 `devlog/` iteration records, the full git evolution recorded in `AGENTS.md`, and the commit-type distribution.
+> **Goal**: Let ~90% of bugfixes auto-merge while holding the line on the overall direction.
+> **Where this sits (important)**: The **authoritative text for these rules is [`AGENTS.md` §7](./AGENTS.md#7-review--auto-merge-discipline), Review & Auto-Merge Discipline** (loaded automatically every session, and the only operative reference). This file is strictly an **evidence appendix** — it preserves the baseline data, per-issue and per-PR provenance, the analysis of the recurring trouble spots, and the kernel-vs-this-repo ownership calls. **Any operational text for a rule, gate, or checklist lives in §7 and is deliberately not restated here**, so the two cannot drift apart. Scope is bounded: **this round changes this repo only**; cross-repo changes stay manual.
 
 ---
 
-## 1. 基线事实（数据说话）
+## 1. Baseline facts (what the data says)
 
-| 事实 | 数据 | 含义 |
+| Fact | Data | What it means |
 |------|------|------|
-| fix 是主战场 | 非合并 commit：`fix:` 360 / `feat:` 117 / `docs:` 99 / `test:` 41 / `refactor:` 24 | bugfix 约占 54%，正是自动合并要覆盖的对象 |
-| 没有"被拒绝"的 PR | 三仓 closed-unmerged **全为 0** | 人工要么合并、要么挂着，从不直接否决。风险不在"AI 的东西被否"，而在**剩下 ~10% 需返工的会卡住整条流水线** |
-| 规则是事后补的 | `AGENTS.md` 每条硬规则几乎都对应一次事故（#377 两种压缩模式、#584 问题必建 issue、version 仅 release 分支、auto-update 改动先发 no-op 版） | 现有 `AGENTS.md` ≈ 已踩坑沉淀；隐性规则现在已并入 §7 |
-| AI 工作难从作者区分 | 仅 55 个 PR 带 `ework-agent-pr` 标记；多数早期工作以 ranxianglei PAT 直推 | 判断"AI vs 人工"要靠 `[bot] 🏷` 前缀 + 标记，不能靠 authorship |
+| Fixes are the main event | Non-merge commits: `fix:` 360 / `feat:` 117 / `docs:` 99 / `test:` 41 / `refactor:` 24 | Bugfixes are ~54% of the work — exactly what auto-merge needs to cover |
+| Nothing is ever "rejected" | Closed-unmerged across all three repos: **0** | Humans either merge it or leave it open; nobody flatly says no. The risk is not "AI work gets rejected" — it is that **the remaining ~10% that needs rework jams the whole pipeline** |
+| The rules were written after the fact | Nearly every hard rule in `AGENTS.md` traces to a specific incident (#377 two compression modes, #584 every problem gets an issue, version bumps only on release branches, auto-update ships a no-op version first) | Today's `AGENTS.md` is the sediment of having been burned. The implicit rules are now folded into §7 |
+| AI work is hard to tell from human work | Only 55 PRs carry the `ework-agent-pr` marker; much of the early work was pushed directly with a ranxianglei PAT | Distinguishing AI from human has to rely on the `[bot] 🏷` prefix plus the marker — authorship will not tell you |
 
 ---
 
-## 2. 人工确立的规则（每条的真实出处）
+## 2. Rules established by hand (provenance for each)
 
-> 规则文本本身见 `AGENTS.md` §7.1–§7.3；这里只给**为什么有这条**的证据。
+> The rule text itself is in `AGENTS.md` §7.1–§7.3; what follows is only the evidence for *why each one exists*.
 
-### A. 早已成文（继续守住）
-git 安全四禁（禁 force-push master / 禁 merge / 禁 npm publish / 禁打印 PAT）、branch 命名 `YYYY-MM-DD_short-title`、version 仅 `*_release-v*` 分支、发布流程 + no-op 校验、acp-kernel 先于本项目发布、issue 先行 + 问题必报、代码质量（no `as any` / hex escape `\x3c\x3e` / loggerLog）、改请求管线前跑 e2e、两种压缩模式都要想。
+### A. Written down long ago (keep holding the line on these)
+The four git prohibitions (no force-push to master, no merges, no `npm publish`, never print a PAT), branch naming `YYYY-MM-DD_short-title`, version bumps only on `*_release-v*` branches, the release process plus its no-op check, releasing acp-kernel before this project, issue-first with every problem reported, code quality (no `as any`, no hex escapes like `\x3c\x3e`, `loggerLog`), running e2e before touching the request pipeline, and thinking through both compression modes.
 
-### B. 隐性规则（现已并入 §7）——逐条出处
-1. **先查重再动手** —— *出处*：#268「这个应该已经存在了一个 pr 修复这个问题 检查下重复」；pi #311/#314 同标题重复 PR。
-2. **rebase 到最新 master 再验证再提** —— 警惕 **rebase 顺序依赖**。*出处*：#249/#221/#155/#479 反复要求基于最新 master 重验。**#479 最典型**：AI 漏了顺序依赖——测试写死 `savedAt=9000/5000/8000`（1970），因另一 PR(#487)先落 master 而失效，人工独立复审才抓到。
-3. **收敛范围，一 issue 一主题** —— *出处*：#247「先收敛 你先只负责本 issue…额外问题我找其他 agents 去做」；#640 兄弟 issue 批一个 PR、关掉被取代的。
-4. **交 PR，不是光推分支** —— *出处*：#282「提交 pr 而不是分支」。
-5. **绝不静默丢/覆盖用户配置** —— *出处*：#155 白名单漏 prompts 键 → web 保存会静默抹掉自定义压缩提示词，改为 malformed 直接 400；`devlog/context-window-fixes`（读失败还往 `{}` 合并 = 静默丢数据）。
-6. **兜底值要合理** —— *出处*：#282「识别失败默认回 20w、最低 10w，别用 64k」；`devlog/context-window-fixes`（静态表压过活注册表 = freshness 层级倒挂）。
-7. **优先用客户端原生稳定标识** —— *出处*：#280「session-id 才是唯一不变、绑定当前会话的…不能拿到的客户端你报告一下」。
-8. **分清症状与机制** —— *出处*：#282「连续压缩」实为上游 429 限流 + 客户端重试刷出的日志假象，并非压缩机制失控。
-9. **输出要诚实** —— *出处*：#155 export 对 0-block 会话打出"下面是原始对话"的文案，要求改成诚实提示。
-10. **完成 = 证据** —— *出处*：#784「review 了吗」；#247「本地双 review 然后实际测试切换 观察是否符合预期」。
-11. **日志：凭证必脱敏 + 分级** —— *出处*：#247（B.1 hdrLog 脱敏、B.3 分级）。
-12. **文档中英同步 + 位置可见** —— *出处*：#698 QQ 群号三项目中英文都加、且别放最后没人看见。
-13. **跨仓顺序** —— *出处*：#772「先发一个内核版本,再发这个版本」「内核已经合并」。
+### B. Implicit rules (now folded into §7) — provenance for each
+1. **Check for an existing fix before starting.** *Source*: #268 "there is probably already a PR that fixes this, check for duplicates". pi #311/#314 opened duplicate PRs under the same title.
+2. **Rebase onto the latest master, then re-verify, then open the PR.** Watch out for **rebase order dependencies**. *Source*: #249/#221/#155/#479 each demanded re-verification against the latest master. **#479 is the clearest case**: the AI missed an order dependency — the test hardcoded `savedAt=9000/5000/8000` (1970), and it broke because another PR (#487) landed on master first. Only an independent human review caught it.
+3. **Converge the scope: one issue, one topic.** *Source*: #247 "converge first — you own just this issue… I'll route the other problems to other agents". #640 batched sibling issues into one PR and closed the ones it superseded.
+4. **Deliver a PR, not just a pushed branch.** *Source*: #282 "submit a PR, not a branch."
+5. **Never silently drop or overwrite user config.** *Source*: in #155 a whitelist missed the `prompts` key, so saving from the web UI silently wiped the user's custom compression prompts. the fix was to return 400 on malformed input instead. See `devlog/context-window-fixes` (a failed read that still merged into `{}` = silent data loss).
+6. **Fallback values have to be sensible.** *Source*: #282 "when detection fails, default to 200k with a floor of 100k — do not use 64k". `devlog/context-window-fixes` (a static table overriding the live registry = the freshness hierarchy inverted).
+7. **Prefer the client's own stable identifier.** *Source*: #280 "session-id is the only thing that does not change and is bound to the current session… if you cannot get it from the client, report that."
+8. **Separate the symptom from the mechanism.** *Source*: the "consecutive compression" report in #282 was actually upstream 429 rate limiting amplified by client retries producing a misleading log — not the compression mechanism running away.
+9. **Output must be honest.** *Source*: #155's export printed "here is the raw conversation" for a 0-block session. it needed an honest message instead.
+10. **Done means evidenced.** *Source*: #784 "did you review it?". #247 "two local reviews, then actually test the switch and observe whether it behaves as expected."
+11. **Logs: redact credentials and grade verbosity.** *Source*: #247 (redaction in `hdrLog`, grading at B.3).
+12. **Keep docs in sync across languages, and make them findable.** *Source*: #698 — the QQ group number was added in both Chinese and English across all three projects, and not buried at the bottom where nobody would see it.
+13. **Cross-repo release order.** *Source*: #772 "ship a kernel version first, then this version". "the kernel has already merged."
 
 ---
 
-## 3. AI 把握不到的点（审核员重点把关，按出现频率排）
+## 3. What AI cannot reliably hold (where reviewers must focus, ordered by frequency)
 
-| # | 类别 | 典型表现 | 为什么 AI 容易漏 |
+| # | Category | Typical shape | Why AI tends to miss it |
 |---|------|----------|------------------|
-| 1 | **交叉/交互效应**（最高危） | rebase 顺序依赖、并发 PR 相互影响、切模型/切 provider 后状态漂移 | AI 偏局部推理，看不到全局时序与并发 |
-| 2 | **静默数据丢失路径** | read-modify-write、配置覆盖、持久化版本迁移 | 正常路径测得通，异常/边界路径才丢数据 |
-| 3 | **协议/线上保真** | tool_call 的 id/顺序、SSE 结构、compaction_trigger 必须是最后一个 input item（#283） | 改了线格式但本地 mock 上游不严格，CI 也测不出 |
-| 4 | **标识与会话稳定性** | 派生 id vs 原生 id、sticky 会话、中途切换 | 单一场景下派生 id 够用，切换场景才暴露 |
-| 5 | **默认值/兜底判断** | 不合理 fallback、真值来源优先级 | 属产品判断，AI 易拍脑袋选个"看起来对"的值 |
-| 6 | **症状 ≠ 根因** | 日志假象、错误归因 | 表象像 A，其实是 B（见 #282） |
-| 7 | **流程卫生** | 范围蔓延、重复劳动、只推分支不开 PR、跨仓顺序 | 单看每个动作都对，组合起来违反流程 |
-| 8 | **面向用户的判断** | 文档措辞/语言/位置、诚实性、UX 默认值 | 工程正确 ≠ 用户视角正确 |
+| 1 | **Cross-cutting and interaction effects** (highest severity) | Rebase order dependencies, concurrent PRs interfering, state drift after switching models or providers | AI reasons locally and cannot see global timing or concurrency |
+| 2 | **Silent data-loss paths** | read-modify-write, config overwrite, persisted version migration | The happy path passes; data is lost only on the error or boundary path |
+| 3 | **Protocol and wire fidelity** | tool_call id and ordering, SSE structure, `compaction_trigger` must be the last input item (#283) | You change the wire format, but a lenient local mock and a permissive CI will not catch it |
+| 4 | **Identity and session stability** | Derived id vs native id, sticky sessions, mid-session switching | A derived id is fine in one scenario; only a switch exposes it |
+| 5 | **Defaults and fallback judgment** | Unsound fallbacks, the precedence order of sources of truth | This is product judgment; AI tends to pick a value that "looks right" |
+| 6 | **Symptom ≠ root cause** | Misleading logs, misattributed errors | It looks like A, but it is actually B (see #282) |
+| 7 | **Process hygiene** | Scope creep, duplicated effort, pushing a branch without opening a PR, cross-repo ordering | Each action looks right in isolation; the combination violates the process |
+| 8 | **User-facing judgment** | Doc wording, language, placement, honesty, UX defaults | Engineering-correct ≠ correct from the user's seat |
 
-### 3.1 重灾区：二次评论才过的 PR（数据）
+### 3.1 The recurring hot spot: PRs that needed a second review round (the data)
 
-对 455 个已合并 PR 统计"人工评论次数"：**229 个 0 次、71 个 1 次、26 个 ≥2 次**——即约 **7%（26/326 有评论者）需要第二轮及以上人工 review 才过**。这些就是"重灾区"；其中属 **bugfix**（非 feat）的，才是自动合并真正要防的对象：
+Counting "human review comment rounds" across 455 merged PRs: **229 with 0, 71 with 1, 26 with ≥2** — so roughly **7% (26 of the 326 that had any comment) needed a second or later human review round before merging**. Those are the hot spots. Of those, the ones that are actually **bugfixes** (not feats) are what auto-merge truly has to guard against:
 
-| PR | 主题 | 二次返工原因 |
+| PR | Topic | Why it needed rework |
 |----|------|--------------|
-| #571 | hold client through long preflight | diff-爆炸（#575 同病）、反复 rebase 冲突（#558/#593）、文档放错节 + env 变量只写英文 README、漏 zh/CONFIGURATION.md |
-| #467 | hard backstop plugin-mode overflow | base 落后 43 commits；逐行空格 artifact（1280 off-by-one-space）被挑出 |
-| #517 | reject stale snapshots rollback | 与 #587 重写 `src/persist.ts` 同文件冲突，需语义 rebase |
-| #425 | uncompressed baseline + clamp negative | base 停在 8/31；上条评论承诺的 openai 拆分口径没做完 |
-| #219 | stale context limits + registry-first | 首修漏了"代理网络下 Node fetch 忽略 http(s)_proxy → registry 拉取永久失效"；快照从投影扩成全量 |
-| #428 | re-voice acp_summary as user | 要求确认回归；方案被推翻、移到原 issue |
-| #360 | /acp panel persistent message | 反复冲突；"为啥新搞一个 acp panel?"（方案质疑）；Windows 临时端口范围致 flaky 测试（改 `listen(0)`） |
-| #254 | preflight-compress on model switch | 需真实 A/B 复现验证（非仅单测） |
-| #657 | recover stale shim conversation id | review 才发现残留小问题 |
+| #571 | hold client through long preflight | Diff explosion (#575 had the same problem), repeated rebase conflicts (#558/#593), docs put in the wrong section, env variables documented only in the English README, zh/CONFIGURATION.md missed |
+| #467 | hard backstop plugin-mode overflow | Base was 43 commits behind; a per-line whitespace artifact (1280 off-by-one-space diffs) was caught in review |
+| #517 | reject stale snapshots rollback | Same-file conflict with #587's rewrite of `src/persist.ts`; needed a semantic rebase |
+| #425 | uncompressed baseline + clamp negative | Base stuck at 8/31; the openai split that a prior comment promised was never finished |
+| #219 | stale context limits + registry-first | The first fix missed "under a proxy network, Node's fetch ignores http(s)_proxy, so registry fetch fails permanently"; the snapshot expanded from a projection to the full set |
+| #428 | re-voice acp_summary as user | Required regression confirmation; the approach was overturned and moved back to the original issue |
+| #360 | /acp panel persistent message | Repeated conflicts; "why build a whole new acp panel?" (approach challenged); Windows' ephemeral port range made tests flaky (changed to `listen(0)`) |
+| #254 | preflight-compress on model switch | Needed a real A/B reproduction, not just a unit test |
+| #657 | recover stale shim conversation id | Residual issues only surfaced during review |
 
-**两个主导成因**（操作版见 `AGENTS.md` §7.5）：
-1. **stale-base / 并发文件踩踏**：长命分支偏离快速演进的 master，或与别的 PR 抢同一热文件（`server.ts` / preflight / `persist.ts` / `agent/*` 类型）。信号：分支新鲜度 + 是否与其它 open PR 改同一文件。
-2. **首遍不完整**：只治了报出来的症状，漏了相邻路径/边界、或承诺了却没做完、或方案要重来。信号：修复是否覆盖该 bug 的**所有**路径，而不只是 repro。
+**Two dominant causes** (the operative version is in `AGENTS.md` §7.5):
+1. **Stale base, and contention on hot files**: a long-lived branch drifting away from a fast-moving master, or competing with another PR over the same hot file (`server.ts`, preflight, `persist.ts`, `agent/*` types). Signals: branch freshness, and whether another open PR touches the same file.
+2. **An incomplete first pass**: only the reported symptom was treated, leaving adjacent paths and boundary cases unhandled — or work was promised and not finished — or the approach had to be redone. Signal: does the fix cover **every** path of the bug, or only the repro?
 
 ---
 
-## 附：owner 拍板结论 + 内核 vs 本仓库归属判断
+## Appendix: the owner's rulings, and the kernel-vs-this-repo ownership calls
 
-**已定**：
-1. ✅ 规则与门槛并入 `AGENTS.md` 新增 **§7 Review & Auto-Merge Discipline**（唯一操作文本）。
-2. ✅ 范围限定：**跨仓库改动暂留人工**——自动合并门槛只作用于本仓库；acp-kernel bump / 任何跨仓改动一律人工处理。
-3. 「可自动合并」这套先作为 **reviewer 清单 + AGENTS.md 门槛**；是否再升级为 CI 硬门禁(gate)留待后续单独评估（涉及 CI 改动，属另一件事）。届时以 §7.4 为准。
+**Settled**:
+1. ✅ The rules and thresholds are folded into `AGENTS.md` as a new **§7 Review & Auto-Merge Discipline** (the single operative text).
+2. ✅ Scope is bounded: **cross-repo changes stay manual** — the auto-merge thresholds apply to this repo only. Any acp-kernel bump, or any cross-repo change, is handled by hand.
+3. "Auto-mergeable" first exists as a **reviewer checklist plus AGENTS.md thresholds**. Whether to promote it to a hard CI gate is deferred to a separate evaluation (it would mean changing CI, which is a different piece of work). When that happens, §7.4 governs.
 
-**内核 vs 本仓库归属判断**（owner 指出"还有一条落下了，需判断优先沉淀到内核还是本仓库"）：
-- 有真正归属歧义的是 **wire / 内核产物保真** 这一条。判定：**格式契约 + id 永不复用保证归 acp-kernel**（它产出并拥有 ACP 压缩标签、block ref、`acp_summary` 结构、ref 空间）；**本仓库只保留 host 侧义务**（忠实消费：不重生成 tool_call id/顺序、不裁剪 ref map、两种压缩模式都要想）。
-- 依据：`AGENTS.md` §2「Kernel Contract」早已把 id-never-reused 记为内核契约的 host 视角；§7.3 的 wire-fidelity 项已明确标注此 split。
-- 处置：内核侧的正式 spec **已在 acp-kernel 单独 PR 落地**（[acp-kernel#303](https://github.com/ranxianglei/acp-kernel/pull/303)，把 ref-id 不可复用 + wire-artifact 格式契约提升为一等不变量）；billion-context-pi 对应 PR 为 [pi#457](https://github.com/ranxianglei/billion-context-pi/pull/457)。
+**Kernel vs this repo — ownership calls** (the owner flagged one item that was still unplaced and needed a call on whether it belongs in the kernel or here):
+- The only genuine ownership ambiguity is **wire format and fidelity of kernel-produced artifacts**. The call: **the format contract and the never-reuse-an-id guarantee belong to acp-kernel** (it produces and owns the ACP compression tags, block refs, the `acp_summary` structure, and the ref space). **this repo keeps only the host-side obligations** (consume faithfully: do not regenerate tool_call ids or ordering, do not trim the ref map, think through both compression modes).
+- Basis: `AGENTS.md` §2 "Kernel Contract" already recorded never-reusing-ids as a kernel contract from the host's perspective. the wire-fidelity item in §7.3 marks this split explicitly.
+- Disposition: the kernel-side formal spec **has already landed as a standalone acp-kernel PR** ([acp-kernel#303](https://github.com/ranxianglei/acp-kernel/pull/303), promoting "ref ids are never reused" plus the wire-artifact format contract to first-class invariants). the corresponding billion-context-pi PR is [pi#457](https://github.com/ranxianglei/billion-context-pi/pull/457).

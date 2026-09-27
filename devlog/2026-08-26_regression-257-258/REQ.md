@@ -1,16 +1,19 @@
-# REQ — PR#257 + PR#258 本地合并联合回归
+# REQ — local joint regression of PR#257 + PR#258
 
 ## User request
 
-用户：「俩合并到一起然后本地测试？」——把 #257（omp 原生插件模式）与 #258（Responses 空白消息丢弃）本地合并，验证互相不影响，交付联合回归 PR（同 #250 先例）。
+User: "Merge the two together and test locally?" — merge #257 (omp native plugin mode) and #258
+(Responses blank-message dropping) locally, verify that they do not affect each other, and
+deliver a joint regression PR (same precedent as #250).
 
 ## Acceptance
 
-- 本地 merge 两分支（自 master 5982720）零冲突或合理解决
-- typecheck + 全量测试 + build 绿
-- 真机 e2e 同时命中两 PR 的行为
-- 联合回归分支推送 + PR
+- merge the two branches locally (from master 5982720) with zero conflicts or a reasonable
+  resolution
+- typecheck + the full test suite + build all green
+- a real-machine e2e that hits both PRs' behavior at the same time
+- push the joint regression branch + open a PR
 
 ## Outcome
 
-见 WORKLOG.md——四点一次 e2e 全部命中，PR 已建。
+See WORKLOG.md — a single e2e run hit all four points, and the PR has been opened.

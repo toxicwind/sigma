@@ -41,7 +41,7 @@
 
 - **Constraints**:
   - Backward compatibility: must not touch the real `~/.omp/agent/models.yml` (the
-    user's hard requirement: "禁止改models.yml").
+    user's hard requirement: "do not modify models.yml").
   - Zero new runtime dependencies: omp's `models.yml` is YAML; the project has no YAML
     parser, so a targeted line-based reader is used (mirrors `parseCodexToml`).
   - omp is pi-based: it honors `PI_CODING_AGENT_DIR`, so the pi isolated-home pattern

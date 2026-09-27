@@ -628,7 +628,7 @@ export async function* runCompressLoop(
                 if (realCalls > 0) ctx.log(`[acp-loop] round ${round}: ${realCalls} real tool call(s) forwarded to client`);
             }
 
-            // Per-round hygiene (fixes the injection-persistence 炸锅): the
+            // Per-round hygiene (fixes the injection-persistence blowup): the
             // philosophy systemPrompt is transient (passed fresh to buildRequest,
             // never in coreMessages), and hideConsumedCompressCalls runs each
             // round so consumed compress records cannot re-prime the model.

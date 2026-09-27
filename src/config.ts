@@ -797,8 +797,9 @@ export function loadOptions(env: NodeJS.ProcessEnv = process.env): ProxyOptions 
     const webProxy = nonEmpty(fileConfig.upstreamProxy);
     const configProxy = nonEmpty(fileConfig.proxy);
     const rawProxyMode = env.BILI_UPSTREAM_PROXY_MODE ?? fileConfig.upstreamProxyMode ?? (webProxy ? "manual" : undefined);
-    // Unset mode means "direct" (matches the web UI's 直连（默认） and ZCode's
-    // default), NOT auto-detect. To follow the system/env proxy, set mode "auto".
+    // Unset mode means "direct" (matching the web UI's zh-CN label
+    // 直连（默认）, "direct connection (default)", and ZCode's default), NOT
+    // auto-detect. To follow the system/env proxy, set mode "auto".
     const effectiveMode = rawProxyMode ?? "direct";
     const proxyMode = parseUpstreamProxyMode(effectiveMode);
     // explicitDirect short-circuits an EMPTY global proxy to "direct" (instead of

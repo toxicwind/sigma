@@ -2,23 +2,23 @@
 
 ## User request
 
-用户在 omp `--resume 01a03da3-d8b9-7000-8637-5d82777129fe` 会话里看到大量 1-token 空消息（模型自己枚举消息列表时发现）。追问链：
+The user saw a large number of 1-token empty messages in their omp `--resume 01a03da3-d8b9-7000-8637-5d82777129fe` session (they found them while the model was enumerating the message list itself). The chain of questions:
 
-1. 这些空消息哪来的？
-2. 是我们（bili）动态插入导致的吗？
-3. pi 里也会这样吗？是 SGLang 协议问题、客户端问题还是我们的问题？
-4. 消息不是 JSON 的吗，难道按回车拆分了？
-5. 和前面的 PR（#257 omp 原生插件）一起修吗？
+1. Where do these empty messages come from?
+2. Are we (bili) inserting them dynamically?
+3. Does pi do this too? Is it an SGLang protocol issue, a client issue, or our issue?
+4. Messages are JSON, are they not? Could something be splitting on carriage returns?
+5. Should it be fixed together with the earlier PR (#257, the omp native plugin)?
 
 ## Acceptance
 
-- 查明空消息来源与责任层
-- 修复：空消息在进投影前被丢弃，不再被盖标签/编号
-- 不影响带真实内容的消息（哪怕大部分是空白）
-- 全量测试 + typecheck + build 绿
-- 独立 PR（不与 #257 混）
+- Identify the source of the empty messages and the layer responsible.
+- Fix: empty messages are dropped before projection and are never tagged or numbered.
+- Messages carrying real content are unaffected, even when most of the content is whitespace.
+- The full test suite, typecheck, and build all stay green.
+- A standalone PR (not bundled with #257).
 
 ## Outcome
 
-- 根因：Responses wire 无混合 content 表达 → omp 把模型回合一回合 text 块摊平成独立 message item；模型（SGLang 习惯）工具调用前吐 `\n\n` → 独立空消息。bili 给 1-token 空白盖 42 字符 acp 标签 + 编号 → 10 倍膨胀 + ref 噪音 + 粘性（标签把空白变"非空"永久回放）。pi 不受影响（anthropic wire 块数组可原样放一条消息）。
-- 修复：`dropWhitespaceResponsesMessages` 在 `prepareResponses` 投影前剥标签判空白并删除；标签包真内容永不删。
+- Root cause: the Responses wire format has no way to express mixed content, so omp flattens the model's per-turn text blocks into individual message items. The model (following the SGLang habit) emits `\n\n` before a tool call, which becomes its own empty message. bili then stamps a 42-character acp tag plus a number onto that 1-token whitespace, which inflates it 10x, adds reference noise, and becomes sticky: the tag turns the whitespace into "non-empty" text that omp replays forever. pi is unaffected, because the anthropic wire format's block array can hold a whitespace block inside a mixed message as-is.
+- Fix: `dropWhitespaceResponsesMessages` strips the tag, checks for whitespace, and deletes the item before `prepareResponses` projects it. A tag that wraps real content is never deleted.

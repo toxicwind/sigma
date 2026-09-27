@@ -4,7 +4,7 @@
 2026-08-24
 
 ## References
-- Issue #195 (Hermes 完整支持)
+- Issue #195 (full Hermes support)
 
 ## Background
 

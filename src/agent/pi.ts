@@ -1,5 +1,6 @@
-// Thin agent extension for pi and omp ("内外呼应", issue #1). Loaded by pi
-// via the package.json `pi` manifest (dist/agent/pi.js) or by omp via the
+// Thin agent extension for pi and omp ("the agent and the proxy answering
+// each other across the process boundary", issue #1). Loaded by pi via the
+// package.json `pi` manifest (dist/agent/pi.js) or by omp via the
 // config.yml `extensions:` list (dist/agent/omp.js). pi and omp share the
 // ExtensionFactory API shape, so one factory serves both; types below are
 // minimal structural declarations — the bundled artifact imports NOTHING

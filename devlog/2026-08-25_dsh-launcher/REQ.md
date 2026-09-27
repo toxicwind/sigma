@@ -1,23 +1,23 @@
 # REQ — `bili dsh` launcher (deepseek-harness)
 
-用户需求: 适配 https://github.com/deepseek-ai/deepseek-harness,新增 `bili dsh` 启动器,与 `bili pi` / `bili hermes` 等并列。
+User request: support https://github.com/deepseek-ai/deepseek-harness by adding a `bili dsh` launcher that sits alongside `bili pi` / `bili hermes` and the rest.
 
-## 调研结论(实测验证)
+## Research findings (verified by hands-on testing)
 
-- npm 包 `@deepseek-ai/dsh` (bin: `dsh`),cordis 组合式插件架构,home = `$DSH_HOME` 或 `~/.dsh`。
-- settings 文档: `$DSH_HOME/settings.yaml`,按插件命名空间分节(`llm-pi-ai:` / `llm-deepseek:` 等),文档级 parse 失败会硬崩 boot,坏 section 静默惰性。
-- **默认路由 `deepseek-official` 不走 pi-ai catalog**: 专用适配器 `dsh-llm-deepseek`,baseUrl 解析链 `config.baseURL ?? $DEEPSEEK_BASE_URL ?? https://api.deepseek.com`(config 优先)。env 重定向实测有效。
-- 自定义 provider: `llm-pi-ai.providers.<route>` profile(`baseURL` 字段),pi-ai 纯 fetch,**无 proxy/CA 接口** → cert-MITM 不可行,全部 `/bili/` URL 重写。
-- agent-default-model 钉死 provider=deepseek-official + model=deepseek-v4-flash(headless profile)。
-- CLI: `dsh [--profile <name>] [args...]` 透传给 booted profile;`--profile headless "task"` one-shot e2e 可用。
+- npm package `@deepseek-ai/dsh` (bin: `dsh`), built on the cordis composable-plugin architecture, home = `$DSH_HOME` or `~/.dsh`.
+- Settings file: `$DSH_HOME/settings.yaml`, sectioned per plugin namespace (`llm-pi-ai:` / `llm-deepseek:` etc.). A document-level parse failure hard-crashes boot, while a bad section fails lazily and silently.
+- **The default route `deepseek-official` does not go through the pi-ai catalog**: it has its own dedicated adapter, `dsh-llm-deepseek`, with the baseUrl resolution chain `config.baseURL ?? $DEEPSEEK_BASE_URL ?? https://api.deepseek.com` (config wins). Env redirection verified working.
+- Custom providers: a `llm-pi-ai.providers.<route>` profile (`baseURL` field). pi-ai is a plain fetch with **no proxy/CA hook** → cert-MITM is not viable, so every `/bili/` URL gets rewritten instead.
+- agent-default-model hard-pins provider=deepseek-official + model=deepseek-v4-flash (headless profile).
+- CLI: `dsh [--profile <name>] [args...]` passes through to the booted profile; `--profile headless "task"` works for a one-shot e2e.
 
-## 设计(定案)
+## Design (final)
 
-1. 内置 deepseek-official 路由: launcher 设 `DEEPSEEK_BASE_URL=<origin>/bili/https://api.deepseek.com`(零配置可用;用户 settings 有 llm-deepseek.baseURL 时重写后的 config 优先,env 自动让位)。
-2. 用户 settings.yaml 自定义 providers: 持久 overlay `~/.dsh-bili`(同 hermes 模式),行级重写所有 `baseURL|baseUrl|base_url` 值,CRLF 保持,profiles/credentials/sessions symlink 共享,真实 `~/.dsh` 永不修改。
-3. 不做 catalog 注入(无法验证生效 + 污染配置面,砍掉)。
-4. 无插件 API,永远 wire 模式。
+1. Built-in deepseek-official route: the launcher sets `DEEPSEEK_BASE_URL=<origin>/bili/https://api.deepseek.com` (works with zero config; when the user's settings carry an `llm-deepseek.baseURL`, the rewritten config takes precedence and the env value automatically steps aside).
+2. Custom providers in the user's settings.yaml: a persistent overlay at `~/.dsh-bili` (same pattern as hermes) rewrites every `baseURL|baseUrl|base_url` value line by line, preserves CRLF, and shares profiles/credentials/sessions through symlinks; the real `~/.dsh` is never modified.
+3. No catalog injection (it cannot be verified as taking effect, and it pollutes the config surface — cut).
+4. There is no plugin API, so it is always wire mode.
 
-## 顺带修复
+## Drive-by fix
 
-e2e 发现 openai 适配器 emitCompletion 的 usage 缺数字段问题: 上游不发 usage 时 `prompt_tokens: undefined` 被 JSON.stringify 丢弃,合成 chunk 只剩 `{"total_tokens":0}`;dsh 的 mapUsage 对缺失字段算出 NaN/undefined → "non-JSON-serializable" 硬崩。修: `?? 0` 兜底(anthropic/responses 适配器已有守卫,openai 漏了)。
+e2e surfaced a missing numeric field in the openai adapter's emitCompletion usage object: when the upstream sends no usage, `prompt_tokens: undefined` is dropped by JSON.stringify and the synthesized chunk is left with only `{"total_tokens":0}`; dsh's mapUsage computes NaN/undefined for the missing fields → a hard "non-JSON-serializable" crash. Fix: `?? 0` fallbacks (the anthropic/responses adapters already guard; openai was missed).

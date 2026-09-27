@@ -1,16 +1,34 @@
-# 需求：omp 连续两次注入/两次压缩 + 81% 统计口径错误
+# Requirement: two consecutive injections/compressions under omp + a wrong 81% accounting basis
 
-用户报告（omp --resume 会话）：
-1. 02:56:35 INJECT 81% → 压缩 33k；02:57:41 又 INJECT 85% → 又压缩 3k —— 同一逻辑回合理应只压一次。
-2. 第一次 81% 本身就是错的：真实窗口 262144（omp models.yml 声明 + SGLang 实测收 234k），代理用了 95232 分母（内置表 /^qwen/i → 128000 − max_output 32768）→ 全会话在 29% 真实用量时被当成 81% 过早压缩。
+User report (an omp --resume session):
+1. 02:56:35 INJECT 81% → compressed 33k. 02:57:41 INJECT 85% again → compressed another 3k.
+   The same logical turn should only be compressed once.
+2. The first 81% was itself wrong. The real window is 262144 (declared in omp models.yml, and SGLang
+   measured accepting 234k), but the proxy used a denominator of 95232 (its built-in table,
+   /^qwen/i → 128000 − max_output 32768) → the whole session was treated as 81% full at 29% real
+   usage and compressed far too early.
 
-用户拍板："a 和 c 修复吧 尽量不要用户配置"（B=用户侧 providers 配置声明窗口，被否决）。
+The user ruled: "fix a and c, and try to avoid user configuration" (B, having the user declare the
+window in the provider config on their side, was rejected).
 
-## 修复 A：compress credit
-- 压缩后的 re-request 有意重发未折叠历史（前缀缓存友好，实测 96% 命中），其 usage 报告带的是压缩前尺寸 → 覆盖 lastInputTokens → 下一请求 nudge 重判陈旧值 → 重复注入。
-- 修复：applyRanges 成功后立即 net + 记 credit；所有 usage 记录器（loop recordUsage / plugin applyUsageSample / 非流式 JSON）net credit；下一请求 processTurn（折叠真正落地处）清零。真超限时照常触发；累计计费 inputTokens 保持原始值。
+## Fix A: compress credit
 
-## 修复 C：launcher 窗口上报
-- launcher 重写客户端配置时本来就读到每模型 contextWindow：pi models.json、omp models.yml、opencode models.<id>.limit、codex model+model_context_window。
-- 通过 BILI_LAUNCHER_MODEL_WINDOWS（JSON）传给拉起的代理；代理 native 链插入（plugin report > launcher > registry > routes/table）。
-- 零用户配置；只有 launcher 设这个 env（无头伪造风险面不存在）。
+- The re-request after a compression intentionally resends the unfolded history (friendly to the
+  prefix cache, 96% hit rate measured), and its usage report carries the pre-compression size → it
+  overwrites lastInputTokens → the next request's nudge re-judges against a stale value → repeated
+  injection.
+- Fix: record the net change immediately after `applyRanges` succeeds. Every usage recorder (the
+  loop's `recordUsage`, the plugin's `applyUsageSample`, and the non-streaming JSON path) applies the
+  credit. The next request's `processTurn` (where the fold actually lands) zeroes it. A genuine
+  over-limit still triggers as usual, and the cumulative billed `inputTokens` keeps its original
+  value.
+
+## Fix C: launcher window reporting
+
+- While rewriting the client config, the launcher already reads the per-model `contextWindow`:
+  pi's models.json, omp's models.yml, opencode's `models.<id>.limit`, and codex's
+  `model` + `model_context_window`.
+- Pass that to the spawned proxy via `BILI_LAUNCHER_MODEL_WINDOWS` (JSON). The proxy inserts it into
+  the native chain (plugin report > launcher > registry > routes/table).
+- Zero user configuration. Only the launcher sets this env var (so the headless-spoofing risk surface
+  does not exist).

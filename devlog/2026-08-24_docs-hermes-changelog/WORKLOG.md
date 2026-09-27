@@ -75,12 +75,22 @@
 - When PR #225 (v0.1.50) merges, move the [Unreleased] block into
   `[0.1.50] — <merge date>` in the next docs pass.
 
-## Follow-up 5: 用户重构 README.zh-CN.md 后的 review 修复
+## Follow-up 5: review fixes after the user rewrote README.zh-CN.md
 
-用户在 GitHub 网页直接精简了中文 README(-87 行: 方式0/A/B/C → 方式1/2/3, 删除 plugin-mode/表格/Web UI 章节, install 命令块挪进启动器章节)。review 发现 3 缺陷并修复(e6e481d + 9a52eca):
+The user slimmed the Chinese README down directly in the GitHub web UI, cutting 87 lines. The
+method sections 0/A/B/C became sections 1/2/3, the plugin-mode/table/Web UI sections were deleted,
+and the install command block moved into the launcher section. The review found three defects, all
+fixed in e6e481d plus 9a52eca:
 
-1. 开头 "2种方式" 与实际三节不一致 → 改 "3种方式" + 补第三 bullet(手动配置文件)
-2. :349 死锚点 `#方式-a-零配置bili-前缀`(标题已改) → 改为纯文字引用「方式 2 —— 改url」
-3. 遗留 TODO 行 → 落成正文「什么时候才需要 install?」段: 压缩永远不需要(wire 注入兜底); 启动器完全不需要; 改url+想要原生面板才 install(pi/omp/opencode 装后多 /acp; claude/codex MCP 工具但无 /acp; hermes 只能 wire); 不装可让模型调 acp_status
+1. The opening said "2 种方式" (two ways) while the document actually had three sections → changed to
+   "3 种方式" and added the third bullet (editing the config file by hand).
+2. A dead anchor at line 349, `#方式-a-零配置bili-前缀`, pointed at a heading that had changed →
+   replaced with a plain-text reference to 「方式 2 —— 改url」.
+3. A leftover TODO line → turned into a real body section, 「什么时候才需要 install?」, covering
+   what compression never needs (wire injection is the fallback), what the launcher never needs, and
+   when an install is actually required (editing the url and wanting the native panel). After an
+   install, pi/omp/opencode gain /acp, claude/codex gain the MCP tools but no /acp, and hermes is
+   limited to wire. Without an install the model can still call acp_status.
 
-尊重用户精简取舍, 未恢复被删内容(Web UI 章节删除是用户决定, 产品功能仍在)。
+The user's editorial choice was respected, so nothing deleted was restored. Removing the Web UI
+section was the user's decision, and the product feature still exists.

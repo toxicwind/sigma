@@ -35,7 +35,8 @@ const PROXY_VERSION = (() => {
     }
 })();
 
-// Cooperative plugin protocol ("内外呼应", issue #1): an agent-side plugin
+// Cooperative plugin protocol ("the agent and the proxy answering each other
+// across the process boundary", issue #1): an agent-side plugin
 // registers the ACP tools NATIVELY with its agent and runs the agent's own
 // tool loop, while the proxy stays the single compression authority (state,
 // history folding, philosophy prompt, nudges). The plugin:

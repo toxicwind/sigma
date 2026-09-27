@@ -1,6 +1,6 @@
 # Request
 
-User (2026-08-25): "再修复首次启动后 Warning: bili: no ACP session yet (send a model request first, then run /acp) 这个问题" — right after `bili pi` starts, running `/acp` before any model request showed a scary warning instead of useful status.
+User (2026-08-25): "one more fix: the problem where, right after the first launch, you get `Warning: bili: no ACP session yet (send a model request first, then run /acp)`" — right after `bili pi` starts, running `/acp` before any model request showed a scary warning instead of useful status.
 
 ## Root cause
 

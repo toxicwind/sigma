@@ -11,7 +11,7 @@
 ## 1. Background & Problem Statement
 
 - **Context**: `ensureProxyRunning` probed the preferred port (default 8787) and, when a healthy listener answered with compatible MITM domains, reused it instead of spawning a new proxy.
-- **Current behavior (symptom)**: a detached `bili start` proxy from an earlier session (12h old, old code) keeps squatting on 8787 forever; every subsequent `bili <client>` silently routes through that stale process. User directive: "bili 命令不应该复用任何端口 应该每次都是新的才对".
+- **Current behavior (symptom)**: a detached `bili start` proxy from an earlier session (12h old, old code) keeps squatting on 8787 forever; every subsequent `bili <client>` silently routes through that stale process. User directive: "the bili command must never reuse any port — every launch should get a brand-new one".
 - **Impact**: stale-code proxies shadowing fresh launches; config drift (wrong MITM domains can still be reused when they happen to sit inside the default set); orphaned listeners that nothing ever reclaims.
 
 ## 4. Acceptance Criteria

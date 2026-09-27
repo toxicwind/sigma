@@ -1,52 +1,71 @@
-# WORKLOG — PR#257 + PR#258 联合回归
+# WORKLOG — joint regression of PR#257 + PR#258
 
 ## 2026-08-26
 
-### 合并
+### Merge
 
-- 分支 `2026-08-26_regression-257-258` 自 master `5982720`
-- merge #257（4ca494e）+ merge #258（7f33f9e）——**零冲突**（#257 改 agent/pi.ts + plugin-agent.test.ts + CONFIGURATION；#258 改 loop/adapter-responses.ts + server.ts prepareResponses + 新测试文件；CHANGELOG [Unreleased] 两分支各插一条，合并后无重复）
-- 预检：typecheck ✓ / **636/636**（632+4 新增）/ build ✓
+- Branch `2026-08-26_regression-257-258` from master `5982720`
+- merge #257 (4ca494e) + merge #258 (7f33f9e) — **zero conflicts** (#257 changed agent/pi.ts +
+  plugin-agent.test.ts + CONFIGURATION; #258 changed loop/adapter-responses.ts + server.ts
+  prepareResponses + a new test file; each branch inserted one line into CHANGELOG
+  [Unreleased], and the merge left no duplicate)
+- Pre-check: typecheck ✓ / **636/636** (632 + 4 new) / build ✓
 
-### e2e 布置
+### e2e setup
 
-- `/tmp/reg-e2e/`：隔离 `PI_CODING_AGENT_DIR`（models.yml 指向 mock）、`BILI_SESSIONS_DIR` 隔离
-- mock.py（tmux regmock, 127.0.0.1:19941）：**内容路由**（不用轮次计数——第一次尝试用轮次计数翻车：omp 的 title 请求抢走了 turn 1 脚本）：
-  - 无 tools → title 请求 → 纯文本标题
-  - 有 tools 且 input 无 `function_call_output` → 主回合 1 → **空白 text("\n\n") 块 + function_call(acp_status)** 混合回合（一次制造摊平空消息 + 原生工具调用两个验证条件）
-  - 有 `function_call_output` → 最终文本 `REG-E2E-OK-2`
-  - 每请求记录 tools 名单 + input 条目形态（含每 text 部件字数 / WS 标记）
-- 跑法：`node dist/index.js --no-auto-update --port 19942 omp -p "status please"`（launcher 自起代理，实际用了 37349）
+- `/tmp/reg-e2e/`: isolated `PI_CODING_AGENT_DIR` (models.yml pointing at the mock), isolated
+  `BILI_SESSIONS_DIR`
+- mock.py (tmux regmock, 127.0.0.1:19941): **routing by content** (not by turn count — the first
+  attempt counted turns and backfired: omp's title request stole turn 1's script):
+  - no tools → title request → plain-text title
+  - has tools and input has no `function_call_output` → main turn 1 → **a blank
+    text("\n\n") block + function_call(acp_status)** mixed turn (manufacturing both verification
+    conditions — a flattened empty message and a native tool call — in one go)
+  - has `function_call_output` → final text `REG-E2E-OK-2`
+  - log the tools list and the shape of the input entries for every request (including the
+    character count of each text part / WS markers)
+- How it was run: `node dist/index.js --no-auto-update --port 19942 omp -p "status please"`
+  (the launcher starts the proxy itself; it actually used 37349)
 
-### e2e 结果（一次运行四点全中）
+### e2e results (all four points hit in a single run)
 
-| 验证点 | 证据 |
+| Verification point | Evidence |
 |---|---|
-| #257 原生工具进主回合 | 主回合 tools = omp 内置 11 + `compress,decompress,search_context,acp_status` **单份**（mock log turn 2） |
-| #257 identity 绑定 | 两轮主回合均 `injectTool=false (plugin mode: wire injection suppressed)`（首请求即绑定） |
-| #257 原生工具真执行 | `[plugin] tool acp_status executed via plugin (285 chars)`——模型调 acp_status → omp 校验 → forwardTool → /__bili/plugin/tool → 内核真实裁决 |
-| #258 空白消息丢弃 | 回合 2 请求 omp 回放摊平条目 → `dropped 1 whitespace-only message item(s) before projection (flattened-turn artifact)` → mock turn 3 input 只剩 `[developer, user, function_call, function_call_output]`，**无空白 message item** |
+| #257 native tools reach the main turn | main-turn tools = omp's 11 built-ins + `compress,decompress,search_context,acp_status`, **one copy each** (mock log turn 2) |
+| #257 identity binding | both main turns log `injectTool=false (plugin mode: wire injection suppressed)` (bound on the first request) |
+| #257 native tools really execute | `[plugin] tool acp_status executed via plugin (285 chars)` — the model calls acp_status → omp validates it → forwardTool → /__bili/plugin/tool → the kernel actually adjudicates it |
+| #258 blank messages dropped | turn 2's request replays the flattened entries → `dropped 1 whitespace-only message item(s) before projection (flattened-turn artifact)` → the mock's turn 3 input holds only `[developer, user, function_call, function_call_output]`, with **no blank message item** |
 
-- 交互零污染：隔离 PI_CODING_AGENT_DIR + launcher 临时 overlay；exit 0，输出 `REG-E2E-OK-2`
+- Zero interaction pollution: isolated PI_CODING_AGENT_DIR + the launcher's temporary overlay;
+  exit 0, output `REG-E2E-OK-2`
 
-### 收尾
+### Wrap-up
 
-- 清理 tmux regmock/regproxy + `/tmp/reg-e2e`
-- push 分支 → PR（联合回归，同 #250 模式；#257/#258 各留 supersede 评论）
+- Cleaned up tmux regmock/regproxy + `/tmp/reg-e2e`
+- pushed the branch → PR (joint regression, same pattern as #250; a supersede comment left on
+  #257/#258)
 
-### 教训
+### Lessons
 
-- mock 路由**按请求内容**（有无 tools / 有无 function_call_output），不要按轮次计数——omp 的 title 请求（无 tools）会抢走第一轮脚本
-- omp headless 单次 `-p` 运行天然多轮：主回合工具调用 → omp 执行 → 回放 function_call+output 即第二轮请求，足够验证 #258
+- The mock router should route **by request content** (tools present or not / function_call_output
+  present or not), not by turn count — omp's title request (no tools) will steal the first turn's
+  script
+- A single omp headless `-p` run is naturally multi-turn: the main turn's tool call → omp executes
+  it → replaying function_call+output is the second request, which is enough to verify #258
 
-### 补漏（review 发现，合并后追加）
+### Gap found in review, appended after the merge
 
-- 上面的本地 merge 只拉进了两个 PR 的**初始 commit**（f5342f3 / 7e7fbb1），漏掉了各自 review 期间推上的修复：
-  - `2a1bd22`（#257 分支）：identity register 失败后重试——不修则 register 失败会把整个 session 钉死在 wire 模式（ACP 工具双份）
-  - `21fa531`（#258 分支）：CHANGELOG 重复的 `### Fixes` 标题
-- 补两个 merge（零冲突）：`a05cba5`（merge #257 head）+ `cffc5d5`（merge #258 head）
-- 重跑预检：typecheck ✓ / **636/636** / build ✓（dist/index.js 2.48 MB，dist/agent/omp.js 11.79 KB）
-- e2e 结论对新树仍成立：2a1bd22 只改 register **失败**路径（e2e 走的是首请求即绑定成功的 happy path，终态一致）；21fa531 纯 docs
+- The local merge above pulled in only the two PRs' **initial commits** (f5342f3 / 7e7fbb1) and
+  missed the fixes each pushed during review:
+  - `2a1bd22` (#257 branch): retry after an identity register failure — without the fix, a
+    register failure pins the whole session into wire mode (ACP tools duplicated)
+  - `21fa531` (#258 branch): a duplicated `### Fixes` heading in CHANGELOG
+- Two more merges (zero conflicts): `a05cba5` (merge #257 head) + `cffc5d5` (merge #258 head)
+- Re-ran the pre-check: typecheck ✓ / **636/636** / build ✓ (dist/index.js 2.48 MB,
+  dist/agent/omp.js 11.79 KB)
+- The e2e conclusion still holds for the new tree: 2a1bd22 only changes the register **failure**
+  path (the e2e walked the happy path where binding succeeds on the first request, so the end
+  state is identical); 21fa531 is docs-only
 
 ## Follow-up: plugin-mode passthrough tag-echo strip (same day)
 

@@ -39,7 +39,7 @@ confirmed by code read + red tests before the fix:
 
 - The retry must be provably side-effect-free: nothing forwarded to the
   client, no tool calls executed, no usage recorded, no state mutation.
-- At most ONE retry per request (the issue says "走一次").
+- At most ONE retry per request (the issue says "just once").
 - No new dependencies; `fetchWithRetry` reuse (same backoff/env knobs).
 - The re-request path's behavior (degraded retry, #189 rejection logging)
   is unchanged; only its `fetchUpstream` definition is hoisted.

@@ -2,3 +2,24 @@
 # Without this, Git-for-Windows' default autocrlf=true converts them to CRLF at
 # checkout and the byte-equal golden gates fail on every Windows CI run.
 tests/golden/wire-contract/*.json text eol=lf
+
+# Upstream pull: structured files merge with weave (the git merge driver),
+# not the line-based fallback. A three-way merge of package.json or a
+# version manifest is a semantic conflict the line matcher cannot see — it
+# happily picks one side's "version" and one side's "scripts" and produces a
+# file that parses but describes no real package. weave resolves at the level
+# of entities, so a dependency that moved on both sides stays one dependency.
+# Binary and asset files are marked explicitly so no driver is ever handed
+# bytes it cannot read.
+package.json       merge=weave
+package-lock.json  merge=weave
+*.json             merge=weave
+*.yaml             merge=weave
+*.yml              merge=weave
+*.toml             merge=weave
+*.md               merge=weave
+*.node -merge binary
+*.wasm -merge binary
+*.png  -merge binary
+*.jpg  -merge binary
+*.pdf  -merge binary

@@ -1,21 +1,29 @@
 # WORKLOG
 
-1. 证实 omp 17.3.8 发行包无 billion-context 痕迹; `bili omp` 分支原本无 -e 注入(pi 有)。
-2. 实现 ompPluginLoadedFrom + launcher -e 注入 + 3 态测试(runLaunch omp 矩阵/单元四态)。
-3. e2e 追凶: argv 注入成功但 x-bili-plugin 头为 0 → 探针证明 omp 只发 session_start,
-   无 before_provider_headers 事件。
-4. 尝试 identity register(POST /__bili/plugin/register identity:true): 服务端绑定
-   全链路验证成功(curl 复现 + omp 真机 consume 匹配), 但发现 omp 主回合请求从不包含
-   extension 注册工具(仅内部 title 请求可见) → 绑定 pluginMode 反而让模型失去 ACP 工具
-   → 否决该方案, 撤销 postIdentityRegister。
-5. 中途发现 server.ts:1187 日志 bug: 打印 injectTool=${shouldInject}(原始 flag)而非
-   injectTools(有效值) → 修复为有效值 + plugin mode 标记。
-6. 最终验证: headless 两轮任务 wire 工具 4/4 注入 + FINAL-E2E-OK; tmux 交互 /acp
-   面板渲染(billion-context@0.1.54, Context 0%/200k)。603/603 + typecheck + build。
+1. Confirmed the omp 17.3.8 distribution package has no billion-context traces. The `bili omp`
+   branch originally had no -e injection (pi had one).
+2. Implemented `ompPluginLoadedFrom` + the launcher -e injection + a 3-state test (a `runLaunch omp`
+   matrix and a four-state unit test).
+3. e2e hunted the culprit: the argv injection succeeded but the `x-bili-plugin` header count was 0
+   → the probe showed omp only sends `session_start` and has no `before_provider_headers` event.
+4. Tried an identity register (POST `/__bili/plugin/register` with `identity: true`). The server-side
+   binding was verified end to end (reproduced with curl, and omp's real consume matched), but it
+   turned out that an omp main-turn request never includes the extension-registered tools (they are
+   visible only to the internal title request) → binding pluginMode actually strips the model of the
+   ACP tools. That approach was rejected and `postIdentityRegister` was reverted.
+5. Along the way, a log bug surfaced at server.ts:1187. It printed
+   `injectTool=${shouldInject}` (the raw flag) instead of `injectTools` (the effective value) →
+   fixed to print the effective value plus a plugin-mode marker.
+6. Final verification: two headless task rounds with 4/4 wire tools injected + FINAL-E2E-OK, and
+   the tmux interactive /acp panel rendering (billion-context@0.1.54, Context 0%/200k).
+   603/603 + typecheck + build.
 
-教训:
-- 排查注入与否别信 injectTool= 日志 flag(修复前打的是原始值), 看 fwdTools 列表内容。
-- omp(17.x) extension 工具只进 title 请求, 不进主回合工具面 —— 任何依赖"原生工具"
-  的 omp 方案都不可行, omp 的正确定位 = wire 工具 + /acp 命令 + pck 身份。
-- 真实 ~/.omp/agent 的 config.yml 末行无换行, 手工 append extensions 会拼坏 YAML
-  (omp 会把坏文件挪走); ompInstall 代码里已处理此坑。
+Lessons:
+- When debugging whether injection happened, do not trust the `injectTool=` log line (before the fix
+  it printed the raw value). Read the contents of the `fwdTools` list instead.
+- In omp (17.x), extension tools reach only the title request, not the main-turn tool surface. Any
+  omp approach that depends on "native tools" is therefore unworkable. omp's correct position is
+  wire tools plus the /acp command plus pck identity.
+- The real `~/.omp/agent` config.yml has no trailing newline on its last line, so appending
+  `extensions` by hand corrupts the YAML (omp moves a broken file aside). The `ompInstall` code
+  already handles this trap.

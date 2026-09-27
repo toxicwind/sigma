@@ -222,7 +222,7 @@ const TRANSIENT_BODY_MARKERS = [
     "captcha",
     "verify failed",
     "risk control",
-    "风控",
+    "风控", // literal in a zh-CN upstream body, meaning risk control
     "rate limit",
     "too many requests",
     "try again",

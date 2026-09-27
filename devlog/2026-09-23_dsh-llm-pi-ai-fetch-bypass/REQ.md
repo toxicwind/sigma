@@ -1,8 +1,8 @@
-# REQ - dsh profile 安装"零模型请求"会话:让症状可自查、可一次定性(#1158)
+# REQ - "zero model request" sessions under the dsh profile: making the symptom self-diagnosable and settleable in one pass (#1158)
 
 - Task ID: `2026-09-23_dsh-llm-pi-ai-fetch-bypass`
 - Home Repo: `billion-context`
-- Created: 2026-09-23(同日二次修订:根因归因撤回,见 §1)
+- Created: 2026-09-23 (second revision the same day: the root-cause attribution was withdrawn, see §1)
 - Status: Done
 - Priority: P1
 - Owner: xiaofengkuai / ework-agent
@@ -10,40 +10,40 @@
 
 ## 1. Background & Problem Statement
 
-- **Context**: dsh 原生插件(profile 安装,免启动器)经 `globalThis.fetch` 补丁接管模型流量(`src/agent/native-intercept.ts`),归属判定依赖 `takeoverGate`(dsh AsyncLocalStorage initiator)。
-- **Reported symptom(真实成立)**: dsh web GUI(profile `web`)下部分 `llm-pi-ai` 层传输服务的会话**从未有任何模型请求到达代理** —— bili.log 零 `processTurn`,`/__bili/stats` 无会话,`acp_status` 404 "no model request has arrived",压缩静默失效且不可自查;同宿主其他 provider 正常。
-- **Root-cause status(重要修订)**: issue 原文与本文初稿断言的根因 —— "pi-ai 把注入的私有 fetch 传给 OpenAI SDK,绕过全局 fetch 拦截" —— **已被 owner 复核证据推翻**:逐层拆包(dsh-llm-pi-ai 全代次 / pi-ai 0.82.1–0.87.1 / openai SDK 6.26–6.40)显示 `options?.fetch` 自上游即为 `undefined`,SDK 构造时回落到 globalThis fetch(即已被补丁的实例);dsh 源码主聊天回路静态上被 `withInitiator` 包裹,llm 相关包零 `withoutInitiator`。issue 引用的 openai-completions.js :573-579 只证明注入通道**存在**,不证明被填充。真因待运行时证据定性,候选:(a) 报告环境存在未见过的版本组合形态;(b) 宿主运行时归属缺口(gate 拒绝静默直连);(c) A/B 对照不在同一进程/会话。owner 正在搭真实 dsh + bili + mock 上游全链路复现。
-- **Expected behavior**: (issue 期望 #2 退一步方案)无论真因是哪个,请求未被接管时必须留下可操作痕迹:代理侧一次性告警 + 工具报错携带排查指引 + 宿主侧 gate 拒绝点可观测。
-- **Impact**: 所有经 profile 安装(裸 dsh)且出现该症状的用户;功能静默失效。
+- **Context**: dsh's native plugin (installed through a profile, no launcher) takes over model traffic via a `globalThis.fetch` patch (`src/agent/native-intercept.ts`), and attribution is decided by `takeoverGate` (dsh's AsyncLocalStorage initiator).
+- **Reported symptom (genuinely real)**: under the dsh web GUI (profile `web`), sessions on some `llm-pi-ai` transport layer **never have any model request reach the proxy at all** — bili.log shows zero `processTurn`, `/__bili/stats` has no such session, `acp_status` 404s with "no model request has arrived", and compression fails silently with no way to self-diagnose; other providers on the same host work normally.
+- **Root-cause status (important revision)**: the root cause asserted by the original issue text and by this document's first draft — "pi-ai hands the injected private fetch to the OpenAI SDK, bypassing the global fetch interception" — **has been overturned by the owner's review of the evidence**: unpacking every layer (dsh-llm-pi-ai all generations / pi-ai 0.82.1–0.87.1 / openai SDK 6.26–6.40) shows that `options?.fetch` is `undefined` right from upstream, and the SDK falls back to the globalThis fetch (i.e. the already-patched instance) when it is constructed; statically, dsh's main chat loop in the source is wrapped in `withInitiator`, and the llm-related packages contain zero `withoutInitiator`. The openai-completions.js :573-579 lines cited in the issue only prove that the injection channel **exists**, not that it is ever populated. The real cause still has to be settled from runtime evidence; the candidates: (a) the reporting environment runs a combination of versions we have not seen before; (b) a host-runtime attribution gap (the gate rejects the traffic with a silent direct connection); (c) the A/B comparison did not happen in the same process/session. The owner is standing up a real dsh + bili + mock-upstream end-to-end reproduction right now.
+- **Expected behavior**: (the issue's expectation #2, a one-step-back option) whatever the real cause turns out to be, a request that was not taken over must leave actionable traces: a one-time warning on the proxy side + tool errors carrying troubleshooting guidance + an observable gate rejection point on the host side.
+- **Impact**: every user who installed via a profile (bare dsh) and hits this symptom; the feature fails silently.
 
 ## 2. Reproduction
 
-- **Environment**: Windows 11,dsh web GUI(profile `web`),billion-context 0.1.138,`bili plugin install dsh`,provider 为 settings.yaml `llm-pi-ai.providers.*` 下任意一项。
+- **Environment**: Windows 11, dsh web GUI (profile `web`), billion-context 0.1.138, `bili plugin install dsh`, with the provider being any one entry under `llm-pi-ai.providers.*` in settings.yaml.
 - **Minimal reproduction steps**:
   1) `bili plugin install dsh`;
-  2) dsh 中选 `llm-pi-ai` 管理的 provider 发几条消息;
-  3) bili.log 无该会话 `processTurn`;`acp_status` 报 "no model request has arrived with this conversation id yet"。
-  对照:同环境换用走普通全局 fetch 的第三方 provider(commandcode = 第三方插件 `@mars-sea/dsh-commandcode-provider`,与官方 llm-pi-ai 是两套实现),`processTurn` 立即出现。
-- **本地无法完整复现**(需 Windows + dsh web GUI);本 PR 交付的是检测与仪器,使 owner 的运行时复现一次即可定性(见 §4.3)。
+  2) in dsh, pick a provider managed by `llm-pi-ai` and send a few messages;
+  3) bili.log has no `processTurn` for that session; `acp_status` reports "no model request has arrived with this conversation id yet".
+  Control: in the same environment, switch to a third-party provider that goes through the ordinary global fetch (commandcode = third-party plugin `@mars-sea/dsh-commandcode-provider`, a separate implementation from the official llm-pi-ai) and `processTurn` shows up immediately.
+- **Cannot be fully reproduced locally** (needs Windows + the dsh web GUI); what this PR delivers is detection and instrumentation, so that the owner's runtime reproduction can settle the question in a single pass (see §4.3).
 
 ## 3. Constraints & Non-Goals
 
 - **Constraints**:
-  - 不得改变 `/__bili/plugin/tool` 404 错误中 `src/mcp.ts`(ORPHAN_ADOPT)与 `src/agent/opencode-v2.ts` 匹配的既有子串 `no model request has arrived` / `no model request has arrived with this conversation id yet`;
-  - 不得触碰 `src/update.ts`、release 流程、acp-kernel pin(#7.4 auto-merge 禁区);
-  - 内容分支不动 version;gate 布尔契约不变(加日志不改判定)。
+  - must not change the existing substrings `no model request has arrived` / `no model request has arrived with this conversation id yet` inside the `/__bili/plugin/tool` 404 error, which are matched by `src/mcp.ts` (ORPHAN_ADOPT) and `src/agent/opencode-v2.ts`;
+  - must not touch `src/update.ts`, the release process, or the acp-kernel pin (the #7.4 auto-merge forbidden zone);
+  - the content branch does not bump the version; the gate's boolean contract is unchanged (adding logs does not change the verdict).
 - **Non-Goals**:
-  - 通用拦截任意注入式 fetch(不可行:函数引用私有于宿主模块图,pnpm 隔离阻断跨模块补丁;undici 内部补丁过于侵入)。若运行时证据最终指向传输层 fetch 形态,真正修复属于 dsh 仓库(惰性解析 global fetch / 中间件 seam),跨仓保持人工;
-  - 不给每个被拒请求打日志(#1117 的每请求静默仍保持):合法无归属车道(dsh 有意 `withoutInitiator` 的后台 driver、第三方进程内插件)最多每端点一行常驻噪声;
-  - 不动 `handlePluginCompact` 的同型 404 文案(非本症状路径)。
+  - generically intercepting any injected fetch (not feasible: the function reference is private to the host's module graph, pnpm isolation blocks cross-module patching, and patching undici internals is too invasive). If the runtime evidence ultimately points at the transport layer's fetch shape, the real fix belongs in the dsh repo (lazy resolution of the global fetch / a middleware seam) and stays manual across repos;
+  - do not log every rejected request (the per-request silence of #1117 stays): legitimate unattributed lanes (dsh's background drivers that are intentionally `withoutInitiator`, third-party in-process plugins) get at most one standing noise line per endpoint;
+  - do not touch the same-shaped 404 text in `handlePluginCompact` (not on this symptom's path).
 
 ## 4. Chosen Approach
 
-假设中立的检测 + 一次性可操作告警 + gate 拒绝仪器 + 文档:
+Detection that assumes nothing, a one-time actionable warning, gate rejection instrumentation, and documentation:
 
-1. `handlePluginTool` 对"从未注册过"的 conversation(!entry)打**每会话一次性** `[plugin] NO MODEL REQUESTS seen for conversation …` 告警,列出候选成因(传输层 fetch 形态绕过拦截 / 宿主归属缺口致流量未被 gate 认领 / host resume 后 id 过期)+ 自查方法(发消息看 processTurn;走客户端 bili 启动器的 baseURL 重写在两种假设下都必然过代理)+ 404 error body 追加同样指引(保留既有子串);
-2. `takeoverGate`(dsh-native)对**每端点每进程一次性**经 console.error 记录被拒 origin+pathname(query 剥离防泄 key)+ 当时归属状态(无 initiator / 有 initiator 缺 session id)—— 有拒绝行且聊天轮次本应归属 → 指向运行时归属缺口;无任何拒绝行而流量仍绕 → 指向传输层 fetch 形态;
-3. README zh/en dsh 节条目改为"已报告、调查中"(撤回"已知局限=llm-pi-ai 注入 fetch"的断言),给出两个检测信号与启动器规避;
-4. 回归测试:`tests/issue1158-no-model-request-warning.test.ts`(子串保持、一次性语义、entry 分支旧行为不变、文案不得点名单一已确认成因)+ `tests/dsh-native.test.ts` 新增 gate 拒绝日志测试(每端点一次、query 不入日志、不同端点各一行、有归属静默认领)。
-5. **引导失败持久化到 bili.log(同日三次修订)**:owner Linux 全链路复现(headless + chromium 驱动 web GUI)未能复现症状,llm-pi-ai 全部流量均过代理;传输形态假设在 Linux 上出局,残余最大嫌疑 = Windows 特有的 spawn/attach 引导失败静默降级——唯一输出是一次性 console.error,GUI 进程 stderr 不可见。故 dsh-native 所有降级点(bootstrap catch / attach 目标不健康回落 / 三处 respawn onGiveUp)同时经 `persistClientEvent` 以 `[dsh-client]` 标记行追加进共享 bili.log(与代理 tee 日志同文件同行形,best-effort 永不向宿主抛错);console.error 双通道保留。
-6. **Gate 三态 + 累计计数(L2 follow-up,#1187 落地后)**:报告者运行时证据钉死根因(dsh-http-proxy settings-refresh re-arm 用冻结的 pre-bili capture 覆写 `globalThis.fetch`,把 bili 踢出链;owner 已在 #1187 以 guarded accessor 自愈 L1)。按线程内达成一致的计划升级 gate 仪器:`attributionOf` 三态(ok / none / threw-with-message —— 旧 bare catch 把 `currentInitiator()` 异常吞成"无归属",throwing ALS 边界与合法 agentless 车道不可区分);每端点首次拒绝打一行(格式不变)+ 同态静默累计计数 + 仅状态迁移时重打 `(state none→threw)`;每条打印行同时经 persistClientEvent 追加进 bili.log(`[dsh-client]` 标记,GUI stderr 不可见是本次"零痕迹"的直接原因)。gate 布尔契约不变,#1117 每请求静默保持。
+1. `handlePluginTool` emits a **once-per-session** `[plugin] NO MODEL REQUESTS seen for conversation …` warning for conversations that were "never registered" (!entry), listing the candidate causes (transport-layer fetch shape bypassing interception / host attribution gap so the traffic is never claimed by the gate / id expired after a host resume) + how to self-diagnose (send a message and watch for processTurn; the baseURL rewrite done by the bili launcher goes through the proxy under both hypotheses, without exception) + the same guidance appended to the 404 error body (keeping the existing substrings);
+2. `takeoverGate` (dsh-native) records, **once per endpoint per process**, the rejected origin+pathname (query stripped to avoid leaking keys) + the attribution state at that moment (no initiator / initiator present but session id missing) through console.error — a rejection line exists while a chat turn should have been attributed → points at a runtime attribution gap; no rejection lines at all yet traffic still bypasses → points at the transport-layer fetch shape;
+3. the dsh sections in the README (zh/en) change from "known limitation = llm-pi-ai injects fetch" to "reported, under investigation" (withdrawing the assertion), and give the two detection signals plus the launcher workaround;
+4. regression tests: `tests/issue1158-no-model-request-warning.test.ts` (substrings preserved, once-only semantics, the entry branch's old behavior unchanged, the wording must not name a single confirmed cause) + a new gate-rejection-log test in `tests/dsh-native.test.ts` (once per endpoint, query never logged, one line per distinct endpoint, silent by default when attribution succeeds).
+5. **Bootstrap failures persisted into bili.log (third revision the same day)**: the owner's Linux end-to-end reproduction (headless + chromium driving the web GUI) failed to reproduce the symptom — all llm-pi-ai traffic went through the proxy; the transport-shape hypothesis is out of the running on Linux, and the largest remaining suspect = a Windows-specific spawn/attach bootstrap failure that silently degrades — its only output is a one-time console.error, and the GUI process's stderr is invisible. So every degradation point in dsh-native (the bootstrap catch / the fallback when the attach target is unhealthy / the three respawn onGiveUp sites) is simultaneously appended, through `persistClientEvent`, as a `[dsh-client]`-tagged line into the shared bili.log (same file, same line shape as the proxy's tee log, best-effort, never throws back to the host); the console.error dual channel is kept.
+6. **Gate tri-state + cumulative counters (L2 follow-up, landed after #1187)**: the reporter's runtime evidence nailed the root cause (dsh-http-proxy's settings-refresh re-arm overwrites `globalThis.fetch` with a frozen pre-bili capture, kicking bili out of the chain; the owner already self-healed L1 with a guarded accessor in #1187). Per the plan agreed within the thread, the gate instrumentation is upgraded: `attributionOf` becomes tri-state (ok / none / threw-with-message — the old bare catch swallowed a `currentInitiator()` exception into "no attribution", which makes a throwing ALS boundary indistinguishable from a legitimate agentless lane); the first rejection per endpoint prints one line (format unchanged) + a silent running counter for the same state + a reprint only on a state transition (`state none→threw`); every printed line is simultaneously appended to bili.log through persistClientEvent (`[dsh-client]` tag — the invisible GUI stderr is the direct cause of this "zero traces" round). The gate's boolean contract is unchanged, and #1117's per-request silence holds.
