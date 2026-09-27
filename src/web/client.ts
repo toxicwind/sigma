@@ -146,9 +146,9 @@ export const WEB_CLIENT = `(function () {
             $("st-sessions-sub").textContent = liveN + " " + t("ov.live_now") + " · " + Math.max(0, total - liveN) + " " + t("ov.hist");
             $("st-reqs").textContent = o.requests ? fmtW(o.requests) : t("common.none");
             $("st-gross").textContent = o.grossSavedTotal ? fmtW(o.grossSavedTotal) : t("common.none");
-            $("st-gross-sub").textContent = (o.savedEstimated || 0) > 0 ? t("ov.saved_from_legacy", { n: fmtW(o.savedEstimated) }) : t("common.tokens");
+            $("st-gross-sub").textContent = t("ov.gross_note") + ((o.savedEstimated || 0) > 0 ? " · " + t("ov.saved_from_legacy", { n: fmtW(o.savedEstimated) }) : "");
             $("st-netsaved").textContent = o.hasFoldData ? ((o.netSavedTotal || 0) < 0 ? "-" : "") + fmtW(Math.abs(o.netSavedTotal || 0)) : t("common.none");
-            $("st-net-sub").textContent = o.hasFoldData ? t("ov.sub_repay", { r: fmtW(o.repayTotal || 0), s: fmtW(o.summaryCostTotal || 0) }) : "";
+            $("st-net-sub").textContent = o.hasFoldData ? t("ov.sub_repay", { r: fmtW(o.repayTotal || 0), s: fmtW(o.summaryCostTotal || 0) }) + ((o.savedEstimated || 0) > 0 ? " · " + t("ov.net_excl") : "") : "";
             $("st-hitpct").textContent = o.hitPct == null ? t("common.none") : o.hitPct.toFixed(1) + "%";
             $("st-input").textContent = o.inputTokens ? fmtW(o.inputTokens) : t("common.none");
             $("st-cached").textContent = o.cachedTokens ? fmtW(o.cachedTokens) : t("common.none");
@@ -260,6 +260,8 @@ export const WEB_CLIENT = `(function () {
         parts.push('<div class="k">' + label + '</div><div class="v' + (mono ? " mono" : "") + '">' + (value == null || value === "" ? t("common.none") : escapeHtml(String(value))) + "</div>");
     }
     function trajectorySvg(lines, folds, win) {
+        lines = (lines || []).filter((l) => Boolean(l));
+        if (!lines.length) return "";
         const W = 960, H = 260, PL = 56, PR = 16, PT = 14, PB = 26;
         const iw = W - PL - PR, ih = H - PT - PB;
         let maxY = 0;
@@ -290,7 +292,7 @@ export const WEB_CLIENT = `(function () {
         const CAUSE_COLOR = { cold: "#6e7681", comp: "#bf8700", ttl: "#cf222e" };
         const CAUSE_KEY = { cold: "det.cause_cold", comp: "det.cause_comp", ttl: "det.cause_ttl" };
         const causes = lines.map((l, i) => {
-            if (i === 0 && !(l.cached || 0)) return "cold";
+            if (i === 0) return !(l.cached || 0) ? "cold" : "new";
             const p = lines[i - 1];
             const missed = (l.input || 0) - (l.cached || 0);
             const growth = Math.max(0, (l.input || 0) - (p.input || 0));
@@ -450,8 +452,12 @@ export const WEB_CLIENT = `(function () {
                 + '<div class="card" style="margin-top:12px"><div class="card-b"><div class="empty"><div class="big">🔍</div>' + t("det.not_found") + "<br>" + t("det.not_found_hint") + "</div></div></div>";
             return;
         }
-        host.innerHTML = buildDetailHtml(d);
-        bindHandoffActions(d);
+        try {
+            host.innerHTML = buildDetailHtml(d);
+            bindHandoffActions(d);
+        } catch (e) {
+            host.innerHTML = '<a class="btn sm" href="#/sessions">' + t("common.back") + '</a><div class="card" style="margin-top:12px"><div class="card-b"><div class="empty">⚠️ ' + escapeHtml(e.message) + "</div></div></div>";
+        }
     }
     function bindHandoffActions(d) {
         const copyBtn = $("handoff-copy-md");
