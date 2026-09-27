@@ -82,6 +82,11 @@ export interface WebSessionDetail extends WebSessionSummary {
     storedBytes: number;
     storeBytesSaved: number;
     activePack?: string;
+    /** Which client produced this session (plugin agent name or header/UA hint). */
+    clientHint?: string;
+    /** Measured system-prompt size in tokens — the not-compressible baseline drawn
+     *  under the trajectory chart. */
+    systemPromptTokens?: number;
     ledger: ReturnType<typeof buildSessionCacheReport> | null;
     /** Raw markdown of the handoff doc (handoffHtml rendered) — for the
      *  copy-markdown / download buttons. */
@@ -302,6 +307,13 @@ export async function buildSessionDetail(id: string): Promise<WebSessionDetail |
         handoffTruncated = true;
     }
 
+    // #1426 web UI: which client produced this session + its measured system-prompt size.
+    // Plugin agents are stamped as metadata.pluginAgent at request time; non-plugin
+    // clients carry a header-sniffed or User-Agent hint (metadata.clientHint).
+    const pluginAgent = typeof session.metadata["pluginAgent"] === "string" ? session.metadata["pluginAgent"] : undefined;
+    const clientHint = pluginAgent ?? (typeof session.metadata["clientHint"] === "string" ? session.metadata["clientHint"] : undefined);
+    const sysPrompt = typeof session.metadata["systemPromptTokens"] === "number" ? session.metadata["systemPromptTokens"] : 0;
+
     return {
         ...summaryOf(session, !!live),
         lastInputTokens: session.stats.lastInputTokens,
@@ -312,6 +324,8 @@ export async function buildSessionDetail(id: string): Promise<WebSessionDetail |
         storedBytes: session.stats.storedBytes,
         storeBytesSaved: session.stats.storeBytesSaved,
         ...(session.meta.activePack ? { activePack: session.meta.activePack } : {}),
+        ...(clientHint ? { clientHint } : {}),
+        ...(sysPrompt > 0 ? { systemPromptTokens: sysPrompt } : {}),
         ledger: buildSessionCacheReport(session),
         handoffMd,
         handoffHtml: markdownToHtml(handoffMd),

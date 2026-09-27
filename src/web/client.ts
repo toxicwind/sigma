@@ -259,7 +259,7 @@ export const WEB_CLIENT = `(function () {
     function kv(parts, label, value, mono) {
         parts.push('<div class="k">' + label + '</div><div class="v' + (mono ? " mono" : "") + '">' + (value == null || value === "" ? t("common.none") : escapeHtml(String(value))) + "</div>");
     }
-    function trajectorySvg(lines, folds, win) {
+    function trajectorySvg(lines, folds, win, baseIn) {
         lines = (lines || []).filter((l) => Boolean(l));
         if (!lines.length) return "";
         const W = 960, H = 260, PL = 56, PR = 16, PT = 14, PB = 26;
@@ -296,8 +296,8 @@ export const WEB_CLIENT = `(function () {
             const p = lines[i - 1];
             const missed = (l.input || 0) - (l.cached || 0);
             const growth = Math.max(0, (l.input || 0) - (p.input || 0));
-            if ((folds || []).some((f) => (f.at || 0) >= (p.at || 0) && (f.at || 0) <= (l.at || 0)) && missed > growth) return "comp";
-            if ((l.at || 0) - (p.at || 0) > GAP_MS && missed > growth * 3 + 2048) return "ttl";
+            if ((folds || []).some((f) => (f.at || 0) >= (p.at || 0) && (f.at || 0) <= (l.at || 0)) && missed > growth + 256) return "comp";
+            if ((l.at || 0) - (p.at || 0) > GAP_MS && missed > growth + 2048) return "ttl";
             return "new";
         });
         let bands = "", hovers = "";
@@ -306,8 +306,8 @@ export const WEB_CLIENT = `(function () {
             const c = causes[i];
             const yIn = y(l.input || 0), yCa = y(l.cached || 0);
             const x0 = Math.max(PL, x(i) - swSeg / 2), x1 = Math.min(W - PR, x(i) + swSeg / 2);
-            if (c !== "new" && yCa - yIn >= 1.5) {
-                bands += '<rect x="' + x0.toFixed(1) + '" y="' + yIn.toFixed(1) + '" width="' + Math.max(1, x1 - x0).toFixed(1) + '" height="' + Math.max(0, yCa - yIn).toFixed(1) + '" fill="' + CAUSE_COLOR[c] + '" opacity="0.3" rx="1"/>';
+            if (c !== "new") {
+                bands += '<rect x="' + x0.toFixed(1) + '" y="' + yIn.toFixed(1) + '" width="' + Math.max(1, x1 - x0).toFixed(1) + '" height="' + Math.max(3, yCa - yIn).toFixed(1) + '" fill="' + CAUSE_COLOR[c] + '" opacity="0.35" rx="1"/>';
             }
             const hitPctLine = (l.input || 0) > 0 ? ((l.cached || 0) / l.input * 100).toFixed(1) + "%" : t("common.none");
             hovers += '<rect x="' + x0.toFixed(1) + '" y="' + PT + '" width="' + Math.max(1, x1 - x0).toFixed(1) + '" height="' + ih + '" fill="transparent"><title>'
@@ -316,18 +316,43 @@ export const WEB_CLIENT = `(function () {
                 + (c === "new" ? "" : "\\n" + t(CAUSE_KEY[c])) + "</title></rect>";
         });
         let foldMarks = "";
+        // Burst-folds share (near-)identical timestamps and thus the same pixel — merge them
+        // into one marker per pixel-bucket so stacked marks don't ghost into doubled lines.
+        const foldBuckets = [];
         (folds || []).forEach((f) => {
             let idx = -1;
             for (let i = 0; i < lines.length; i++) { if ((lines[i].at || 0) >= (f.at || 0)) { idx = i; break; } }
             if (idx < 0) idx = lines.length - 1;
-            foldMarks += '<line x1="' + x(idx).toFixed(1) + '" y1="' + PT + '" x2="' + x(idx).toFixed(1) + '" y2="' + (PT + ih) + '" stroke="#cf222e" stroke-width="1.2" stroke-dasharray="3 3"><title>'
-                + (f.seq != null ? t("det.fold_short") + " " + f.seq + " · " : "") + dt(f.at) + " · " + fmtW(f.S) + "</title></line>";
+            const fx = x(idx);
+            const bk = foldBuckets.find((b) => Math.abs(b.fx - fx) <= 1.5);
+            if (bk) bk.items.push(f); else foldBuckets.push({ fx, items: [f] });
+        });
+        foldBuckets.forEach((bk) => {
+            const n = bk.items.length;
+            const seqs = bk.items.map((m) => m.seq != null ? "#" + m.seq : "").filter(Boolean).slice(0, 5).join("·");
+            foldMarks += '<line x1="' + bk.fx.toFixed(1) + '" y1="' + PT + '" x2="' + bk.fx.toFixed(1) + '" y2="' + (PT + ih) + '" stroke="#cf222e" stroke-width="1.2" stroke-dasharray="3 3"><title>'
+                + t("det.fold_short") + (n > 1 ? " ×" + n : "") + (seqs ? " " + seqs + (bk.items.length > 5 ? "…" : "") + " · " : " ") + dt(bk.items[0].at) + " · " + fmtW(bk.items.reduce((a, m) => a + (m.S || 0), 0)) + "</title></line>";
         });
         let ceiling = "";
         if (win && win > 0) {
             const yy = y(win);
             ceiling = '<line x1="' + PL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + yy.toFixed(1) + '" stroke="#cf222e" stroke-width="1.5" stroke-dasharray="6 4"/>'
                 + '<text x="' + (W - PR) + '" y="' + Math.max(10, yy - 4).toFixed(1) + '" text-anchor="end" font-size="10" fill="#cf222e">' + t("det.legend_window") + " " + fmtW(win) + "</text>";
+        }
+        // Baseline: the not-compressible floor every request carries (system prompt + tools).
+        // Measured when the kernel persisted systemPromptTokens; otherwise estimated as the
+        // 10th percentile of (input − cached) across samples.
+        let baseline = "";
+        const baseMeasured = Boolean(baseIn && baseIn > 0);
+        const baseVal = baseMeasured
+            ? baseIn
+            : lines.length >= 20
+                ? (() => { const ds = lines.map((l) => Math.max(0, (l.input || 0) - (l.cached || 0))).sort((a, b) => a - b); return ds[Math.floor(ds.length * 0.1)] || 0; })()
+                : 0;
+        if (baseVal >= 200 && baseVal < maxY) {
+            const yy = y(baseVal);
+            baseline = '<line x1="' + PL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + yy.toFixed(1) + '" stroke="#8b949e" stroke-width="1" stroke-dasharray="2 4"/>'
+                + '<text x="' + PL + '" y="' + Math.max(10, yy - 4).toFixed(1) + '" font-size="9.5" fill="#8b949e">' + t(baseMeasured ? "det.legend_base" : "det.legend_base_est") + " " + fmtW(baseVal) + "</text>";
         }
         const xt = [0, Math.floor((lines.length - 1) / 2), lines.length - 1]
             .map((i) => '<text x="' + x(i).toFixed(1) + '" y="' + (H - 20) + '" text-anchor="middle" font-size="10" fill="var(--text-muted)">' + lines[i].seq + "</text>").join("");
@@ -339,11 +364,17 @@ export const WEB_CLIENT = `(function () {
             + bands
             + hovers
             + '<path d="' + stroke.trim() + '" fill="none" stroke="var(--accent)" stroke-width="1.8"/>'
-            + foldMarks + ceiling + ticks + xt + xtTime + "</svg>";
+            + foldMarks + ceiling + baseline + ticks + xt + xtTime + "</svg>";
     }
-    function legendItem(style, label, dashed) {
-        if (dashed) return '<span><span class="dot" style="background:none;border-top:2px dashed #cf222e;height:0;border-radius:0;width:14px"></span>' + label + "</span>";
+    function legendItem(style, label, dashed, dashColor) {
+        if (dashed) return '<span><span class="dot" style="background:none;border-top:2px dashed ' + (dashColor || "#cf222e") + ';height:0;border-radius:0;width:14px"></span>' + label + "</span>";
         return '<span><span class="dot" style="' + style + '"></span>' + label + "</span>";
+    }
+    function blockTopic(b) {
+        // #1426: untitled blocks fall back to the lead line of their summary
+        if (b.topic && String(b.topic).trim()) return String(b.topic).trim();
+        const lead = String(b.summary || "").split("\\n").map((s) => s.trim()).find(Boolean) || "";
+        return lead.length > 48 ? lead.slice(0, 48) + "…" : lead || b.blockId;
     }
     function detailBadges(d) {
         const live = d.live && !d.restored;
@@ -360,6 +391,7 @@ export const WEB_CLIENT = `(function () {
         kv(parts, t("common.title"), d.title || null);
         kv(parts, t("common.label"), d.label || null);
         kv(parts, t("common.protocol"), d.protocol || null, true);
+        kv(parts, t("det.client_hint"), d.clientHint || null, true);
         kv(parts, t("common.upstream"), hostOf(d.upstreamOrigin) || null, true);
         kv(parts, t("det.active_pack"), d.activePack || null, true);
         parts.push("</dl></div></div>");
@@ -388,7 +420,7 @@ export const WEB_CLIENT = `(function () {
         if (!lines.length) {
             parts.push('<div class="chart-empty">' + t("det.trajectory_empty") + "</div>");
         } else {
-            parts.push('<div class="chart-wrap">' + trajectorySvg(lines, ledger.folds || [], d.contextWindow) + "</div>");
+            parts.push('<div class="chart-wrap">' + trajectorySvg(lines, ledger.folds || [], d.contextWindow, d.systemPromptTokens || 0) + "</div>");
             parts.push('<div class="chart-legend">');
             parts.push(legendItem("background:var(--accent)", t("det.legend_input")));
             parts.push(legendItem("background:var(--accent);opacity:.4", t("det.legend_cached"), false));
@@ -397,6 +429,7 @@ export const WEB_CLIENT = `(function () {
             parts.push(legendItem("#bf8700", t("det.cause_comp")));
             parts.push(legendItem("#cf222e", t("det.cause_ttl")));
             parts.push(legendItem("#6e7681", t("det.cause_cold")));
+            if (d.systemPromptTokens || lines.length >= 20) parts.push(legendItem("", d.systemPromptTokens ? t("det.legend_base") : t("det.legend_base_est"), true, "#8b949e"));
             parts.push("</div>");
             if ((ledger.linesOmitted || 0) > 0) parts.push('<div class="dim small" style="margin-top:6px">' + t("det.omitted", { n: ledger.linesOmitted }) + "</div>");
         }
@@ -415,11 +448,19 @@ export const WEB_CLIENT = `(function () {
         parts.push('<div class="section-label" style="margin-top:14px">' + t("det.folds") + "</div>");
         if (!folds.length) parts.push('<div class="dim small">' + t("det.folds_empty") + "</div>");
         else {
-            parts.push('<table class="data"><thead><tr><th>#</th><th>' + t("det.fold_time") + '</th><th>' + t("det.fold_s") + '</th><th>' + t("det.fold_sigma") + '</th><th>' + t("det.fold_h") + '</th><th>' + t("det.fold_t") + "</th></tr></thead><tbody>");
-            folds.forEach((f, i) => {
-                parts.push('<tr><td class="num">' + (f.seq != null ? f.seq : i + 1) + '</td><td class="num">' + (f.at ? fmtDT(f.at) : t("common.none")) + '</td><td class="num">' + fmtW(f.S) + '</td><td class="num">' + fmtW(f.sigma) + '</td><td class="num">' + (f.hPct == null ? t("common.none") : f.hPct.toFixed(1) + "%") + '</td><td class="num">' + fmtW(f.T) + "</td></tr>");
-            });
+            // Numeric headers align with their columns; long fold lists stay scannable by
+            // showing the first 30 with the rest behind an expander.
+            const foldHead = '<tr><th class="num">#</th><th>' + t("det.fold_time") + '</th><th class="num">' + t("det.fold_s") + '</th><th class="num">' + t("det.fold_sigma") + '</th><th class="num">' + t("det.fold_h") + '</th><th class="num">' + t("det.fold_t") + "</th></tr>";
+            const foldRow = (f, i) => '<tr><td class="num">' + (f.seq != null ? f.seq : i + 1) + '</td><td class="num">' + (f.at ? fmtDT(f.at) : t("common.none")) + '</td><td class="num">' + fmtW(f.S) + '</td><td class="num">' + fmtW(f.sigma) + '</td><td class="num">' + (f.hPct == null ? t("common.none") : f.hPct.toFixed(1) + "%") + '</td><td class="num">' + fmtW(f.T) + "</td></tr>";
+            const FOLD_CAP = 30;
+            parts.push('<table class="data"><thead>' + foldHead + '</thead><tbody>');
+            folds.slice(0, FOLD_CAP).forEach((f, i) => parts.push(foldRow(f, i)));
             parts.push("</tbody></table>");
+            if (folds.length > FOLD_CAP) {
+                parts.push('<details style="margin-top:8px"><summary class="dim small" style="cursor:pointer">' + t("det.folds_more", { n: folds.length - FOLD_CAP }) + '</summary><table class="data"><thead>' + foldHead + '</thead><tbody>');
+                folds.slice(FOLD_CAP).forEach((f, i) => parts.push(foldRow(f, i + FOLD_CAP)));
+                parts.push("</tbody></table></details>");
+            }
         }
         parts.push("</div></div>");
         const blocks = d.blockDetails || [];
@@ -428,7 +469,7 @@ export const WEB_CLIENT = `(function () {
         blocks.forEach((b) => {
             // #1426: expose the compressed conversation span (mNNNNN refs) when the kernel tagged it
             const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
-            parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span><span class="topic">' + escapeHtml(b.topic || b.blockId) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
+            parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span><span class="topic">' + escapeHtml(blockTopic(b)) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
         });
         parts.push("</div></div>");
         parts.push('<div class="card" style="margin-top:16px"><div class="card-h"><span>' + t("det.handoff") + '</span><span class="hint">' + t("det.handoff_hint") + '</span></div><div class="card-b">');

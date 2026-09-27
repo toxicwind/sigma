@@ -1804,6 +1804,15 @@ async function handle(
         }
         if (!pluginAgent && typeof session.metadata.pluginAgent === "string") pluginAgent = session.metadata.pluginAgent;
         if (pluginAgent && !pluginConversation) pluginConversation = conversation;
+        // #1426 web UI: persist which client this session came from, first hit wins.
+        // Plugin agents are already recorded above as metadata.pluginAgent; non-plugin
+        // clients fall back to header sniffing, then to a truncated User-Agent hint.
+        if (!pluginAgent && !session.metadata.clientHint) {
+            const uaRaw = req.headers["user-agent"];
+            const ua = typeof uaRaw === "string" ? uaRaw : Array.isArray(uaRaw) ? String(uaRaw[0] ?? "") : "";
+            const hint = sniffScanClient(req.headers) ?? (ua ? ua.slice(0, 120) : undefined);
+            if (hint) session.metadata.clientHint = hint;
+        }
         // [#1333] Real pi plugin traffic arrives pre-stamped: `x-bili-plugin`
         // + `x-bili-plugin-conversation` (set by the extension, pi.ts:127)
         // set pluginAgent/pluginConversation from headers above, so the
