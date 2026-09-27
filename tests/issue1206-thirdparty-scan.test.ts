@@ -45,7 +45,16 @@ function writeFile(file: string, content: string): void {
 // Hermetic env: every client home resolves under root, nothing leaks to the
 // developer's real home directories.
 function hermeticEnv(root: string): NodeJS.ProcessEnv {
-    return { HOME: root, XDG_CONFIG_HOME: path.join(root, ".config") };
+    // PI_CODING_AGENT_DIR must be isolated too, not just HOME. `resolveOmpHome`
+    // (src/client-config.ts:337) returns that variable verbatim and only falls
+    // back to `$HOME` when it is empty, so an inherited value silently
+    // redirects the fixture write onto the real agent config and replaces the
+    // live engine config with test data.
+    return {
+        HOME: root,
+        XDG_CONFIG_HOME: path.join(root, ".config"),
+        PI_CODING_AGENT_DIR: path.join(root, ".tau", "agent"),
+    };
 }
 
 test("conflictScanEnabled defaults on, honors 0/false", () => {
