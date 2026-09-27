@@ -465,13 +465,23 @@ export const WEB_CLIENT = `(function () {
         }
         parts.push("</div></div>");
         const blocks = d.blockDetails || [];
-        parts.push('<div class="card" style="margin-top:16px"><div class="card-h"><span>' + t("det.blocks_title") + '</span><span class="hint">' + t("det.blocks_count", { n: blocks.length }) + '</span></div><div class="card-b blocks-list">');
-        if (!blocks.length) parts.push('<div class="dim small" style="padding:8px 0">' + t("det.blocks_empty") + "</div>");
-        blocks.forEach((b) => {
-            // #1426: expose the compressed conversation span (mNNNNN refs) when the kernel tagged it
-            const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
-            parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span><span class="topic">' + escapeHtml(blockTopic(b)) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
-        });
+        const activeBlocks = blocks.filter((b) => b.active).length;
+        parts.push('<div class="card" style="margin-top:16px"><div class="card-h"><span>' + t("det.blocks_title") + '</span><span class="hint">' + t("det.blocks_count", { total: blocks.length, active: activeBlocks }) + '</span></div><div class="card-b blocks-list">');
+        if (!blocks.length) {
+            parts.push('<div class="dim small" style="padding:8px 0">' + t("det.blocks_empty") + "</div>");
+        } else {
+            // #1426: all compression blocks downloadable as standalone markdown
+            parts.push('<div style="display:flex;gap:8px;margin-bottom:10px"><button id="blocks-dl" class="btn sm">' + t("det.blocks_download") + "</button></div>");
+            blocks.forEach((b) => {
+                // #1426: expose the compressed conversation span (mNNNNN refs) when the kernel tagged it
+                const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
+                // Active = still inside the current context window; inactive = archived history.
+                const badge = b.active
+                    ? '<span class="badge ok">' + t("det.block_active") + "</span>"
+                    : '<span class="badge disk">' + t("det.block_inactive") + "</span>";
+                parts.push('<details class="block-item"><summary><span class="bid">' + escapeHtml(b.blockId) + '</span>' + badge + '<span class="topic">' + escapeHtml(blockTopic(b)) + '</span><span class="meta">T' + String(b.tier) + " · " + fmtW(b.compressedTokens) + " · " + timeAgo(b.createdAt) + (refRange ? " · " + escapeHtml(refRange) : "") + '</span></summary><div class="body">' + escapeHtml(b.summary) + "</div></details>");
+            });
+        }
         parts.push("</div></div>");
         parts.push('<div class="card" style="margin-top:16px"><div class="card-h"><span>' + t("det.handoff") + '</span><span class="hint">' + t("det.handoff_hint") + '</span></div><div class="card-b">');
         // #1426: copy / download actions over the rendered handoff document
@@ -497,9 +507,42 @@ export const WEB_CLIENT = `(function () {
         try {
             host.innerHTML = buildDetailHtml(d);
             bindHandoffActions(d);
+            bindBlocksActions(d);
         } catch (e) {
             host.innerHTML = '<a class="btn sm" href="#/sessions">' + t("common.back") + '</a><div class="card" style="margin-top:12px"><div class="card-b"><div class="empty">⚠️ ' + escapeHtml(e.message) + "</div></div></div>";
         }
+    }
+    function bindBlocksActions(d) {
+        // #1426: download every compression block as standalone markdown
+        const dl = $("blocks-dl");
+        if (!dl) return;
+        if (!d.blockDetails || !d.blockDetails.length) { dl.hidden = true; return; }
+        dl.addEventListener("click", () => {
+            const L = [];
+            L.push("# billion-context compression blocks");
+            L.push("");
+            if (d.title) L.push("- title: " + d.title);
+            L.push("- session id: " + d.id);
+            L.push("- blocks: " + d.blockDetails.length + " (" + d.blockDetails.filter((x) => x.active).length + " active)");
+            L.push("");
+            d.blockDetails.forEach((b) => {
+                const refRange = b.startRef ? (b.endRef && b.endRef !== b.startRef ? b.startRef + "–" + b.endRef : b.startRef) : null;
+                L.push("## Block " + b.blockId + (b.topic ? " — " + b.topic : "") + (b.active ? "" : " (inactive)"));
+                L.push("");
+                L.push("tier " + b.tier + " · ~" + fmtW(b.compressedTokens) + " tokens" + (b.createdAt ? " · " + fmtDT(b.createdAt) : "") + (refRange ? " · " + refRange : ""));
+                L.push("");
+                L.push(String(b.summary || "").trim());
+                L.push("");
+            });
+            const url = URL.createObjectURL(new Blob([L.join("\\n")], { type: "text/markdown;charset=utf-8" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "billion-context-blocks-" + String(d.id).replace(/[^A-Za-z0-9._-]/g, "_") + ".md";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+        });
     }
     function bindHandoffActions(d) {
         const copyBtn = $("handoff-copy-md");
