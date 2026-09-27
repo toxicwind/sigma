@@ -168,11 +168,44 @@ have destroyed coverage rather than preserved it.
 The rule behind this split: prose *about the engineering* is English. Prose *for the user* is
 translated. Fixtures stay as they are. `README.zh-CN.md` is user-facing. It gets translated.
 
+## 7. Fork-original code: the preflight wall-clock ceiling
+
+Sections 1 through 6 are mostly rename, tooling, and prose. This one is **new code with no upstream
+counterpart**, and it exists because the fork runs against a compression proxy serving a real
+workload rather than only its test suite.
+
+**The defect.** `MAX_SUMMARY_CALLS_PER_PREFLIGHT` in `src/preflight.ts` bounds summarization
+**calls**, so it bounds latency only while the upstream answers quickly. Measured off a 26,403-line
+`~/.local/state/billion-context/bili.log`: one invocation spent **330,735 ms** across 3 ranges at
+roughly **44 tokens/second**, and its result was discarded when the client disconnected mid-flight.
+Five such aborts accounted for 383 of 862 seconds of total preflight time in the sample. The
+normal path in the same log is a 29 ms median over 3,071 requests.
+
+**The fix.** `compress.maxPreflightMs` (default `30000`, settable at the global, provider, and model
+level, `0` disables) is the wall-clock counterpart. It rides on `PreflightDeps` rather than
+`Config.compress`, because the kernel's compress config is a closed validation surface that
+rejects unknown keys. Exceeding it ends the walk and fails the turn fast with a **retryable 502**,
+under a new `"timeout"` failure kind that is deliberately distinct from `"exhausted"`: a slow
+upstream is not a content dead end, so it earns no dead-end cooldown.
+
+**A second defect the same investigation found.** The success log printed `~699 tokens saved` beside
+the pair `201098 -> 211564` — a saving next to numbers that had *grown*. `savedTokens` came from the
+preflight's own estimator while the printed pair mixed in `session.stats.lastInputTokens`, which
+the fold itself raises by re-inserting the summaries it just wrote. `PreflightResult` now carries
+`startTokens` and `endTokens` measured the same way, and the log labels both pairs.
+
+Tests live in `tests/preflight-wall-clock-ceiling.test.ts` (a slow upstream is cut short by the
+ceiling; `0` restores the call budget) and in `tests/compress-settings.test.ts` (the key survives
+the per-field merge, which is where it was silently dropped the first time).
+
+
 ---
 
 ## Provenance of this file
 
-- Fork commit: `218f31c2bcac06bdc5c2e2bd57b538b7e2ae6f8f` on `master`.
+- Fork commit: `218f31c2bcac06bdc5c2e2bd57b538b7e2ae6f8f` on `main` (the branch was
+  `master` at that commit and was renamed later; `backup/main-20260927` preserves the
+  pre-rename tip).
 - Added by the commit that also corrected `README.zh-CN.md` and created
   `README.upstream.zh-CN.md`. That file preserves the previous contents of `README.zh-CN.md`
   verbatim. It holds upstream's README, kept as a record of the full upstream feature surface.

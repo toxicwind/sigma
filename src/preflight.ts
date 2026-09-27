@@ -43,6 +43,12 @@ const MAX_SUMMARY_OUTPUT_TOKENS = 32768;
 // #574: bound on upstream summarization calls per invocation — the multi-range
 // walk can otherwise spend a call per viable range in a block-dense history.
 export const MAX_SUMMARY_CALLS_PER_PREFLIGHT = 16;
+// Wall-clock counterpart to MAX_SUMMARY_CALLS_PER_PREFLIGHT. The call budget
+// bounds work only when the upstream answers quickly: one measured run spent
+// 330735ms across 3 ranges (~44 tokens/sec) and threw the result away when the
+// client disconnected mid-flight. Overridable per-deployment with
+// compress.maxPreflightMs; 0 or negative disables the ceiling.
+export const DEFAULT_MAX_PREFLIGHT_MS = 30_000;
 
 // #869 review: coverage bound of the two depth budgets above. One round folds
 // ONE range and each fold removes at most CHUNK_FRACTION x window tokens (the
@@ -66,6 +72,11 @@ export interface PreflightDeps {
     /** Best-effort target below the hard window; never relax recent protection for headroom alone. */
     compressionTarget?: number;
     prompts: Prompts;
+    /** Wall-clock ceiling for this invocation, in ms. Supplied by the caller
+     *  from the resolved route/global compress settings because the kernel's
+     *  `Config.compress` is a closed validation surface that rejects unknown
+     *  keys. 0 or negative disables the ceiling. */
+    maxPreflightMs?: number;
     surface?: PackSurface;
     protocol: PreflightProtocol;
     url: string;
@@ -88,7 +99,7 @@ export interface PreflightDeps {
     unknownBaseline?: boolean;
 }
 
-export type PreflightFailureKind = "upstream" | "exhausted" | "aborted";
+export type PreflightFailureKind = "upstream" | "exhausted" | "aborted" | "timeout";
 
 export interface PreflightFailure {
     kind: PreflightFailureKind;
@@ -108,6 +119,15 @@ export interface PreflightFailure {
 type SummaryOutcome = { summary: string } | { unusable: string };
 
 export interface PreflightResult {
+    /** Token count the loop started from and ended at, measured the SAME way
+     *  (the baseline-known estimator, or the char-count upper bound for an
+     *  unmeasured baseline). `savedTokens` is their difference. The server log
+     *  prints THIS pair so the saving it reports and the numbers around it can
+     *  never disagree — the session baseline is mutated by the summaries the
+     *  fold inserts, so mixing it in produced logs that read "699 tokens saved"
+     *  beside a before/after pair that had grown. */
+    startTokens: number;
+    endTokens: number;
     compressedRanges: number;
     savedTokens: number;
     /** Token estimate of the final (post-fold) payload, from the payload
@@ -799,10 +819,13 @@ function noEmergencyTruncate(config: Config): Config {
 export async function preflightCompress(deps: PreflightDeps, messages: CoreMessage[]): Promise<PreflightResult> {
     const limit = deps.config.modelContextLimit;
     let target = Math.min(limit, deps.compressionTarget ?? limit);
-    const result: PreflightResult = { compressedRanges: 0, savedTokens: 0, payloadEstimate: estimateCoreMessages(messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0), rangesRemaining: 0, fitsWindow: true };
+    const result: PreflightResult = { compressedRanges: 0, savedTokens: 0, startTokens: 0, endTokens: 0, payloadEstimate: estimateCoreMessages(messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0), rangesRemaining: 0, fitsWindow: true };
     if (limit <= 0) return result;
     const budget = Math.max(MIN_CHUNK_TOKENS, Math.floor(limit * CHUNK_FRACTION));
     // applyCompression rejects ranges below config.compress.minCompressRange
+    const startedAt = Date.now();
+    const maxPreflightMs = deps.maxPreflightMs ?? DEFAULT_MAX_PREFLIGHT_MS;
+    const deadlineHit = (): boolean => maxPreflightMs > 0 && Date.now() - startedAt >= maxPreflightMs;
     // chars, so never spend a summarization call on a chunk that can't apply.
     const minChars = deps.config.compress.minCompressRange;
     // The fit check runs on the real post-fold payload size, not on
@@ -880,7 +903,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         // The caller's forward/fail-fast gate uses the payload's own estimate
         // (the floor can be stale — see PreflightResult.payloadEstimate).
         result.payloadEstimate = estimateCoreMessages(turn.messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0);
-        if (startTokens < 0) startTokens = currentTokens;
+        if (startTokens < 0) { startTokens = currentTokens; result.startTokens = currentTokens; }
         if (currentTokens < target) break;
         // #847: drop sub-minimum ranges at list level too — every chunk of a
         // sub-min range fails the apply-side gate, so walking them only burns
@@ -1055,6 +1078,11 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                             budgetHit = true;
                             break;
                         }
+                        if (deadlineHit()) {
+                            failure = { kind: "timeout", retryable: true, detail: `preflight compression exceeded its ${maxPreflightMs}ms wall-clock ceiling after ${summaryCalls} summarization call(s) and ${result.compressedRanges} folded range(s)` };
+                            deps.log("warn", `[preflight] wall-clock ceiling hit after ${Date.now() - startedAt}ms / ${summaryCalls} call(s); aborting the preflight walk`);
+                            break;
+                        }
                         summaryCalls += 1;
                         const part = await summarizeRange(deps, chunk, startRef, endRef);
                         if ("unusable" in part) {
@@ -1097,6 +1125,12 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                     }
                     break;
                 }
+                // The ceiling is a hard stop for the WHOLE walk, not just the
+                // chunk list: without this, the null-summary retry path below
+                // would keep halving the span and logging "produced no usable
+                // summary" for a failure that was really the clock running out.
+                if (failure?.kind === "timeout") break;
+
                 if (summary === null) {
                     const unusableDetail = outcome && "unusable" in outcome ? outcome.unusable : "unknown";
                     if (outcome) lastUnusableDetail = unusableDetail;
@@ -1193,6 +1227,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         }
     }
     result.rangesRemaining = rangesRemaining;
+    result.endTokens = currentTokens;
     result.savedTokens = Math.max(0, startTokens - currentTokens);
     if (currentTokens >= limit) result.failure = failure;
     result.fitsWindow = baselineKnown ? result.payloadEstimate < limit : finalUpper < limit;

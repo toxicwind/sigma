@@ -24,6 +24,24 @@ test("mergeCompress: model beats provider beats global, per field", () => {
     assert.equal(merged.minCompressRangeChars, 4000);
 });
 
+test("mergeCompress: maxPreflightMs survives the merge, deepest defined level wins", () => {
+    // The picked-key list silently DROPS any field it does not name, so a config
+    // key that parses and resolves can still vanish here. That is how the
+    // ceiling first failed to reach preflight: parseable, typechecked, merged
+    // to undefined, and the default 30s applied instead.
+    const merged = mergeCompress({ maxPreflightMs: 30_000 }, { maxPreflightMs: 12_000 }, undefined);
+    assert.equal(merged.maxPreflightMs, 12_000);
+    assert.equal(mergeCompress({ maxPreflightMs: 30_000 }, undefined, { maxPreflightMs: 500 }).maxPreflightMs, 500);
+    assert.equal(mergeCompress({ maxPreflightMs: 30_000 }, { maxPreflightMs: 0 }, undefined).maxPreflightMs, 0, "0 disables the ceiling and must NOT be treated as absent");
+    assert.equal(mergeCompress({ maxPreflightMs: 30_000 }, undefined, undefined).maxPreflightMs, 30_000);
+    assert.equal(mergeCompress({}, {}, {}).maxPreflightMs, undefined);
+});
+
+test("resolveCompress: maxPreflightMs reaches the resolved settings from the global level", () => {
+    assert.equal(resolveCompress({}, undefined, undefined, { maxPreflightMs: 7_000 }).maxPreflightMs, 7_000);
+    assert.equal(resolveCompress({}, undefined, undefined, {}).maxPreflightMs, undefined);
+});
+
 test("mergeCompress: undefined at deeper level does not clear shallower value", () => {
     const merged = mergeCompress({ nudgeGrowthTokens: 50000 }, undefined, { emergencyThresholdPercent: 0.85 });
     assert.equal(merged.nudgeGrowthTokens, 50000);

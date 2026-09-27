@@ -4413,6 +4413,7 @@ async function preflightCompressIfNeeded(
                 imageFloor: imageTokens,
                 wireOverhead: overheadEstimate,
                 unknownBaseline,
+                maxPreflightMs: resolveCompress(opts.routes, upstreamUrl, model, opts.compress).maxPreflightMs,
             },
             prepared.originalMessages,
         );
@@ -4432,7 +4433,13 @@ async function preflightCompressIfNeeded(
     // sessions keep the loop's own upper-bound judgment (result.fitsWindow,
     // #553) — the optimistic re-estimate is exactly what that regime distrusts.
     if (result.compressedRanges > 0) {
-        log("info", `[${session.id}] preflight compressed ${result.compressedRanges} range(s), ~${result.savedTokens} tokens saved (${tokenCount} → ${session.stats.lastInputTokens}) in ${Date.now() - started}ms; rebuilding payload`);
+        // Two EXPLICITLY labelled pairs, never one bare "before → after". The
+        // fold inserts its own summaries back into the payload and raises the
+        // session baseline, so mixing tokenCount with lastInputTokens around a
+        // preflight-measured saving produced logs reading "~699 tokens saved"
+        // beside a pair that had GROWN (201098 → 211564) — undiagnosable, and it
+        // reads as a compression bug rather than a measurement mix-up.
+        log("info", `[${session.id}] preflight compressed ${result.compressedRanges} range(s), ~${result.savedTokens} tokens saved (preflight ${result.startTokens} → ${result.endTokens}; session ${tokenCount} → ${session.stats.lastInputTokens}) in ${Date.now() - started}ms; rebuilding payload`);
         const rebuilt = await runPrepare();
         // runPrepare re-incremented stats.requests; the rebuild is internal
         // to this single client request.
@@ -4453,6 +4460,13 @@ async function preflightCompressIfNeeded(
     if (f?.kind === "aborted") {
         log("warn", `[${session.id}] preflight aborted (${f.detail}); not forwarding`);
         return { failFast: true, status: 0, message: f.detail, retryable: false, respond: false };
+    }
+    if (f?.kind === "timeout") {
+        // Distinct from "exhausted": nothing about this payload is unsummarizable,
+        // the upstream was simply too slow to finish inside the ceiling. 502 +
+        // retryable tells the client to come back, and it earns NO dead-end
+        // cooldown — a slow upstream is not a content dead end.
+        log("warn", `[${session.id}] preflight hit its wall-clock ceiling (${f.detail}); not forwarding`);
     }
     const status = f?.kind === "upstream" && f.status === 429 ? 503 : 502;
     const retryable = f?.retryable === true || (f?.kind === "upstream" && f.status !== undefined && (f.status === 429 || f.status >= 500));

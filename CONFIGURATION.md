@@ -308,6 +308,14 @@ For each request, the proxy resolves the settings by longest-URL-prefix match (t
 - **Status:** ACTIVE
 - **Description:** Minimum range size, in **characters** (not tokens), for a message range to be eligible for compression; smaller ranges are skipped. English/code averages ~4 chars per token, CJK ~1-2, so the same number reads ~4× more permissive for English text than a token-based mental model. Maps to the kernel field `compress.minCompressRange`.
 
+#### `maxPreflightMs`
+
+- **Type:** `number`
+- **Default:** `30000`
+- **Status:** ACTIVE
+- **Description:** Wall-clock ceiling on one preflight compression pass, in milliseconds. The per-invocation budget of 16 summarization calls bounds *calls*, not *time*, so it only bounds latency while the upstream answers quickly. A measured run spent 330735 ms across 3 ranges (about 44 tokens/second) and discarded the result when the client disconnected mid-flight. This ceiling ends the walk instead, and the turn fails fast with a **retryable** 502 naming the ceiling — a slow upstream is not a content dead end, so it earns no dead-end cooldown. `0` or a negative value disables the ceiling. Level: global, provider, and model.
+
+
 #### `minCompressRange`
 
 - **Type:** `number`

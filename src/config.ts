@@ -143,6 +143,13 @@ export type CompressSettings = {
      *  English text than a token-based reading. Maps to kernel
      *  `compress.minCompressRange` (default 5000 chars). */
     minCompressRangeChars?: number;
+    /** Wall-clock ceiling on ONE preflight invocation, in milliseconds. The
+     *  summarization budget (`maxSummaryCallsPerPreflight`) counts CALLS, which
+     *  bounds work only when the upstream answers quickly: a measured 5.5-minute
+     *  run saved 24k tokens at ~44 tokens/sec, and its result was discarded when
+     *  the client disconnected mid-flight. This bounds the wall time regardless
+     *  of per-call latency. 0 or negative disables the ceiling. */
+    maxPreflightMs?: number;
     /** Deprecated alias of {@link minCompressRangeChars} kept for backward
      *  compatibility. When both keys are set at the same level the new name
      *  wins; across levels the deeper level wins regardless of which name it
@@ -1237,7 +1244,7 @@ export function parseCompressSettings(v: unknown): (CompressSettings & { injectT
         if (!numberOrPercent(obj[key])) { ok = false; continue; }
         (out as Record<string, unknown>)[key] = typeof obj[key] === "string" ? (obj[key] as string).trim() : obj[key];
     }
-    for (const key of ["nudgeGrowthTokens", "preserveRecentMessages", "preserveRecentTokens", "minCompressRange", "minCompressRangeChars", "stripImagesKeepRecent"] as const) {
+    for (const key of ["nudgeGrowthTokens", "preserveRecentMessages", "preserveRecentTokens", "minCompressRange", "minCompressRangeChars", "stripImagesKeepRecent", "maxPreflightMs"] as const) {
         takeNumber(key);
     }
     if ("outputHeadroomMaxPct" in obj) {
