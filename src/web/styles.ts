@@ -269,4 +269,19 @@ pre.small-pre { max-height: 220px; overflow: auto; }
 .chip { border: 1px solid var(--border); background: var(--bg-muted); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--text-muted); }
 .row-id { display: block; margin-top: 3px; font-family: var(--mono); font-size: 11px; color: var(--text-faint); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-row { display: flex; align-items: center; gap: 10px; }
+
+/* #1426 handoff structured rendering */
+.msg-think { margin: 8px 0; }
+.msg-think summary { cursor: pointer; font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.think-box { margin-top: 6px; padding: 8px 12px; border-left: 3px solid rgba(130, 80, 223, 0.45); background: var(--bg-elev); border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); word-break: break-word; white-space: normal; }
+.msg-out { margin: 8px 0; font-size: 13px; line-height: 1.55; word-break: break-word; }
+.msg-tool, .msg-result { margin: 8px 0; padding: 8px 10px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 8px; }
+.tool-chip { display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--bg-muted); color: var(--text-muted); margin-right: 8px; font-family: var(--mono); }
+.tool-chip.t-shell { background: #1f2328; color: #ffffff; }
+.tool-chip.t-file { background: #ddf4ff; color: #0969da; }
+.tool-chip.t-seek { background: #dafbe1; color: #1a7f37; }
+.tool-chip.t-fold { background: #fbefff; color: #8250df; }
+.tool-cid { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+pre.tool-args, pre.tool-out { margin: 6px 0 0; padding: 8px; background: var(--bg-muted); border-radius: 6px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.fold-scroll { max-height: 400px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; padding: 2px 8px 8px; }
 `;

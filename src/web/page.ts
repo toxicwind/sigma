@@ -35,7 +35,7 @@ export function renderPage(origin: string, version: string): string {
 <div class="stat"><div class="k" data-i18n="ov.output_tokens">${zh("ov.output_tokens")}</div><div class="v" id="st-output">—</div></div>
 </div>
 <div class="grid cols-2" style="margin-top:16px">
-<div class="card"><div class="card-h"><span data-i18n="ov.by_protocol">${zh("ov.by_protocol")}</span></div><div class="card-b flush"><table class="data"><thead><tr><th data-i18n="common.protocol">${zh("common.protocol")}</th><th class="num" data-i18n="common.sessions">${zh("common.sessions")}</th><th class="num" data-i18n="ses.th_reqs">${zh("ses.th_reqs")}</th><th class="num" data-i18n="ov.input_tokens">${zh("ov.input_tokens")}</th><th class="num" data-i18n="ov.cached_tokens">${zh("ov.cached_tokens")}</th></tr></thead><tbody id="protocol-body"></tbody></table></div></div>
+<div class="card"><div class="card-h"><span data-i18n="ov.by_protocol">${zh("ov.by_protocol")}</span></div><div class="card-b flush"><table class="data"><thead><tr><th data-i18n="common.protocol">${zh("common.protocol")}</th><th class="num" data-i18n="common.sessions">${zh("common.sessions")}</th><th class="num" data-i18n="ses.th_reqs">${zh("ses.th_reqs")}</th><th class="num" data-i18n="ov.input_tokens">${zh("ov.input_tokens")}</th><th class="num" data-i18n="ov.cached_tokens">${zh("ov.cached_tokens")}</th><th class="num" data-i18n="ses.th_saved">${zh("ses.th_saved")}</th><th class="num" data-i18n="ses.th_folds">${zh("ses.th_folds")}</th></tr></thead><tbody id="protocol-body"></tbody></table></div></div>
 <div class="card"><div class="card-h"><span data-i18n="sys.title">${zh("sys.title")}</span></div><div class="card-b"><dl class="kv">
 <div class="k" data-i18n="sys.version">${zh("sys.version")}</div><div class="v mono" id="sys-version"></div>
 <div class="k" data-i18n="sys.disk_version">${zh("sys.disk_version")}</div><div class="v mono" id="sys-disk-version"></div>
@@ -44,7 +44,7 @@ export function renderPage(origin: string, version: string): string {
 </dl></div></div>
 </div>
 <div class="card" style="margin-top:16px"><div class="card-h"><span data-i18n="ov.recent">${zh("ov.recent")}</span><a class="btn sm" href="#/sessions" data-i18n="ov.view_all">${zh("ov.view_all")}</a></div><div class="card-b flush"><table class="data"><thead><tr>
-<th data-i18n="ses.th_title">${zh("ses.th_title")}</th><th data-i18n="ses.th_proto">${zh("ses.th_proto")}</th><th class="num" data-i18n="ses.th_ctx">${zh("ses.th_ctx")}</th><th class="num" data-i18n="ses.th_saved">${zh("ses.th_saved")}</th><th data-i18n="ses.th_seen">${zh("ses.th_seen")}</th>
+<th data-i18n="ses.th_title">${zh("ses.th_title")}</th><th data-i18n="ses.th_client">${zh("ses.th_client")}</th><th data-i18n="ses.th_proto">${zh("ses.th_proto")}</th><th data-i18n="ses.th_upstream">${zh("ses.th_upstream")}</th><th class="num" data-i18n="ses.th_reqs">${zh("ses.th_reqs")}</th><th class="num" data-i18n="ses.th_ctx">${zh("ses.th_ctx")}</th><th class="num" data-i18n="ses.th_input">${zh("ses.th_input")}</th><th class="num" data-i18n="ses.th_saved">${zh("ses.th_saved")}</th><th class="num" data-i18n="ses.th_hit">${zh("ses.th_hit")}</th><th class="num" data-i18n="ses.th_folds">${zh("ses.th_folds")}</th><th class="num" data-i18n="ses.th_blocks">${zh("ses.th_blocks")}</th><th data-i18n="ses.th_seen">${zh("ses.th_seen")}</th>
 </tr></thead><tbody id="recent-body"></tbody></table></div></div>
 </section>
 <section id="page-sessions" class="page" hidden>

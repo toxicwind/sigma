@@ -74,7 +74,7 @@ export interface WebOverview {
     summaryCostTotal: number;
     hitPct: number | null;
     blocks: number;
-    byProtocol: Array<{ protocol: string; sessions: number; requests: number; inputTokens: number; cachedTokens: number }>;
+    byProtocol: Array<{ protocol: string; sessions: number; requests: number; inputTokens: number; cachedTokens: number; savedNet: number; folds: number }>;
     recent: WebSessionSummary[];
 }
 
@@ -239,7 +239,7 @@ export async function buildOverview(): Promise<WebOverview> {
     const all = await buildSessionList();
     let requests = 0, input = 0, cached = 0, output = 0, saved = 0, savedEstimated = 0, blocks = 0, live = 0;
     let grossSavedTotal = 0, netSavedTotal = 0, repayTotal = 0, summaryCostTotal = 0, hasFoldData = false;
-    const protoMap = new Map<string, { protocol: string; sessions: number; requests: number; inputTokens: number; cachedTokens: number }>();
+    const protoMap = new Map<string, { protocol: string; sessions: number; requests: number; inputTokens: number; cachedTokens: number; savedNet: number; folds: number }>();
     for (const s of all) {
         requests += s.requests;
         input += s.inputTokens;
@@ -253,11 +253,13 @@ export async function buildOverview(): Promise<WebOverview> {
         // tokensSaved is a local estimate (upstream never reports it); flag
         // the share coming from sessions without usage samples (ledger).
         const key = s.protocol ?? "unknown";
-        const row = protoMap.get(key) ?? { protocol: key, sessions: 0, requests: 0, inputTokens: 0, cachedTokens: 0 };
+        const row = protoMap.get(key) ?? { protocol: key, sessions: 0, requests: 0, inputTokens: 0, cachedTokens: 0, savedNet: 0, folds: 0 };
         row.sessions += 1;
         row.requests += s.requests;
         row.inputTokens += s.inputTokens;
         row.cachedTokens += s.cachedTokens;
+        row.savedNet += s.hasLedger ? (s.netSaved ?? 0) : s.tokensSaved;
+        row.folds += s.foldCount ?? 0;
         protoMap.set(key, row);
         if (s.tokensSaved > 0 && !s.hasLedger) savedEstimated += s.tokensSaved;
         if (s.hasLedger && s.grossSaved != null) {

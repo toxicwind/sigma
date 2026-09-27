@@ -125,7 +125,7 @@ export const WEB_CLIENT = `(function () {
     // to the local tokensSaved estimate; neither present => honest dash, never fake 0.
     function savedTd(x) {
         const v = x.netSaved != null ? x.netSaved : (x.tokensSaved || 0);
-        return v ? '<td class="num good-num">' + fmtW(v) + "</td>" : '<td class="num dim">' + t("common.none") + "</td>";
+        return v > 0 ? '<td class="num good-num">' + fmtW(v) + "</td>" : (v ? '<td class="num">' + fmtW(v) + "</td>" : '<td class="num dim">' + t("common.none") + "</td>");
     }
 
     function sessionRow(s, compact) {
@@ -163,10 +163,10 @@ export const WEB_CLIENT = `(function () {
             const pb = $("protocol-body");
             pb.innerHTML = "";
             const rows = (o.byProtocol || []).slice().sort((a, b) => b.sessions - a.sessions || b.requests - a.requests);
-            if (!rows.length) pb.innerHTML = '<tr><td colspan="5" class="dim">' + t("common.empty") + "</td></tr>";
+            if (!rows.length) pb.innerHTML = '<tr><td colspan="7" class="dim">' + t("common.empty") + "</td></tr>";
             rows.forEach((r) => {
                 const tr = document.createElement("tr");
-                tr.innerHTML = '<td>' + protoBadge(r.protocol) + '</td><td class="num">' + r.sessions + '</td><td class="num">' + (r.requests ? fmtW(r.requests) : t("common.none")) + '</td><td class="num">' + (r.inputTokens ? fmtW(r.inputTokens) : t("common.none")) + '</td><td class="num">' + (r.cachedTokens ? fmtW(r.cachedTokens) : t("common.none")) + "</td>";
+                tr.innerHTML = '<td>' + protoBadge(r.protocol) + '</td><td class="num">' + r.sessions + '</td><td class="num">' + (r.requests ? fmtW(r.requests) : t("common.none")) + '</td><td class="num">' + (r.inputTokens ? fmtW(r.inputTokens) : t("common.none")) + '</td><td class="num">' + (r.cachedTokens ? fmtW(r.cachedTokens) : t("common.none")) + '</td><td class="' + (r.savedNet > 0 ? "num good-num" : "num") + '">' + (r.savedNet ? fmtW(r.savedNet) : t("common.none")) + '</td><td class="num">' + (r.folds ? fmtW(r.folds) : t("common.none")) + "</td>";
                 pb.appendChild(tr);
             });
             $("sys-version").textContent = d.version || "?";
@@ -177,8 +177,8 @@ export const WEB_CLIENT = `(function () {
             const rb = $("recent-body");
             rb.innerHTML = "";
             const recent = (o.recent || []).slice(0, 8);
-            if (!recent.length) rb.innerHTML = '<tr><td colspan="5" class="dim">' + t("common.empty") + "</td></tr>";
-            recent.forEach((s) => rb.appendChild(sessionRow(s, true)));
+            if (!recent.length) rb.innerHTML = '<tr><td colspan="12" class="dim">' + t("common.empty") + "</td></tr>";
+            recent.forEach((s) => rb.appendChild(sessionRow(s, false)));
             renderBanners(d);
         } catch (e) {
             toast(t("toast.failed", { msg: e.message }), "err");
@@ -390,6 +390,81 @@ export const WEB_CLIENT = `(function () {
         if (d.restored) html += ' <span class="dim small">' + t("common.restored") + "</span>";
         return html;
     }
+    // #1426: structured handoff rendering — per-role blocks with separated thinking,
+    // output text and tool call/result formatting (tool chips + pretty JSON args).
+    function toolChipCls(name) {
+        if (name === "bash" || name === "shell" || name === "run_command") return "t-shell";
+        if (name === "read" || name === "write" || name === "edit" || name === "ls" || name === "glob" || name === "note") return "t-file";
+        if (name === "grep" || name === "search_context" || name === "decompress" || name === "acp_retrieve") return "t-seek";
+        if (name === "compress" || name === "acp_status" || name === "acp_cache") return "t-fold";
+        return "";
+    }
+    function parseToolLine(line) {
+        const BT = String.fromCharCode(96);
+        if (line.charAt(0) !== BT) return null;
+        const ARGS = ")" + BT + " args: ";
+        const RES = ")" + BT + " \u2192 ";
+        let mark = -1, kind = "", tailLen = 0;
+        if (line.indexOf(ARGS) > -1) { mark = line.indexOf(ARGS); kind = "call"; tailLen = ARGS.length; }
+        else if (line.indexOf(RES) > -1) { mark = line.indexOf(RES); kind = "res"; tailLen = RES.length; }
+        else return null;
+        const nameId = line.slice(1, mark);
+        const lp = nameId.indexOf("(");
+        if (lp < 0) return null;
+        return { kind: kind, name: nameId.slice(0, lp), cid: nameId.slice(lp + 1), text: line.slice(mark + tailLen) };
+    }
+    function splitHandoffBody(bodyLines) {
+        const segs = [];
+        for (const raw of bodyLines) {
+            if (raw.trim() === "" && !(segs.length && segs[segs.length - 1].type === "out")) continue;
+            const tool = parseToolLine(raw);
+            if (tool) { segs.push({ type: "tool", kind: tool.kind, name: tool.name, cid: tool.cid, lines: [tool.text] }); continue; }
+            if (raw.indexOf("_reasoning_: ") === 0) {
+                const lastT = segs[segs.length - 1];
+                if (!lastT || lastT.type !== "think") segs.push({ type: "think", lines: [] });
+                segs[segs.length - 1].lines.push(raw.slice("_reasoning_: ".length));
+                continue;
+            }
+            const last = segs[segs.length - 1];
+            if (last && (last.type === "out" || last.type === "think")) last.lines.push(raw);
+            else segs.push({ type: "out", lines: [raw] });
+        }
+        return segs;
+    }
+    function renderHandoffMd(md) {
+        const lines = md.split("\\n");
+        let start = 0;
+        for (let i = 0; i < lines.length; i++) if (lines[i].indexOf("## ") === 0 && lines[i].indexOf("Conversation") > -1) { start = i + 1; break; }
+        const blocks = [];
+        let cur = null;
+        for (let i = start; i < lines.length; i++) {
+            const l = lines[i];
+            if (l.indexOf("### ") === 0) { cur = { role: l.slice(4).trim(), lines: [] }; blocks.push(cur); continue; }
+            if (cur) cur.lines.push(l);
+        }
+        const html = [];
+        if (!blocks.length) return '<span class="dim small">' + escapeHtml(String(md).slice(0, 200)) + "</span>";
+        for (const b of blocks) {
+            const role = b.role === "user" || b.role === "assistant" || b.role === "tool" ? b.role : "assistant";
+            html.push('<h3 class="msg-role ' + role + '">' + role + "</h3>");
+            const segs = splitHandoffBody(b.lines);
+            if (!segs.length) { html.push('<div class="dim small">_(empty)_</div>'); continue; }
+            for (const s of segs) {
+                if (s.type === "think") {
+                    const n = s.lines.filter((x) => x.trim() !== "").length;
+                    html.push('<details class="msg-think"><summary>' + t("det.thinking") + " \u00b7 " + n + '</summary><div class="think-box">' + s.lines.map(escapeHtml).join("<br/>") + "</div></details>");
+                } else if (s.type === "out") {
+                    html.push('<p class="msg-out">' + s.lines.map(escapeHtml).join("<br/>") + "</p>");
+                } else {
+                    const txt = s.lines.join("\\n");
+                    let shown = txt;
+                    if (s.kind === "call") { try { shown = JSON.stringify(JSON.parse(txt), null, 2); } catch (e) {} }
+                    html.push('<div class="' + (s.kind === "call" ? "msg-tool" : "msg-result") + '"><span class="tool-chip ' + toolChipCls(s.name) + '">' + escapeHtml(s.name) + '</span><span class="tool-cid">' + escapeHtml(s.cid) + "</span>" + (s.kind === "res" ? '<span class="dim"> \u2192 </span>' : "") + '<pre class="' + (s.kind === "call" ? "tool-args" : "tool-out") + '">' + escapeHtml(shown) + "</pre></div>");
+                }
+            }
+        }
+        return html.join("");
+    }
     function buildDetailHtml(d) {
         const parts = [];
         parts.push('<a class="btn sm" href="#/sessions">' + t("common.back") + "</a>");
@@ -397,7 +472,7 @@ export const WEB_CLIENT = `(function () {
         parts.push('<div class="card"><div class="card-h"><span>' + t("det.identity") + '</span></div><div class="card-b"><dl class="kv">');
         // Full title wraps in place, is hoverable (title attr) and carries a copy button.
         parts.push('<div class="k">' + t("common.title") + '</div><div class="v" title="' + escapeHtml(d.title || "") + '">' + (d.title ? escapeHtml(d.title) + ' <button id="title-copy" class="btn sm">' + t("common.copy") + "</button>" : '<span class="faint">' + t("common.none") + "</span>") + "</div>");
-        kv(parts, t("common.label"), d.label || null);
+        if (d.label && d.label !== d.id) kv(parts, t("common.label"), d.label);
         kv(parts, t("common.protocol"), d.protocol || null, true);
         kv(parts, t("det.client_hint"), d.clientHint || null, true);
         kv(parts, t("common.upstream"), hostOf(d.upstreamOrigin) || null, true);
@@ -410,7 +485,7 @@ export const WEB_CLIENT = `(function () {
         mini(parts, t("ov.cached_tokens"), d.cachedTokens ? fmtW(d.cachedTokens) : null);
         mini(parts, t("ov.output_tokens"), d.outputTokens ? fmtW(d.outputTokens) : null);
         const dSavedV = d.netSaved != null ? d.netSaved : d.tokensSaved;
-        mini(parts, t("ov.tokens_saved"), dSavedV ? fmtW(dSavedV) : null, true);
+        mini(parts, t("ov.tokens_saved"), dSavedV ? fmtW(dSavedV) : null, dSavedV > 0);
         mini(parts, t("det.last_input"), (d.lastInputTokens || 0) > 0 ? fmtW(d.lastInputTokens) : null);
         parts.push("</div>");
         if (d.contextWindow && d.contextWindow > 0) {
@@ -459,17 +534,17 @@ export const WEB_CLIENT = `(function () {
         if (!folds.length) parts.push('<div class="dim small">' + t("det.folds_empty") + "</div>");
         else {
             // Numeric headers align with their columns; long fold lists stay scannable by
-            // showing the first 30 with the rest behind an expander.
+            // showing the first 10; the rest stay behind an expander in a scrollable panel.
             const foldHead = '<tr><th class="num">#</th><th>' + t("det.fold_time") + '</th><th class="num">' + t("det.fold_s") + '</th><th class="num">' + t("det.fold_sigma") + '</th><th class="num">' + t("det.fold_h") + '</th><th class="num">' + t("det.fold_t") + "</th></tr>";
             const foldRow = (f, i) => '<tr><td class="num">' + (f.seq != null ? f.seq : i + 1) + '</td><td class="num">' + (f.at ? fmtDT(f.at) : t("common.none")) + '</td><td class="num">' + fmtW(f.S) + '</td><td class="num">' + fmtW(f.sigma) + '</td><td class="num">' + (f.hPct == null ? t("common.none") : f.hPct.toFixed(1) + "%") + '</td><td class="num">' + fmtW(f.T) + "</td></tr>";
-            const FOLD_CAP = 30;
+            const FOLD_CAP = 10;
             parts.push('<table class="data"><thead>' + foldHead + '</thead><tbody>');
             folds.slice(0, FOLD_CAP).forEach((f, i) => parts.push(foldRow(f, i)));
             parts.push("</tbody></table>");
             if (folds.length > FOLD_CAP) {
-                parts.push('<details style="margin-top:8px"><summary class="dim small" style="cursor:pointer">' + t("det.folds_more", { n: folds.length - FOLD_CAP }) + '</summary><table class="data"><thead>' + foldHead + '</thead><tbody>');
+                parts.push('<details style="margin-top:8px"><summary class="dim small" style="cursor:pointer">' + t("det.folds_more", { n: folds.length - FOLD_CAP }) + '</summary><div class="fold-scroll"><table class="data"><thead>' + foldHead + '</thead><tbody>');
                 folds.slice(FOLD_CAP).forEach((f, i) => parts.push(foldRow(f, i + FOLD_CAP)));
-                parts.push("</tbody></table></details>");
+                parts.push("</tbody></table></div></details>");
             }
         }
         parts.push("</div></div>");
@@ -496,7 +571,8 @@ export const WEB_CLIENT = `(function () {
         // #1426: copy / download actions over the rendered handoff document
         parts.push('<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button id="handoff-copy-md" class="btn sm">' + t("det.handoff_copy_md") + '</button><button id="handoff-dl" class="btn sm">' + t("det.handoff_download") + "</button></div>");
         if (d.handoffTruncated) parts.push('<div class="banner warn show" style="margin:0 0 10px">' + t("det.handoff_truncated") + "</div>");
-        if (d.handoffHtml) parts.push('<div class="handoff">' + d.handoffHtml + "</div>");
+        if (d.handoffMd) parts.push('<div class="handoff">' + renderHandoffMd(d.handoffMd) + "</div>");
+        else if (d.handoffHtml) parts.push('<div class="handoff">' + d.handoffHtml + "</div>");
         else parts.push('<div class="dim small">' + t("common.empty") + "</div>");
         parts.push("</div></div>");
         return parts.join("");
