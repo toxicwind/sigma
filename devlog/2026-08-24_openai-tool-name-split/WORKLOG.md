@@ -2,7 +2,7 @@
 
 Branch: `2026-08-24_openai-tool-name-split` (single commit on top of origin/master)
 
-## 1. Bug (found by a REAL review session under `bili hermes`)
+## 1. Bug (found by a REAL review session under `sigma hermes`)
 
 SGLang/vLLM stream a tool-call NAME across multiple deltas: the first
 fragment carries the name, continuation fragments carry empty names and
@@ -62,7 +62,7 @@ Decide once, at completion, from the ACCUMULATED names — never per chunk.
 ## 4. Verification
 
 - `npx tsc --noEmit` clean; `npm test` 559/559; build ok.
-- Real e2e: `bili hermes` TUI review session (SGLang qwen3.8-27b,
+- Real e2e: `sigma hermes` TUI review session (SGLang qwen3.8-27b,
   OpenAI wire). Before the fix the reviewer died on
   `Unknown tool '' ×3 → Stopping as partial`. After: the reviewer made
   three `compress` calls (all intercepted: `acp-loop round 1: 1 call(s):

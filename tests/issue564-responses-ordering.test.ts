@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Config, CoreMessage } from "acp-kernel";
 import { createCore, createInitialState, defaultConfig, assignRefs, emptyRefMap, refForRaw } from "acp-kernel";
-import { responsesToCore, coreToResponses, type ResponsesProjection, type BiliMessage } from "acp-kernel/wire";
+import { responsesToCore, coreToResponses, type ResponsesProjection, type SigmaMessage } from "acp-kernel/wire";
 import type { Session } from "../src/session.ts";
 import { runCompressLoop, createResponsesAdapter } from "../src/loop/index.ts";
 import { buildCompressSystemPrompt } from "../src/compress-tool.ts";
@@ -140,7 +140,7 @@ test("#564 path 2: compress re-request keeps Responses assistant run ordering va
     const original = projection.msgs;
     const prepTurn = core.processTurn({ messages: original, state: session.state, config, tokenCount: 100, renderTags: "text-only" });
     session.state = prepTurn.state;
-    const processed = stripKernelSummaries(prepTurn.messages as BiliMessage[], prepTurn.state) as CoreMessage[];
+    const processed = stripKernelSummaries(prepTurn.messages as SigmaMessage[], prepTurn.state) as CoreMessage[];
     session.state.messageRefs = assignRefs(processed, { existing: emptyRefMap(), nextIndex: 0 }).map;
 
     const refOf = (m: CoreMessage): string | null => refForRaw(session.state.messageRefs, m.id);
@@ -165,7 +165,7 @@ test("#564 path 2: compress re-request keeps Responses assistant run ordering va
         const t = core.processTurn({ messages: original, state: session.state, config, tokenCount: 100, renderTags: "text-only" });
         session.state = t.state;
         const records = current.filter((m) => typeof m.id === "string" && m.id.startsWith("acp_loop_"));
-        return repairResponsesAssistantOrdering(stripKernelSummaries([...t.messages, ...records] as BiliMessage[], t.state), original);
+        return repairResponsesAssistantOrdering(stripKernelSummaries([...t.messages, ...records] as SigmaMessage[], t.state), original);
     };
     const ctx = {
         core, config,

@@ -10,8 +10,8 @@ import type { Session, BlockContent } from "../src/session.ts";
 import { createInitialState } from "acp-kernel";
 
 // These tests inspect raw on-disk session files directly (bypassing the store
-// codec), so pin the plain-JSON format: #1080 made BILIZSTD1 the default.
-process.env.BILI_PERSIST_ZSTD = "0";
+// codec), so pin the plain-JSON format: #1080 made SIGMAZSTD1 the default.
+process.env.SIGMA_PERSIST_ZSTD = "0";
 
 /** Recursively collect *.json files under dir (sessions are namespaced into
  *  protocol/ subdirs). */
@@ -43,7 +43,7 @@ function makeSession(id: string): Session {
 
 function withTempStore<T>(name: string, fn: (store: SessionStore, dir: string) => Promise<T> | T): Promise<T> {
     return test(name, async () => {
-        const dir = mkdtempSync(join(tmpdir(), "bili-persist-"));
+        const dir = mkdtempSync(join(tmpdir(), "sigma-persist-"));
         const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
         try {
             await fn(store, dir);
@@ -184,7 +184,7 @@ await withTempStore("collision-prone ids do NOT share a file (hashed names)", as
 });
 
 await withTempStore("disabled store writes nothing", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-disabled-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-disabled-"));
     const store = new SessionStore({ dir, enabled: false });
     try {
         const s = makeSession("x");
@@ -259,7 +259,7 @@ await withTempStore("writeNow rejection does not leak an unhandled rejection", a
     // Deterministic failure: point the store at a path whose parent is a
     // regular FILE, so mkdir(recursive) cannot recreate the directory and
     // the tmp-file write fails with ENOENT.
-    const blocker = join(tmpdir(), `bili-persist-blocker-${Date.now()}-${process.pid}`);
+    const blocker = join(tmpdir(), `sigma-persist-blocker-${Date.now()}-${process.pid}`);
     writeFileSync(blocker, "x");
     const dead = new SessionStore({ dir: join(blocker, "sessions"), debounceMs: 5, enabled: true });
     const unhandled: unknown[] = [];
@@ -453,7 +453,7 @@ await withTempStore("migration leaves anonymous pfa sessions untouched (#499)", 
 });
 
 test("SessionStore routes write failures through the EPERM detector (no false alert on non-lock error)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-eperm-wire-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-eperm-wire-"));
     rmSync(dir, { recursive: true, force: true });
     writeFileSync(dir, "block", "utf8");
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });

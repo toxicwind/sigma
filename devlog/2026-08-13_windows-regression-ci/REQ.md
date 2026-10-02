@@ -1,17 +1,17 @@
 # REQ - Cross-platform (Windows) CI regression
 
 - Task ID: `2026-08-13_windows-regression-ci`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: 2026-08-13
 - Status: Done
 - Priority: P1
 - Owner: awork
-- References: dog/billion-context-pi#32
+- References: dog/sigma-pi#32
 
 ## 1. Background & Problem Statement
 
-- **Context**: billion-context (the proxy) ran CI only on `ubuntu-latest`. The
-  sibling repo billion-context-pi already runs a `ubuntu + windows` matrix for
+- **Context**: sigma (the proxy) ran CI only on `ubuntu-latest`. The
+  sibling repo sigma-pi already runs a `ubuntu + windows` matrix for
   both unit and e2e. Windows users hit platform-specific bugs (path handling,
   MITM CA cert paths, spawn semantics, line endings) that ubuntu-only CI cannot
   catch.
@@ -21,7 +21,7 @@
 - **Expected behavior**: CI runs typecheck + the full test suite (including the
   in-process `e2e-proxy-smoke` e2e) + build on both `ubuntu-latest` and
   `windows-latest`, for Node 22 and 24.
-- **Impact**: Catches Windows regressions before merge; matches billion-context-pi.
+- **Impact**: Catches Windows regressions before merge; matches sigma-pi.
 
 ## 2. Reproduction (if applicable)
 
@@ -36,11 +36,11 @@
   - No new runtime dependencies.
 - **Non-Goals**:
   - macOS matrix (costly; ubuntu+windows already covers the two main platforms
-    and matches billion-context-pi). Can be added later if needed.
-  - A separate `e2e.yml` workflow: billion-context's e2e
+    and matches sigma-pi). Can be added later if needed.
+  - A separate `e2e.yml` workflow: sigma's e2e
     (`tests/e2e-proxy-smoke.test.ts`) is a fast in-process Node test already run
     by `npm test`, so the ci.yml matrix covers cross-OS e2e regression without a
-    redundant workflow (unlike billion-context-pi, whose e2e drives a real pi
+    redundant workflow (unlike sigma-pi, whose e2e drives a real pi
     host and justifies a separate slow workflow).
   - CI-enforced devlog presence (kept as a SHOULD for now).
 

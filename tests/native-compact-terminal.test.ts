@@ -102,7 +102,7 @@ test("e2e #321 PR-C: rebase only on completed; trigger request forwarded clean",
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1`;
 
     const postResponses = (path: string, body: unknown) => fetch(`${base}${path}`, {
         method: "POST",

@@ -34,15 +34,15 @@ async function freePort(): Promise<number> {
 test("Web UI exposes upstream controls without inline handlers", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-web-routing-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-web-routing-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
 
     const previous = {
-        config: process.env.BILI_CONFIG_FILE,
+        config: process.env.SIGMA_CONFIG_FILE,
     };
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const port = await freePort();
     const opts: ProxyOptions = {
         port,
@@ -84,7 +84,7 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
         assert.match(ui, /复制 CA 路径/);
         assert.ok(ui.includes(caPathEsc), "ZCode card shows the machine's real CA path");
         assert.match(ui, /data-copy="[^"]*root-ca\.pem"/);
-        assert.doesNotMatch(ui, /~\/\.local\/share\/billion-context\/ca\/root-ca\.pem/);
+        assert.doesNotMatch(ui, /~\/\.local\/share\/sigma\/ca\/root-ca\.pem/);
 
         const saveProxy = await fetch(`${base}/__bili/config`, {
             method: "PUT",
@@ -101,7 +101,7 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
 
     } finally {
         await close(proxy);
-        if (previous.config === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous.config;
+        if (previous.config === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous.config;
         rmSync(root, { recursive: true, force: true });
     }
 });
@@ -109,12 +109,12 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
 test("PUT /__bili/config with providers takes effect without a separate reload call", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-put-providers-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-put-providers-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const port = await freePort();
     const opts: ProxyOptions = {
         port,
@@ -150,7 +150,7 @@ test("PUT /__bili/config with providers takes effect without a separate reload c
         assert.deepEqual(after.providers, providers, "providers saved and visible after PUT without /reload");
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
         rmSync(root, { recursive: true, force: true });
     }
 });
@@ -228,12 +228,12 @@ test("parseCompressSettings accepts tuned fields and rejects malformed ones", ()
 test("#154: PUT /__bili/config with compress hot-applies the global compress block", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-put-compress-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-put-compress-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const port = await freePort();
     const opts: ProxyOptions = {
         port,
@@ -293,7 +293,7 @@ test("#154: PUT /__bili/config with compress hot-applies the global compress blo
         assert.equal(final.compress, null);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
         rmSync(root, { recursive: true, force: true });
     }
 });
@@ -307,13 +307,13 @@ test("#154: PUT /__bili/config with compress hot-applies the global compress blo
 test("compress round-trip preserves injectTool/injectNudge injection toggles", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-put-toggles-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-put-toggles-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     const toggles = { injectTool: false, nudgeGrowthTokens: 4000 };
     writeFileSync(biliConfig, JSON.stringify({ providers: {}, compress: toggles }) + "\n", "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const port = await freePort();
     const opts: ProxyOptions = {
         port,
@@ -354,7 +354,7 @@ test("compress round-trip preserves injectTool/injectNudge injection toggles", a
         assert.deepEqual(after.compress, toggles);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
         rmSync(root, { recursive: true, force: true });
     }
 });
@@ -362,15 +362,15 @@ test("compress round-trip preserves injectTool/injectNudge injection toggles", a
 test("PUT /__bili/config refuses to overwrite a config file that does not parse", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-put-broken-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-put-broken-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     // Hand-edited file with a trailing comma — JSON.parse fails, the loader
     // sees {}. A PUT must NOT rebuild from {} (that would silently drop the
     // user's modelContextLimit etc.); it must 409 until the syntax is fixed.
     writeFileSync(biliConfig, '{"providers":{},"modelContextLimit":333000,}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const port = await freePort();
     const opts: ProxyOptions = {
         port,
@@ -425,7 +425,7 @@ test("PUT /__bili/config refuses to overwrite a config file that does not parse"
         assert.ok(get2.providers["https://api.example.com"]);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
         rmSync(root, { recursive: true, force: true });
     }
 });

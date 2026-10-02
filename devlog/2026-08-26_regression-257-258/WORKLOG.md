@@ -14,7 +14,7 @@
 ### e2e setup
 
 - `/tmp/reg-e2e/`: isolated `PI_CODING_AGENT_DIR` (models.yml pointing at the mock), isolated
-  `BILI_SESSIONS_DIR`
+  `SIGMA_SESSIONS_DIR`
 - mock.py (tmux regmock, 127.0.0.1:19941): **routing by content** (not by turn count — the first
   attempt counted turns and backfired: omp's title request stole turn 1's script):
   - no tools → title request → plain-text title
@@ -72,7 +72,7 @@
 User reported a NEW omp session (post-#257 testing) filling with fake render tags
 (`<acp tokens="247" type="text">m00042</acp>`, same ref, tokens counting down) and the
 model never quoting the requested text. First diagnosis blamed an old Aug-24 proxy
-process — WRONG (user challenged it; the session was on the fresh bili-omp proxy).
+process — WRONG (user challenged it; the session was on the fresh sigma-omp proxy).
 Real root cause: `server.ts` plugin-mode branch pipes the upstream Responses stream
 VERBATIM (`pipeThroughWithUsage`), and the tag-echo stripper (#206) only exists in the
 compress-loop stream path — bringing omp into plugin mode (#257) bypassed the output-side
@@ -101,5 +101,5 @@ content_part events; pi-ai Responses parser needs the full lifecycle chain.)
 Also fixed a duplicated `### Fixes` header in [Unreleased] (merge artifact from #258's
 CHANGELOG edit) while adding the entry.
 
-User recovery: kill the pre-fix proxy; next `bili omp` spawns a fresh one with the strip.
+User recovery: kill the pre-fix proxy; next `sigma omp` spawns a fresh one with the strip.
 Poisoned session (01a03dcb) is unrecoverable — start a new session.

@@ -171,7 +171,7 @@ test("surfaces are independent per session", () => {
     assert.equal(out.notes.length, 0);
 });
 
-test("interop: a third-party client doing its own in-history updates gets zero bili injection", () => {
+test("interop: a third-party client doing its own in-history updates gets zero sigma injection", () => {
     // The client keeps its system prompt byte-stable and records instruction
     // changes as ordinary user messages inside the history (opencode-style).
     // The proxy only sees the constant head — it must stay completely silent.

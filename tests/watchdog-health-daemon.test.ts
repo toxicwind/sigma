@@ -9,19 +9,19 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 
 /** #1322 counterpart of watchdog-health.test.ts: a proxy started WITHOUT
- *  BILI_PARENT_PID is a daemon — its health must say `armed:false` and it must
+ *  SIGMA_PARENT_PID is a daemon — its health must say `armed:false` and it must
  *  keep refusing watcher registrations (409) while staying up. Separate file
- *  because src/server.ts captures BILI_PARENT_PID at module load. */
+ *  because src/server.ts captures SIGMA_PARENT_PID at module load. */
 
-const root = path.join(tmpdir(), `bili-watchdog-daemon-${process.pid}-${Date.now()}`);
+const root = path.join(tmpdir(), `sigma-watchdog-daemon-${process.pid}-${Date.now()}`);
 mkdirSync(path.join(root, "config"), { recursive: true });
 process.env.XDG_CONFIG_HOME = path.join(root, "config");
 process.env.XDG_STATE_HOME = path.join(root, "state");
 process.env.XDG_CACHE_HOME = path.join(root, "cache");
-process.env.BILI_CONFIG_FILE = path.join(root, "config", "billion-context.json");
-writeFileSync(process.env.BILI_CONFIG_FILE, '{"providers":{}}\n', "utf8");
-delete process.env.BILLION_CONTEXT_PROXY;
-delete process.env.BILI_PARENT_PID;
+process.env.SIGMA_CONFIG_FILE = path.join(root, "config", "sigma.json");
+writeFileSync(process.env.SIGMA_CONFIG_FILE, '{"providers":{}}\n', "utf8");
+delete process.env.SIGMA_PROXY;
+delete process.env.SIGMA_PARENT_PID;
 
 const keeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 60000)"], { stdio: "ignore" });
 
@@ -83,7 +83,7 @@ test("health exposes an unarmed watchdog on a daemon proxy; registration stays r
         const h = await getJson(port, "/__bili/health");
         assert.equal(h.status, 200);
         const j = JSON.parse(h.body) as { watchdog?: { armed?: boolean; parentPid?: number; watchers?: number[] } };
-        assert.equal(j.watchdog?.armed, false, "no BILI_PARENT_PID → unarmed");
+        assert.equal(j.watchdog?.armed, false, "no SIGMA_PARENT_PID → unarmed");
         assert.equal(j.watchdog?.parentPid, undefined, "no parent pid reported");
         assert.deepEqual(j.watchdog?.watchers, [], "empty owner set");
 

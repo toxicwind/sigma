@@ -271,7 +271,7 @@ test("responses: reasoning is dropped from output after its turn is compressed",
 });
 
 // 11. Reasoning id is stable across turns — Codex re-sends the same reasoning
-// items every turn, so the same input item must yield the same BiliMessage id
+// items every turn, so the same input item must yield the same SigmaMessage id
 // or the kernel would accumulate phantom duplicates.
 test("responses: reasoning id is stable across turns (same item → same id)", () => {
     const body = (): ResponsesRequestBody => ({

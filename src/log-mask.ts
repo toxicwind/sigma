@@ -1,6 +1,6 @@
 /**
  * Log-safety helpers (#255): keep credentials and non-public API endpoints
- * out of bili.log / launcher logs.
+ * out of sigma.log / launcher logs.
  *
  * Rule: well-known PUBLIC LLM API hosts (openai, anthropic, ...) may appear
  * in logs verbatim; anything else is a non-public endpoint (private relay,
@@ -44,7 +44,7 @@ const CREDENTIAL_HEADER_RE = /key|auth|token|cookie/i;
 
 // #897: host masking is ON by default (#255 — logs get pasted into public
 // issues). Operators who want the real target hosts in their local log can
-// opt out (env BILI_LOG_MASK_HOSTS=0 / config maskHosts:false); real hosts
+// opt out (env SIGMA_LOG_MASK_HOSTS=0 / config maskHosts:false); real hosts
 // stay visible on the loopback-only /__bili/stats endpoint regardless.
 // Credential masking is independent and always on.
 let maskHostsEnabled = true;
@@ -85,7 +85,7 @@ export function maskUrlForLog(url: string): string {
 }
 
 /** Mask every http(s) URL embedded anywhere in an arbitrary string (request
- *  paths like /bili/http://relay.internal/v1/..., error text). */
+ *  paths like /sigma/http://relay.internal/v1/..., error text). */
 export function maskUrlsInText(text: string): string {
     return text.replace(/https?:\/\/[^\s"'<>]+/gi, (m) => maskUrlForLog(m));
 }

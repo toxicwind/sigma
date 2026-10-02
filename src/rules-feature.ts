@@ -13,7 +13,7 @@ import type { Session } from "./session.js";
 const EFFECTIVE_RULES_KEY = "effectiveRules";
 
 // #1399: opt-in — the owner decision "the model has full rights over session
-// rules" covers the CAPABILITY (record/list/delete/clear, and the model may
+// rules" covers the CAPASIGMATY (record/list/delete/clear, and the model may
 // call it unprompted) within sessions where the feature is enabled; it does
 // not inject the tool for everyone. Off unless `compress.rules: true`
 // (deepest-wins). An explicit `enabled: false` stays a loud off.

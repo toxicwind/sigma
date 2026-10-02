@@ -23,7 +23,7 @@ export interface ProxyInstanceFile {
     modelMaxOutputs?: Record<string, number>;
     launchToken?: string;
     /** #1225: which client/lane the launcher that spawned this instance
-     *  belongs to (BILI_LAUNCHER_LANE). Absent for manual `bili start`
+     *  belongs to (SIGMA_LAUNCHER_LANE). Absent for manual `sigma start`
      *  daemons and pre-#1225 instances — both stay shareable (wildcard). */
     lane?: string;
     /** #1225: sha256 of the entry script this instance is RUNNING. A missing
@@ -89,7 +89,7 @@ export function instanceFilePath(): string {
     return path.join(stateDir(), "proxy-origin");
 }
 
-/** #1225: content identity of a bili entry script (sha256 of its bytes).
+/** #1225: content identity of a sigma entry script (sha256 of its bytes).
  *  The spawned child records this for ITS script; an attaching launcher
  *  compares it against the hash of the script it would spawn — so "same
  *  version" is never enough: two installs of 0.1.x with different dist
@@ -409,7 +409,7 @@ function reapDeadMarkers(ours: string): void {
 }
 
 /** #1232: two instances' lanes overlap iff either is undeclared (a manual
- *  `bili start` daemon can serve ANY client, so it shares every lane's
+ *  `sigma start` daemon can serve ANY client, so it shares every lane's
  *  hazard) or both declare the same lane. Different declared lanes serve
  *  disjoint clients/conversations — concurrent use there is legitimate and
  *  must not trigger the "stop one" advice. */
@@ -423,7 +423,7 @@ export function registerInstanceAndWarn(entry: RegistryEntry, warn: (msg: string
         if (!lanesOverlap(entry.lane, other.lane)) continue;
         const laneNote = entry.lane !== undefined && other.lane !== undefined ? ` on lane "${entry.lane}"` : "";
         warn(
-            `another bili instance is running (pid ${other.pid}, ${other.origin})${laneNote} — both processes will write the same sessions directory; stop one to avoid state pollution (#394)`,
+            `another sigma instance is running (pid ${other.pid}, ${other.origin})${laneNote} — both processes will write the same sessions directory; stop one to avoid state pollution (#394)`,
         );
     }
     reapDeadMarkers(entry.instanceId);

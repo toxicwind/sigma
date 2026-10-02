@@ -18,7 +18,7 @@ export interface ZcodeWrappedEntry {
     readonly upstream: string;
 }
 
-export const ZCODE_PLUGIN_HEADER = "x-bili-plugin";
+export const ZCODE_PLUGIN_HEADER = "x-sigma-plugin";
 export const ZCODE_AGENT_VALUE = "zcode";
 export const ZCODE_BIGMODEL_ANTHROPIC_UPSTREAM = "https://open.bigmodel.cn/api/anthropic";
 
@@ -51,7 +51,7 @@ const ZCODE_NEW_CREATE_IDS: readonly string[] = [
     "account:bigmodel-start-plan",
 ];
 
-const WRAPPED_URL_RE = /^https?:\/\/[^/]+\/bili\/(https?:\/\/.+)$/;
+const WRAPPED_URL_RE = /^https?:\/\/[^/]+\/sigma\/(https?:\/\/.+)$/;
 
 export function resolveZcodeDataDir(env: NodeJS.ProcessEnv = process.env): string {
     return zcodeDataRoot(env);
@@ -97,7 +97,7 @@ function parseRoot(text: string, label: string): Record<string, unknown> {
     return root;
 }
 
-/** Strip a previous /bili/ wrapper (any origin/port) and validate the result
+/** Strip a previous /sigma/ wrapper (any origin/port) and validate the result
  *  is an http(s) URL. Returns undefined for values we must not touch. */
 function unwrapBaseUrl(value: unknown): string | undefined {
     if (typeof value !== "string") return undefined;
@@ -153,7 +153,7 @@ function applyLegacy(text: string, origin: string): { text: string; wrapped: Zco
     const wrapped: ZcodeWrappedEntry[] = [];
     for (const { id, options } of legacyPlanEntries(root, true)) {
         const upstream = unwrapBaseUrl(options.baseURL) ?? ZCODE_BIGMODEL_ANTHROPIC_UPSTREAM;
-        options.baseURL = `${origin}/bili/${upstream}`;
+        options.baseURL = `${origin}/sigma/${upstream}`;
         wrapped.push({ id, upstream });
     }
     return { text: serialize(root), wrapped };
@@ -216,7 +216,7 @@ function applyNew(text: string, origin: string): { text: string; wrapped: ZcodeW
     const wrapped: ZcodeWrappedEntry[] = [];
     for (const { id, api } of newPlanRules(root, true)) {
         const upstream = unwrapBaseUrl(api.baseUrl) ?? ZCODE_BIGMODEL_ANTHROPIC_UPSTREAM;
-        api.baseUrl = `${origin}/bili/${upstream}`;
+        api.baseUrl = `${origin}/sigma/${upstream}`;
         wrapped.push({ id, upstream });
     }
     return { text: serialize(root), wrapped };
@@ -319,7 +319,7 @@ export function unrouteZcodeText(text: string, kind: ZcodeStoreKind): { text: st
 }
 
 /** Read-only inspection for status reporting: which store exists and which
- *  entries currently route through a bili origin. */
+ *  entries currently route through a sigma origin. */
 export function inspectZcodeRouting(dataDir: string, env: NodeJS.ProcessEnv = process.env): { kind: ZcodeStoreKind; file: string; wrapped: ZcodeWrappedEntry[] } | undefined {
     const { kind, file } = detectZcodeStore(dataDir, env);
     let text: string;

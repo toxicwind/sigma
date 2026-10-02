@@ -13,7 +13,7 @@ import { listSessions } from "../src/session.ts";
 
 // #321 PR-E1: a codex client (UA `codex_cli_rs/…`) carries its own window
 // perception and auto-compacts at 90% of it. The proxy caps the effective
-// window at codex's perception (min(bili, codex)), so ACP compresses before
+// window at codex's perception (min(sigma, codex)), so ACP compresses before
 // codex's native compaction can fire (the #292 misalignment). The cap is
 // per-request (the UA may appear/disappear between requests of one session)
 // and observable via the plugin-reported effectiveContextLimit.
@@ -71,14 +71,14 @@ async function startRig(): Promise<Rig> {
 }
 
 function url(rig: Rig): string {
-    return `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+    return `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
 }
 
 async function post(rig: Rig, session: string, model: string, codex: boolean): Promise<number> {
     const headers: Record<string, string> = {
         "content-type": "application/json",
         "x-acp-session": session,
-        "x-bili-plugin": "test-agent",
+        "x-sigma-plugin": "test-agent",
     };
     if (codex) headers["user-agent"] = CODEX_UA;
     const r = await fetch(url(rig), { method: "POST", headers, body: JSON.stringify({ model, max_tokens: 1024, stream: false, messages: [{ role: "user", content: "hi" }] }) });
@@ -101,7 +101,7 @@ test("e2e: codex UA + in-table model → window clamped to codex's perception", 
     const rig = await startRig();
     try {
         assert.equal(await post(rig, "cw-in", "gpt-5.5", true), 200);
-        assert.equal(effectiveLimit("cw-in"), 272_000, "gpt-5.5: bili table 400K clamped to codex 272K");
+        assert.equal(effectiveLimit("cw-in"), 272_000, "gpt-5.5: sigma table 400K clamped to codex 272K");
     } finally {
         await closeRig(rig);
     }
@@ -131,13 +131,13 @@ test("e2e: codex UA + not-in-table model → clamped to the 272K fallback", asyn
     const rig = await startRig();
     try {
         assert.equal(await post(rig, "cw-fallback", "glm-5", true), 200);
-        assert.equal(effectiveLimit("cw-fallback"), 272_000, "glm-5: bili table 1M clamped to codex's unknown-model 272K");
+        assert.equal(effectiveLimit("cw-fallback"), 272_000, "glm-5: sigma table 1M clamped to codex's unknown-model 272K");
     } finally {
         await closeRig(rig);
     }
 });
 
-test("e2e: codex UA + bili window below perception → untouched (min keeps bili's)", async () => {
+test("e2e: codex UA + sigma window below perception → untouched (min keeps sigma's)", async () => {
     const rig = await startRig();
     try {
         assert.equal(await post(rig, "cw-below", "claude-sonnet-4-5", true), 200);

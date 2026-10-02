@@ -13,7 +13,7 @@ import { listSessions } from "../src/session.ts";
 
 // Issue #280 (round 2): Codex's native remote-compact request ends with a
 // compaction_trigger item that the upstream requires to be the FINAL input
-// item. Bili's compress nudge used to append a user message at the end of
+// item. Sigma's compress nudge used to append a user message at the end of
 // the input, landing after the trigger and failing the request with 400
 // "The 'compaction_trigger' item must be the final input item." — breaking
 // Codex's own pre-sampling compact. The nudge must be skipped when the
@@ -81,7 +81,7 @@ test("e2e #280r2 (Responses): trailing compaction_trigger stays final — nudge 
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
 
     const post = (input: unknown, session = "trig-sess") => fetch(url, {
         method: "POST",

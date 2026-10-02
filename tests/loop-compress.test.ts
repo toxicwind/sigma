@@ -441,7 +441,7 @@ test("loop #9 (S2): responses round yields usage → session.stats populated (nu
 });
 
 test("loop #10 (S3): upstream 500 mid-loop terminates cleanly (timer cleared, no hang)", async () => {
-    process.env.BILI_REPLAY_RETRY_BASE_MS = "1";
+    process.env.SIGMA_REPLAY_RETRY_BASE_MS = "1";
     const ctx = makeCtx([
         textMsg("m00001", "user", "hello"),
         textMsg("m00002", "assistant", "hi"),
@@ -471,7 +471,7 @@ test("loop #10 (S3): upstream 500 mid-loop terminates cleanly (timer cleared, no
         assert.ok(typeof out === "string", "loop terminated cleanly on upstream 500 (S3: timer cleared)");
         assert.equal(fetchCalls, REPLAY_MAX_ATTEMPTS, "5xx retried with bounded attempts (#189)");
     } finally {
-        delete process.env.BILI_REPLAY_RETRY_BASE_MS;
+        delete process.env.SIGMA_REPLAY_RETRY_BASE_MS;
         globalThis.fetch = orig;
     }
 });

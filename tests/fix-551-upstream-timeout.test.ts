@@ -19,14 +19,14 @@ function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
-const TIMEOUT_ENV = "BILI_UPSTREAM_TIMEOUT_MS";
+const TIMEOUT_ENV = "SIGMA_UPSTREAM_TIMEOUT_MS";
 
 function restoreEnv(prev: string | undefined): void {
     if (prev === undefined) delete process.env[TIMEOUT_ENV];
     else process.env[TIMEOUT_ENV] = prev;
 }
 
-test("upstreamTimeoutMs honors BILI_UPSTREAM_TIMEOUT_MS and falls back to the 12-minute default", () => {
+test("upstreamTimeoutMs honors SIGMA_UPSTREAM_TIMEOUT_MS and falls back to the 12-minute default", () => {
     const prev = process.env[TIMEOUT_ENV];
     try {
         delete process.env[TIMEOUT_ENV];
@@ -43,7 +43,7 @@ test("upstreamTimeoutMs honors BILI_UPSTREAM_TIMEOUT_MS and falls back to the 12
 });
 
 // Pre-fix, Node's hidden global undici agent capped every direct request at
-// 300s (headersTimeout/bodyTimeout defaults) regardless of bili's own
+// 300s (headersTimeout/bodyTimeout defaults) regardless of sigma's own
 // watchdog, so any prefill silence between the budget and 300s either slipped
 // through (budget > 300s) or was killed by undici first (budget < 300s, e.g.
 // the observed ~305s truncations). These two cases bracket the alignment:

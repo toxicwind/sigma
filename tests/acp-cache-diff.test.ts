@@ -12,7 +12,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { compareWires, parseUsageLog, renderJson, renderText, runDiff } from "../src/acp-cache-diff.ts";
 
-// #1266: `bili acp-cache diff <dump-dir>` — synthetic dump pairs covering the
+// #1266: `sigma acp-cache diff <dump-dir>` — synthetic dump pairs covering the
 // three classification shapes (pure-append / mid-stream-rewrite /
 // prefix-stable-miss), legacy filename handling, usage-log correlation, and
 // the INCOMING-filename fix (session id now embedded).
@@ -144,13 +144,13 @@ test("runDiff: stable outgoing prefix + collapsed cached tokens classifies prefi
             aIn: chatBody("gpt-x", [M1]), bIn: chatBody("gpt-x", [M1, M2]),
             aOut: chatBody("gpt-x", [M1]), bOut: chatBody("gpt-x", [M1, M2]),
         });
-        fs.writeFileSync(path.join(dir, "bili.log"), [
+        fs.writeFileSync(path.join(dir, "sigma.log"), [
             "2026-09-24T14:32:05.123Z [info] [ses_a] [acp-usage] round 1 input=100000 cached=95000 (cache hit 95%)",
             "2026-09-24T14:32:12.456Z [info] [ses_a] [acp-usage] round 1 input=104000 cached=1000 (cache hit 1%)",
             "2026-09-24T14:32:12.999Z [info] unrelated noise line",
         ].join("\n") + "\n");
         const report = runDiff(dir);
-        assert.equal(report.logSource, path.join(dir, "bili.log"));
+        assert.equal(report.logSource, path.join(dir, "sigma.log"));
         assert.equal(report.usageSamples, 2);
         const p = report.sessions[0]!.pairs[0]!;
         assert.equal(p.category, "prefix-stable-miss");
@@ -177,7 +177,7 @@ test("runDiff: dense request cadence (<2s apart, compress-loop regime) still ali
             aIn: chatBody("gpt-x", [M1]), bIn: chatBody("gpt-x", [M1, M2]),
             aOut: chatBody("gpt-x", [M1]), bOut: chatBody("gpt-x", [M1, M2]),
         });
-        fs.writeFileSync(path.join(dir, "bili.log"), [
+        fs.writeFileSync(path.join(dir, "sigma.log"), [
             "2026-09-24T14:32:05.000Z [info] [ses_dense] [acp-usage] round 1 input=100000 cached=95000 (cache hit 95%)",
             "2026-09-24T14:32:06.000Z [info] [ses_dense] [acp-usage] round 1 input=104000 cached=1000 (cache hit 1%)",
         ].join("\n") + "\n");
@@ -198,7 +198,7 @@ test("runDiff: healthy usage (cached ≈ previous input) stays pure-append", () 
             aIn: chatBody("gpt-x", [M1]), bIn: chatBody("gpt-x", [M1, M2]),
             aOut: chatBody("gpt-x", [M1]), bOut: chatBody("gpt-x", [M1, M2]),
         });
-        fs.writeFileSync(path.join(dir, "bili.log"), [
+        fs.writeFileSync(path.join(dir, "sigma.log"), [
             "2026-09-24T14:32:05.123Z [info] [ses_a] [acp-usage] round 1 input=100000 cached=95000 (cache hit 95%)",
             "2026-09-24T14:32:12.456Z [info] [ses_a] [acp-usage] round 1 input=104000 cached=99500 (cache hit 95%)",
         ].join("\n") + "\n");
@@ -291,7 +291,7 @@ test("renderJson/renderText: machine output parses and text highlights worst off
 test("parseUsageLog: loop + plugin variants, sanitized sids, malformed lines skipped", () => {
     const dir = tmpdir("acp-diff-log-");
     try {
-        const file = path.join(dir, "bili.log");
+        const file = path.join(dir, "sigma.log");
         fs.writeFileSync(file, [
             "2026-09-24T14:32:05.123Z [info] [weird/id] [acp-usage] round 1 input=100 cached=50 (cache hit 50%)",
             "2026-09-24T14:32:06.000Z [info] [weird/id] [plugin] [acp-usage] input=200 cached=180 (cache hit 90%)",
@@ -327,7 +327,7 @@ function baseOpts(): ProxyOptions {
 }
 
 test("server: INCOMING dump filename carries the bound session id (#1266)", async () => {
-    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bili-inc-name-"));
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-inc-name-"));
     const prev = { xdg: process.env.XDG_STATE_HOME, body: process.env.ACP_DUMP_BODY };
     process.env.XDG_STATE_HOME = tmpRoot;
     process.env.ACP_DUMP_BODY = "1";
@@ -348,14 +348,14 @@ test("server: INCOMING dump filename carries the bound session id (#1266)", asyn
         proxy = await startServer(opts);
         await once(proxy, "listening");
         const proxyPort = (proxy.address() as { port: number }).port;
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "acp-diff-h1" },
             body: JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "INC-NAME-MARKER" }] }),
         });
         assert.equal(resp.status, 200);
         await resp.text();
-        const rawDir = path.join(tmpRoot, "billion-context", "raw");
+        const rawDir = path.join(tmpRoot, "sigma", "raw");
         const incFiles = fs.readdirSync(rawDir).filter((f) => f.endsWith("-INCOMING.txt"));
         assert.equal(incFiles.length, 1, incFiles.join(","));
         assert.match(incFiles[0]!, /^\d+-acp-diff-h1-INCOMING\.txt$/);

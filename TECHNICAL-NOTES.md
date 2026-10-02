@@ -8,13 +8,13 @@ here instead of between the options.
 
 At load the plugin **spawns its own proxy** (or attaches to a healthy
 running one — a parent-pid watchdog tears it down when the client exits),
-rewrites model traffic to `<proxy>/bili/<upstream-url>`, registers
+rewrites model traffic to `<proxy>/sigma/<upstream-url>`, registers
 `compress` / `decompress` / `acp_status` as native client tools (plugin
 mode), and binds the `/acp` panel to the current session. It also reports
 the client's **own model config** to the proxy (runtime-info protocol,
 see #955) so compression budgets use the real window instead of a
-registry guess. Opt-out envs: `BILI_NATIVE_PI=0`, `BILI_NATIVE_OMP=0`,
-`BILI_NATIVE_OPENCODE=0`, `BILI_NATIVE_DSH=0`, `BILI_NATIVE_KIMI=0`.
+registry guess. Opt-out envs: `SIGMA_NATIVE_PI=0`, `SIGMA_NATIVE_OMP=0`,
+`SIGMA_NATIVE_OPENCODE=0`, `SIGMA_NATIVE_DSH=0`, `SIGMA_NATIVE_KIMI=0`.
 
 ## Runtime-info protocol (#955)
 
@@ -25,7 +25,7 @@ table in the context-window chain:
 
 | Channel | When | Fields |
 |---|---|---|
-| Per-request headers (gated on `x-bili-plugin`) | every model request | `x-bili-plugin-context-window`, `x-bili-plugin-max-output`, `x-bili-plugin-model` |
+| Per-request headers (gated on `x-sigma-plugin`) | every model request | `x-sigma-plugin-context-window`, `x-sigma-plugin-max-output`, `x-sigma-plugin-model` |
 | `POST /__bili/plugin/runtime-info` (loopback) | plugin bootstrap + model switch | `{agent, model, contextWindow?, maxOutput?, baseURL?, source}` |
 
 Resolution order for the window: `anthropic-beta` negotiation > per-request
@@ -42,11 +42,11 @@ per-request headers via an `llm_request` middleware, max output captured by a
 protocol.
 
 The launcher env tier covers pure-proxy clients (no in-process plugin):
-`bili <client>` reads the client's own model config at launch
+`sigma <client>` reads the client's own model config at launch
 (`model_context_window` / `model_max_output_tokens` for codex,
 `contextWindow` / `maxTokens` for pi / omp, `limit.context` / `limit.output`
 for opencode, `maxInputTokens` / `maxOutputTokens` for codebuddy) and hands
-it to the proxy via `BILI_LAUNCHER_MODEL_WINDOWS` / `BILI_LAUNCHER_MODEL_MAX_OUTPUTS`
+it to the proxy via `SIGMA_LAUNCHER_MODEL_WINDOWS` / `SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS`
 (#971). A plugin report — when present — always outranks it.
 
 Before the first model request there is no session yet, so the `/acp` panel
@@ -57,35 +57,35 @@ takes over once traffic lands.
 
 ## Claude native posture (#964)
 
-Claude Code has no in-process extension point, so `bili plugin install
+Claude Code has no in-process extension point, so `sigma plugin install
 claude` writes a managed block into `~/.claude/settings.json` (env
-`ANTHROPIC_BASE_URL=http://127.0.0.1:48787/bili/<upstream>`,
+`ANTHROPIC_BASE_URL=http://127.0.0.1:48787/sigma/<upstream>`,
 `DISABLE_AUTO_COMPACT=1`, and a `SessionStart` hook) plus the same
 user-scope MCP shell as before, now pinned to that stable port. The hook
 (fired before claude's first model request) attaches to a healthy proxy on
 the port or spawns one whose pid watchdog tracks claude itself, so the
 proxy lives and dies with the session. Port override:
-`BILI_CLAUDE_NATIVE_PORT` > config `claude.nativePort` > 48787; upstream
-override: `BILI_CLAUDE_UPSTREAM` (or the existing `claude.anthropicBaseUrl`
-config). Opt out with `BILI_NATIVE_CLAUDE=0` — the hook then brings up a
+`SIGMA_CLAUDE_NATIVE_PORT` > config `claude.nativePort` > 48787; upstream
+override: `SIGMA_CLAUDE_UPSTREAM` (or the existing `claude.anthropicBaseUrl`
+config). Opt out with `SIGMA_NATIVE_CLAUDE=0` — the hook then brings up a
 **passthrough** proxy on the same port (verbatim forward, compression off)
 so claude keeps working. The block is pure JSON merge/strip: foreign keys
-are never touched, `bili plugin remove claude` restores exactly. `bili
+are never touched, `sigma plugin remove claude` restores exactly. `sigma
 claude` still works on a machine with the native block installed — it
 overrides the static URL with its own ephemeral proxy and the hook stays
 dormant.
 
 ## Injection priority — no files unless unavoidable (#535)
 
-bili never owns user data: every launched client runs on its **real home**, so
+sigma never owns user data: every launched client runs on its **real home**, so
 runtime writes land where the user expects them. When pointing a client at the
 proxy, the launcher picks by priority — **env vars first** (proxy/CA envs for
-hermes/dsh/codex; the `BILI_PROVIDER_REWRITES` URL manifest for pi/omp,
+hermes/dsh/codex; the `SIGMA_PROVIDER_REWRITES` URL manifest for pi/omp,
 consumed by their extension's `registerProvider` at load), then **CLI flags or
 extension APIs** (codex `-c key=value`, opencode plugin), and **generated files
 last** — today only opencode's temp `opencode.json` (deleted on exit) and dsh's
 loopback exception: dsh's fetch stack bypasses proxy envs for loopback targets
-unconditionally, so local upstreams keep the persistent `~/.dsh-bili` overlay
+unconditionally, so local upstreams keep the persistent `~/.dsh-sigma` overlay
 rewrite until dsh gains a settings-path env or an upstream loopback opt-out.
 Overlay dirs created by older versions are left in place and never merged back
 into the real home.

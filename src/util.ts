@@ -5,16 +5,16 @@ import { createHash } from "node:crypto";
 // such requests verbatim — no session binding, no tool injection, no
 // compression — because acp owns those sessions' context in-process. Clients
 // never send this header except through our own plugin.
-export const BILI_PLUGIN_BYPASS_HEADER = "x-bili-plugin-bypass";
+export const SIGMA_PLUGIN_BYPASS_HEADER = "x-sigma-plugin-bypass";
 
 // #1117: stamped by the native fetch patch (agent/native-intercept.ts) on
 // model requests the host CANNOT attribute to its own agent chain (dsh:
 // AsyncLocalStorage currentInitiator absent — e.g. a third-party in-process
-// plugin riding the host's LLM bridge) whose URL is already /bili/-routed by
+// plugin riding the host's LLM bridge) whose URL is already /sigma/-routed by
 // the settings overlay and thus cannot be refused client-side. The proxy
 // relays such requests byte-untouched — no session, no injection, no guard —
 // mirroring what a direct send without the overlay would have been.
-export const BILI_PASSTHROUGH_HEADER = "x-bili-passthrough";
+export const SIGMA_PASSTHROUGH_HEADER = "x-sigma-passthrough";
 
 /**
  * Cryptographic hash of a string, truncated to a 64-bit id (16 hex chars).
@@ -257,7 +257,7 @@ export function inspectContextOverflow(status: number, bodyText: string): Contex
 }
 
 /** Default cap on the output-headroom reservation, as a fraction of the
- *  context window (#896, aligned with billion-context-pi #207). Reserving the
+ *  context window (#896, aligned with sigma-pi #207). Reserving the
  *  FULL registered max output halves the effective input budget on models whose
  *  max_tokens is a large share of the window (e.g. 131072 on a 262144 window),
  *  while real per-turn replies rarely approach it. Capping at 25% keeps the
@@ -287,7 +287,7 @@ export function resolveOutputHeadroomCap(value: number | string | undefined): nu
  * (maxOutput < window) — a request whose output budget is >= the whole window is
  * degenerate and the self-heal handles the resulting overflow instead.
  * `capPct` bounds the reservation as a fraction of the window: reserved =
- * min(maxOutput, capPct * window) (#896, same formula as billion-context-pi
+ * min(maxOutput, capPct * window) (#896, same formula as sigma-pi
  * #207). capPct semantics: <= 0 → no reservation; (0,1) → capped reservation;
  * >= 1 or non-finite → legacy full-capability reservation (input + a response
  * using its ENTIRE output budget always fits — what strict backends like

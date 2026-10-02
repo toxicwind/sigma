@@ -51,7 +51,7 @@ function makeCtx(prompts: Rendered[]): { client: OpencodeClient } {
     };
 }
 
-const HANDLED = /__BILI_ACP_HANDLED__/;
+const HANDLED = /__SIGMA_ACP_HANDLED__/;
 
 test("config registers both /acp and /acp-cache (#1146)", async () => {
     const hooks = createAcpCommandHooks(() => "http://127.0.0.1:1", {});
@@ -103,7 +103,7 @@ test("/acp-cache with no proxy base renders a diagnostic and still handles (#114
     const hooks = createAcpCommandHooks(() => undefined, makeCtx(prompts));
     await assert.rejects(hooks["command.execute.before"]?.({ command: "acp-cache", sessionID: "s" }), HANDLED);
     assert.equal(prompts.length, 1);
-    assert.match(prompts[0].text, /no bili proxy detected/);
+    assert.match(prompts[0].text, /no sigma proxy detected/);
 });
 
 test("/acp-cache renders proxy-side failures unwrapped (#1146)", async () => {

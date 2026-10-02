@@ -2,7 +2,7 @@
 //
 // Deterministic per-protocol fakes that stand in for the REAL upstreams in
 // every test. Each fake enforces, on EVERY request it receives, the strictest
-// known validation of the real upstream it imitates — so a request bili
+// known validation of the real upstream it imitates — so a request sigma
 // forwards that would 400 at api.anthropic.com / api.openai.com / generativelanguage
 // dies HERE, in CI, with a rule id pointing at the ledger entry.
 //
@@ -37,14 +37,14 @@ export const WIRE_RULES: readonly WireRule[] = [
         wire: "anthropic",
         summary: "tools[].input_schema must not carry top-level oneOf/allOf/anyOf/not",
         provenance:
-            "bili #1299 production 400 (api.anthropic.com: 'input_schema does not support oneOf, allOf, or anyOf at the top level'); fixed acp-kernel #404/#405 v0.0.89; policy codified in acp-kernel compress-tools.d.ts ('Wire-legality constraint')",
+            "sigma #1299 production 400 (api.anthropic.com: 'input_schema does not support oneOf, allOf, or anyOf at the top level'); fixed acp-kernel #404/#405 v0.0.89; policy codified in acp-kernel compress-tools.d.ts ('Wire-legality constraint')",
     },
     {
         id: "WC-002",
         wire: "anthropic",
         summary: "tools[].input_schema must be a JSON object with type:'object'",
         provenance:
-            "bili #1299 production 400 ('Input schema should be an object'); Anthropic Messages API reference (tools[].input_schema)",
+            "sigma #1299 production 400 ('Input schema should be an object'); Anthropic Messages API reference (tools[].input_schema)",
     },
     {
         id: "WC-003",
@@ -58,7 +58,7 @@ export const WIRE_RULES: readonly WireRule[] = [
         summary:
             "function tool name matches ^[a-zA-Z0-9_-]{1,64}$, function.parameters.type === 'object', and no top-level oneOf/allOf/anyOf/not",
         provenance:
-            "OpenAI Chat Completions API reference (function calling; strict mode rejects parameter schemas that are not plain objects); top-level-combinator ban restored from the old #1302 gate (bili schema portability policy) — dropped during the #1305 consolidation, caught by review mutation C",
+            "OpenAI Chat Completions API reference (function calling; strict mode rejects parameter schemas that are not plain objects); top-level-combinator ban restored from the old #1302 gate (sigma schema portability policy) — dropped during the #1305 consolidation, caught by review mutation C",
     },
     {
         id: "WC-005",
@@ -80,9 +80,9 @@ export const WIRE_RULES: readonly WireRule[] = [
         id: "WC-007",
         wire: "anthropic",
         summary:
-            "no top-level prompt_cache_key — not part of the Anthropic Messages API; strict-schema upstreams reject unknown fields ('Extra inputs are not permitted'). bili's omp plugin stamps it as the session id (#268), so the proxy strips it on EVERY forward path (processed + verbatim).",
+            "no top-level prompt_cache_key — not part of the Anthropic Messages API; strict-schema upstreams reject unknown fields ('Extra inputs are not permitted'). sigma's omp plugin stamps it as the session id (#268), so the proxy strips it on EVERY forward path (processed + verbatim).",
         provenance:
-            "bili #1403 production 400 (opencode zen https://opencode.ai/zen/v1/messages: 'prompt_cache_key: Extra inputs are not permitted', 2026-09-26); Anthropic Messages API reference (no such field)",
+            "sigma #1403 production 400 (opencode zen https://opencode.ai/zen/v1/messages: 'prompt_cache_key: Extra inputs are not permitted', 2026-09-26); Anthropic Messages API reference (no such field)",
     },
 ];
 

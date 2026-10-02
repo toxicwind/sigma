@@ -202,7 +202,7 @@ function carrierOf(session: Session): PendingRetrieval[] {
 }
 
 function retrievalTtlMs(): number {
-    const raw = process.env.BILI_CCR_RETRIEVAL_TTL_MS;
+    const raw = process.env.SIGMA_CCR_RETRIEVAL_TTL_MS;
     if (raw === undefined || raw === "") return DEFAULT_RETRIEVAL_TTL_MS;
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : DEFAULT_RETRIEVAL_TTL_MS;
@@ -324,7 +324,7 @@ export function snapshotRetrievalNotes(session: Session): DropNote[] {
 export function renderRetrievalNotes(notes: DropNote[]): string | null {
     if (notes.length === 0) return null;
     const lines = notes.map((n) => `${n.refs.join(", ")}: ${n.reason}`).join("; ");
-    return `[billion-context] Earlier acp_retrieve result(s) were NOT delivered, so their acks are stale and you do NOT have that content: ${lines}. Re-issue acp_retrieve for any ref above to fetch it.`;
+    return `[sigma] Earlier acp_retrieve result(s) were NOT delivered, so their acks are stale and you do NOT have that content: ${lines}. Re-issue acp_retrieve for any ref above to fetch it.`;
 }
 
 /** Confirmed upstream success for the request that carried these notes: remove

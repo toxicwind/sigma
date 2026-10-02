@@ -22,8 +22,8 @@ test("isVersionNewer handles prerelease ordering (pre < release, numeric pre par
 });
 
 test("registryUrlFor follows the configured dist-tag channel", () => {
-    assert.equal(registryUrlFor("billion-context", "dev"), "https://registry.npmjs.org/billion-context/dev");
-    assert.equal(registryUrlFor("billion-context", "stable"), "https://registry.npmjs.org/billion-context/stable");
+    assert.equal(registryUrlFor("sigma", "dev"), "https://registry.npmjs.org/sigma/dev");
+    assert.equal(registryUrlFor("sigma", "stable"), "https://registry.npmjs.org/sigma/stable");
 });
 
 test("normalizeRegistryBase keeps the production default when unset and strips trailing slashes", () => {
@@ -46,7 +46,7 @@ test("normalizeUpdateTag defaults to latest and trims/blank-folds", () => {
 test("registryUrlFor encodes exotic tag names and only follows them when explicitly configured", () => {
     // PR preview tags (pr-N) are distinct dist-tags — a stable install keeps
     // fetching /latest; the URL only becomes /pr-592 when the user opts in.
-    assert.equal(registryUrlFor("billion-context", "pr-592"), "https://registry.npmjs.org/billion-context/pr-592");
-    assert.notEqual(registryUrlFor("billion-context", normalizeUpdateTag(undefined)), "https://registry.npmjs.org/billion-context/pr-592");
-    assert.equal(registryUrlFor("billion-context", "we ird+tag"), "https://registry.npmjs.org/billion-context/we%20ird%2Btag");
+    assert.equal(registryUrlFor("sigma", "pr-592"), "https://registry.npmjs.org/sigma/pr-592");
+    assert.notEqual(registryUrlFor("sigma", normalizeUpdateTag(undefined)), "https://registry.npmjs.org/sigma/pr-592");
+    assert.equal(registryUrlFor("sigma", "we ird+tag"), "https://registry.npmjs.org/sigma/we%20ird%2Btag");
 });

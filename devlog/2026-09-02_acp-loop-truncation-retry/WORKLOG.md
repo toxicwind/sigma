@@ -1,7 +1,7 @@
 # WORKLOG: acp-loop upstream truncation — zero-side-effect retry, well-formed Anthropic error stream, single-point logging
 
 - Task ID: `2026-09-02_acp-loop-truncation-retry`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-09-02
 

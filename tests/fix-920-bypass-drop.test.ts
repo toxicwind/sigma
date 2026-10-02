@@ -1,5 +1,5 @@
-// #920: proxy-side changes — (a) x-bili-plugin-bypass raw passthrough,
-// (b) proxy-mode tool injection DROPS client tools whose names bili owns.
+// #920: proxy-side changes — (a) x-sigma-plugin-bypass raw passthrough,
+// (b) proxy-mode tool injection DROPS client tools whose names sigma owns.
 
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -75,13 +75,13 @@ async function startHarness(injectTool: boolean): Promise<{ proxyPort: number; u
 const DCP_COMPRESS_TOOL = { type: "function", function: { name: "compress", description: "DCP legacy compress definition", parameters: { type: "object" } } };
 const MY_TOOL = { type: "function", function: { name: "my_tool", description: "user tool", parameters: { type: "object" } } };
 
-test("#920: x-bili-plugin-bypass forwards the body byte-identical, no injection", async () => {
+test("#920: x-sigma-plugin-bypass forwards the body byte-identical, no injection", async () => {
     const h = await startHarness(true);
     try {
         const body = JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], tools: [DCP_COMPRESS_TOOL] });
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-acp-session": "bypass-sess", "x-bili-plugin-bypass": "1" },
+            headers: { "content-type": "application/json", "x-acp-session": "bypass-sess", "x-sigma-plugin-bypass": "1" },
             body,
         });
         assert.equal(resp.status, 200);
@@ -98,9 +98,9 @@ test("#920: x-bili-plugin-bypass forwards the body byte-identical, no injection"
 test("#920: bypass works for unparseable bodies too (raw path, pre-JSON.parse)", async () => {
     const h = await startHarness(true);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin-bypass": "1" },
+            headers: { "content-type": "application/json", "x-sigma-plugin-bypass": "1" },
             body: "not-json-at-all",
         });
         assert.equal(resp.status, 200);
@@ -115,7 +115,7 @@ test("#920: proxy mode drops same-named client tools — one definition per name
     const h = await startHarness(true);
     try {
         const body = JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], tools: [DCP_COMPRESS_TOOL, MY_TOOL] });
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "drop-sess" },
             body,
@@ -128,7 +128,7 @@ test("#920: proxy mode drops same-named client tools — one definition per name
         const compressCount = names.filter((n) => n === "compress").length;
         assert.equal(compressCount, 1, "exactly one compress definition upstream");
         const compressDef = (sent.tools ?? []).find((t) => t.function?.name === "compress");
-        assert.notEqual(compressDef?.function?.description, "DCP legacy compress definition", "client DCP definition must be replaced by bili's");
+        assert.notEqual(compressDef?.function?.description, "DCP legacy compress definition", "client DCP definition must be replaced by sigma's");
         assert.ok(names.includes("my_tool"), "unrelated client tools are preserved");
         assert.ok(names.includes("decompress"), "other ACP tools still injected");
         // negative control: no duplicate names at all

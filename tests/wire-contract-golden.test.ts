@@ -1,4 +1,4 @@
-// Golden schema snapshots (#1304 item 2). Every tool schema bili or the pinned
+// Golden schema snapshots (#1304 item 2). Every tool schema sigma or the pinned
 // kernel advertises on any wire has a committed snapshot under
 // tests/golden/wire-contract/. Comparison is byte-exact on canonical LF text:
 // disk content is normalized \r\n → \n first because Windows CI checkouts

@@ -11,7 +11,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 // #661 follow-up: a forward proxy must not silently follow upstream redirects.
 // undici's default (redirect: "follow") downgrades a POST to a GET and drops
 // the body on 301/302/303, so a redirecting upstream (CDN/WAF) turns a valid
-// POST into a 405 at the redirect target. bili must pass the 3xx through to
+// POST into a 405 at the redirect target. sigma must pass the 3xx through to
 // the client, which follows it with its own policy. ACP compression stays on:
 // the kernel round-trip still rewrites the body before the (now non-followed)
 // forward.
@@ -95,7 +95,7 @@ function requestThroughProxy(
                 host: "127.0.0.1",
                 port: proxyPort,
                 method,
-                path: `/bili/http://${redirectorHost}${path}`,
+                path: `/sigma/http://${redirectorHost}${path}`,
                 headers: {
                     host: redirectorHost,
                     "x-acp-session": "redirect-test",
@@ -143,8 +143,8 @@ test("POST: a 302 is passed through to the client, NOT followed (no POST→GET d
 
         assert.equal(out.status, 302, `client must see the upstream 302 passed through; got ${out.status}: ${out.body}`);
         assert.equal(out.location, targetUrl, "Location must be preserved so the client follows the redirect itself");
-        assert.equal(targetSeen.hit, false, "bili must NOT follow the redirect — the target must never be contacted");
-        assert.equal(redirectorSeen.method, "POST", "bili must forward the original method (POST) to the initial upstream");
+        assert.equal(targetSeen.hit, false, "sigma must NOT follow the redirect — the target must never be contacted");
+        assert.equal(redirectorSeen.method, "POST", "sigma must forward the original method (POST) to the initial upstream");
         assert.ok(redirectorSeen.body.includes("\x3cacp "), "ACP compression must still be active: the kernel round-trip rewrites the body before the forward");
     } finally {
         await close(proxy);
@@ -178,8 +178,8 @@ test("GET: a 302 is passed through to the client, NOT followed", async () => {
 
         assert.equal(out.status, 302, `client must see the upstream 302 passed through; got ${out.status}: ${out.body}`);
         assert.equal(out.location, targetUrl, "Location must be preserved");
-        assert.equal(targetSeen.hit, false, "bili must NOT follow the redirect — the target must never be contacted");
-        assert.equal(redirectorSeen.method, "GET", "bili must forward the original method (GET)");
+        assert.equal(targetSeen.hit, false, "sigma must NOT follow the redirect — the target must never be contacted");
+        assert.equal(redirectorSeen.method, "GET", "sigma must forward the original method (GET)");
     } finally {
         await close(proxy);
         await close(redirector);

@@ -36,7 +36,7 @@ test("reportNotNewer: restart reminder warns ONCE per version pair, then stays q
     assert.equal(reportNotNewer("0.1.112", "latest", "0.1.114", "0.1.112", log), true);
     assert.equal(entries.length, 1, "the reminder must not re-log on every 180s check");
     assert.equal(entries[0].level, "warn");
-    assert.match(entries[0].msg, /running v0\.1\.112 but v0\.1\.114 is installed — restart bili to activate/);
+    assert.match(entries[0].msg, /running v0\.1\.112 but v0\.1\.114 is installed — restart sigma to activate/);
     _resetStaleWarnForTest();
 });
 

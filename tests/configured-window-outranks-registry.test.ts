@@ -80,7 +80,7 @@ async function startRig(models?: Record<string, { context?: number }>): Promise<
 }
 
 function url(rig: Rig): string {
-    return `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+    return `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
 }
 
 async function closeRig(rig: Rig): Promise<void> {
@@ -96,7 +96,7 @@ test("#344: per-route model declaration outranks the warm models.dev registry", 
         const headers: Record<string, string> = {
             "content-type": "application/json",
             "x-acp-session": "declared-sess",
-            "x-bili-plugin": "test-agent",
+            "x-sigma-plugin": "test-agent",
         };
         const r = await fetch(url(rig), { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }) });
         assert.equal(r.status, 200);
@@ -115,7 +115,7 @@ test("#344: without a declaration the warm registry still outranks the built-in 
         const headers: Record<string, string> = {
             "content-type": "application/json",
             "x-acp-session": "registry-sess",
-            "x-bili-plugin": "test-agent",
+            "x-sigma-plugin": "test-agent",
         };
         const r = await fetch(url(rig), { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }) });
         assert.equal(r.status, 200);

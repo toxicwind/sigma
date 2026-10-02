@@ -5,9 +5,9 @@
 - register endpoint + pending queue in src/plugin.ts; route in src/server.ts;
   binding block after getSession (pending consumed only when stats.requests===0).
 - src/mcp.ts stdio shell (manifest → tools → /tool forward); tsup second entry.
-- CLI: `bili mcp` + `bili plugin-register <id>`.
+- CLI: `sigma mcp` + `sigma plugin-register <id>`.
 - launcher: direct-URL mode (claude env ANTHROPIC_BASE_URL; codex -c inline),
-  --mcp-config ephemeral JSON, BILI_LAUNCHER_MITM=1 opt-out, BILI_LAUNCHER_PLUGIN=0 kill switch.
+  --mcp-config ephemeral JSON, SIGMA_LAUNCHER_MITM=1 opt-out, SIGMA_LAUNCHER_PLUGIN=0 kill switch.
 - Real-host verification loop (claude 2.1.227):
   - v1 assumed `_meta.ui.sessionId` in MCP initialize — WRONG (claude sends none).
   - env probe: `CLAUDE_CODE_SESSION_ID` is passed to MCP children → register at
@@ -24,5 +24,5 @@
 - Tests: tests/launcher-plugin-mode.test.ts — 6 tests: register validation,
   identity binding after first request, headless pending binding, no cross-session
   leak, injection builders, MCP shell stdio (by-id response matching).
-- Full suite 450/450; real e2e `bili claude` → `[plugin] tool acp_status
+- Full suite 450/450; real e2e `sigma claude` → `[plugin] tool acp_status
   executed via plugin`, host config untouched, tmp MCP config removed on exit.

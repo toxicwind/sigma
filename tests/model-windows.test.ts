@@ -72,7 +72,7 @@ test("parseOmpYaml: multiple models + multiple providers", () => {
 });
 
 test("readPiConfig: captures models[].contextWindow from models.json", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-piw-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-piw-"));
     fs.writeFileSync(
         path.join(home, "models.json"),
         JSON.stringify({
@@ -94,7 +94,7 @@ test("readPiConfig: captures models[].contextWindow from models.json", () => {
 });
 
 test("readOpencodeConfig: captures models.<id>.limit", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-ocw-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-ocw-"));
     const file = path.join(home, "opencode.json");
     fs.writeFileSync(
         file,

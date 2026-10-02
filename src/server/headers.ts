@@ -23,9 +23,9 @@ export const UPSTREAM_HOP_HEADERS = new Set([
     "proxy-authenticate",
     "proxy-authorization",
     "proxy-connection",
-    // #1117: bili-internal passthrough marker (native fetch patch → proxy);
+    // #1117: sigma-internal passthrough marker (native fetch patch → proxy);
     // never meaningful to a real upstream.
-    "x-bili-passthrough",
+    "x-sigma-passthrough",
     "te",
     "trailer",
     "upgrade",
@@ -36,7 +36,7 @@ export const UPSTREAM_HOP_HEADERS = new Set([
 // decodes compressed bodies, so the upstream's encoding marker must not reach
 // the client (it would try to decompress already-plain bytes) — stripped at
 // the response-forward sites below. REQUESTS: the marker describes exactly the
-// bytes bili forwards — decoded/rebuilt bodies have it dropped at decode time
+// bytes sigma forwards — decoded/rebuilt bodies have it dropped at decode time
 // (handle()), while verbatim passthrough bodies (#619 undecodable encodings,
 // unknown paths) MUST keep it so upstream applies its own decode; forwarding
 // encoded request bytes without the marker made upstream reject undeclared

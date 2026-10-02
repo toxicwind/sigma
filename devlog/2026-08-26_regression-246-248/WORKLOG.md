@@ -11,16 +11,16 @@
    - Gotcha 1: mock killed → HTTP 502 (upstream dead, expected behavior)
    - Gotcha 2: no DEEPSEEK_API_KEY → dsh MISSING_CREDENTIAL, a dummy value is required
 6. omp e2e: mock-resp.py (Responses SSE) 19814; isolated PI_CODING_AGENT_DIR=/tmp/omp-reg/agent
-   + BILI_SESSIONS_DIR
+   + SIGMA_SESSIONS_DIR
    - Gotcha 3: omp goes through /v1/responses; a chat mock triggers 10 omp retries of
      STREAM_CLOSED — a Responses-format mock is mandatory
    - Gotcha 4: no config.yml in the isolated directory → the default model resolves to a dead
      ollama on 11435; the real config.yml (with modelRoles) must be copied over
-   - Gotcha 5: the launcher's omp overlay = `$PI_CODING_AGENT_DIR-bili`; a custom home is
+   - Gotcha 5: the launcher's omp overlay = `$PI_CODING_AGENT_DIR-sigma`; a custom home is
      inherited rather than ignored
    - Gotcha 6: `rm`-ing the log file of an already-started mock → the fd points at an unlinked
      inode, so there is no log to see (the mock itself is fine)
-   - Gotcha 7: inside the BILI_CLIENT_BIN wrapper script, omp's real path =
+   - Gotcha 7: inside the SIGMA_CLIENT_BIN wrapper script, omp's real path =
      /home/dog/.bun/bin/omp (not ~/.local/bin)
 7. Verification points:
    - -e injection: argv log 4/4
@@ -28,7 +28,7 @@
    - pck: RAW dump prompt_cache_key = omp session id = x-session-id
    - cross-process continuity: the second round `-c` + a new proxy process reuses the same
      session [d8a7b23542856a71]
-   - zero on-disk writes: the real ~/.omp/agent/config.yml md5 unchanged (df68a91a…); no bili
+   - zero on-disk writes: the real ~/.omp/agent/config.yml md5 unchanged (df68a91a…); no sigma
      changes in the isolated config.yml; no extensions entry in the real home
 8. Cleanup: kill mock-sse/mock-resp; delete the local temp directories but keep /tmp/omp-reg (for
    post-mortem)

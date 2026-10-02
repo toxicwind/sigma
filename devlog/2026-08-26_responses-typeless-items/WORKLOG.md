@@ -1,7 +1,7 @@
 # WORKLOG
 
 - A/B reproduction: mock upstream enforcing per-model windows (mock.js),
-  omp via isolated PI_CODING_AGENT_DIR, control = global bili 0.1.56
+  omp via isolated PI_CODING_AGENT_DIR, control = global sigma 0.1.56
   (switch → upstream 400 "maximum context length" reproduced), fixed =
   master + #254 (a0b80c7) built in /tmp/bc-pr254-local.
 - First fixed run failed to trigger preflight: kernel saw 13 of 29 items —

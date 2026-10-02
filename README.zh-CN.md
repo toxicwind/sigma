@@ -6,7 +6,7 @@
 
 一个跑了一个月的 agent 会话，会累积几十万 token 的工具输出、推理过程和文件读取。你没法把这一整块塞进上下文窗口，也没法直接扔掉——后面还有工作在依赖它。sigma 站在你的 agent 和它的模型服务商之间，把会话中较早的部分压缩成一份紧凑的摘要，再交回一份仍然可用的上下文。
 
-> **上游致谢。** sigma 是 [billion-context](https://github.com/ranxianglei/billion-context) 的分支，作者是 **ranxianglei**（MIT, © 2026）。压缩内核、ACP 线格式、各宿主适配器，以及 12 个 agent 的兼容面，都属于上游。这个分支名为 `sigma`，它的存在是为了把这份代码带进 sovereign 单体仓库、把文档统一到一种工作语言、并让上游同步变成机械流程而不是考古作业。我们究竟改了什么，见 [FORK-NOTES.md](./FORK-NOTES.md)。
+> **上游致谢。** sigma 是 [sigma](https://github.com/ranxianglei/sigma) 的分支，作者是 **ranxianglei**（MIT, © 2026）。压缩内核、ACP 线格式、各宿主适配器，以及 12 个 agent 的兼容面，都属于上游。这个分支名为 `sigma`，它的存在是为了把这份代码带进 sovereign 单体仓库、把文档统一到一种工作语言、并让上游同步变成机械流程而不是考古作业。我们究竟改了什么，见 [FORK-NOTES.md](./FORK-NOTES.md)。
 
 ---
 
@@ -24,7 +24,7 @@ sigma 有三点不一样：
 
 ### 实测，而非声称
 
-数据来自一次真实的、持续一个月的会话的代理日志（`~/.local/state/billion-context/bili.log`，698 个用量样本，14 次压缩事件）：
+数据来自一次真实的、持续一个月的会话的代理日志（`~/.local/state/sigma/sigma.log`，698 个用量样本，14 次压缩事件）：
 
 | 项目 | 实测值 |
 |------|--------|
@@ -41,11 +41,11 @@ sigma 有三点不一样：
 ## 安装
 
 ```bash
-npm install -g billion-context     # 上游包名；二进制文件是 `bili`
-bili plugin install pi             # 接入你的 agent
+npm install -g sigma     # 上游包名；二进制文件是 `sigma`
+sigma plugin install pi             # 接入你的 agent
 ```
 
-sigma 以 `bili` 这个二进制名发布，并且是上游包的直接替代品。分支自己的名字是 `sigma`；二进制名是有意保持不变的，这样当你把已有的 `bili` 安装指向这个构建时，它仍然可用。
+sigma 以 `sigma` 这个二进制名发布，并且是上游包的直接替代品。分支自己的名字是 `sigma`；二进制名是有意保持不变的，这样当你把已有的 `sigma` 安装指向这个构建时，它仍然可用。
 
 需要 **Node >= 20**。一个运行时依赖，十二个开发依赖。
 
@@ -61,7 +61,7 @@ sigma 讲的是协议而不是产品，所以适配器清单既长又具体，�
 | Codex | `codex-compact.ts`, `codex-models.ts` | 模型快照已固定 |
 | OpenCode | `opencode-acp-command.ts`, `opencode-legacy.ts`, `opencode-native.ts`, `opencode-v2.ts` | 协议的四代演进，运行时检测 |
 | pi | `pi.ts`, `pi-native.ts` | |
-| omp | `omp.ts`, `omp-native.ts` | `BILLION_CONTEXT_NATIVE=omp` 选择原生路径 |
+| omp | `omp.ts`, `omp-native.ts` | `SIGMA_NATIVE=omp` 选择原生路径 |
 | Gemini CLI | `src/loop/adapter-google.ts` | |
 | Kimi | `src/kimi/` | |
 | Qwen Code, Copilot CLI, TRAE, CodeBuddy, Qoder, Zcode | `src/loop/` + `src/zcode/` | |

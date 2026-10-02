@@ -22,8 +22,8 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 
 // Unit tests never touch the real data/state trees: persistence off by
 // default; the envelope round-trip builds its own throwaway SessionStore.
-process.env.BILI_PERSIST = "0";
-const PERSIST_TMP = mkdtempSync(path.join(tmpdir(), "bili-ccr-persist-"));
+process.env.SIGMA_PERSIST = "0";
+const PERSIST_TMP = mkdtempSync(path.join(tmpdir(), "sigma-ccr-persist-"));
 
 const BIG_TEXT = "line of build output ".repeat(700);
 
@@ -230,7 +230,7 @@ test("envelope round-trip: dirty flag gates the write; reload restores the store
 
 // [#1343] Delivery-lifecycle coverage: every ack→loss path is observable
 // (counter + corrective note), never silent. Sessions are in-memory
-// (BILI_PERSIST=0); the durable ledger lives in session.metadata.
+// (SIGMA_PERSIST=0); the durable ledger lives in session.metadata.
 function seedCCR() {
     const session = getSession(`t-win-${Math.random().toString(36).slice(2)}`);
     storeEffectiveCcr(session, { enabled: true, toolName: "lookup", minToolTokens: 50 });

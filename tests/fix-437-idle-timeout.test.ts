@@ -106,7 +106,7 @@ test("idle timeout: a stuck stream (no further chunks) IS still aborted (#437)",
 
 test("wrapped body preserves status + headers (identical shape for callers)", async () => {
     const upstream = http.createServer((_req, res) => {
-        res.writeHead(201, { "content-type": "application/json", "x-bili-test": "abc123" });
+        res.writeHead(201, { "content-type": "application/json", "x-sigma-test": "abc123" });
         res.end('{"ok":true}');
     });
     await listen(upstream);
@@ -116,7 +116,7 @@ test("wrapped body preserves status + headers (identical shape for callers)", as
         assert.equal(result.response.status, 201);
         assert.equal(result.response.ok, true);
         assert.equal(result.response.headers.get("content-type"), "application/json");
-        assert.equal(result.response.headers.get("x-bili-test"), "abc123");
+        assert.equal(result.response.headers.get("x-sigma-test"), "abc123");
         assert.equal(await result.response.text(), '{"ok":true}');
         result.clearTimer();
     } finally {

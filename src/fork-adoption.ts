@@ -238,7 +238,7 @@ export function maybeAdoptForkBlocks(args: {
         return;
     }
     if (!enabled) {
-        log("info", `[fork-adoption] fork of ${parentId}: parent has ${plan.adoptedActive} adoptable block(s) covering ~${plan.adoptedTokens} tokens; forkAdoption disabled, starting fresh (set forkAdoption: true or BILI_FORK_ADOPTION=1)`);
+        log("info", `[fork-adoption] fork of ${parentId}: parent has ${plan.adoptedActive} adoptable block(s) covering ~${plan.adoptedTokens} tokens; forkAdoption disabled, starting fresh (set forkAdoption: true or SIGMA_FORK_ADOPTION=1)`);
         return;
     }
     applyForkAdoption(session, plan, parent);

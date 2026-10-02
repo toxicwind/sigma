@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Entry point: runs the CLI dispatcher (src/cli.ts).
-// Both `bili` and `bili-proxy` bin aliases point here, and `node dist/index.js`
+// Both `sigma` and `sigma-proxy` bin aliases point here, and `node dist/index.js`
 // still works. The package root is also importable (exports["."] resolves to
 // this file), and npm host apps import it to reach the CLI surface — opencode's
 // plugin loader did exactly that, and the unguarded main() then dispatched a
@@ -31,7 +31,7 @@ function invokedAsScript(): boolean {
 
 if (invokedAsScript()) {
     main().catch((err) => {
-        console.error("bili: failed to start:", err);
+        console.error("sigma: failed to start:", err);
         process.exit(1);
     });
 }

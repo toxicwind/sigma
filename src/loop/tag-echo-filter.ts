@@ -151,7 +151,7 @@ export interface TagEchoFilter {
 }
 
 // #717: model-emitted ACP CONFIRMATION MARKERS. After executing a proxy tool
-// call bili emits a visibility marker ("\n📦 [ACP] Compressed m00120–m0300 →
+// call sigma emits a visibility marker ("\n📦 [ACP] Compressed m00120–m0300 →
 // 1 block(s), ~12K tokens saved.") as a standalone text block; in client
 // history it looks like ordinary assistant text. Under sustained context
 // pressure a model was observed writing these markers itself — 17 fake

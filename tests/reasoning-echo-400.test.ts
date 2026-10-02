@@ -13,7 +13,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
 
 // #762 e2e: a client-originated (main-path) 400 whose body mentions
-// reasoning_content must (a) be persisted when BILI_DUMP_4XX=1, (b) learn
+// reasoning_content must (a) be persisted when SIGMA_DUMP_4XX=1, (b) learn
 // strictReasoningEcho on the session — the loop-only learner never sees these
 // — and (c) make the NEXT request forward a normalized body where every
 // assistant tool-call message carries a reasoning_content field. The relay
@@ -81,7 +81,7 @@ async function startHarness(captured: Captured[], onUpstreamRequest: (bodyText: 
 }
 
 async function postChat(proxyPort: number, upstreamPort: number): Promise<Response> {
-    return fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+    return fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": "re400-1" },
         body: JSON.stringify({ model: "gpt-test", messages: CLIENT_MESSAGES }),
@@ -90,11 +90,11 @@ async function postChat(proxyPort: number, upstreamPort: number): Promise<Respon
 
 test("#762: main-path 400 learns strict-echo, next request is normalized, rejected body is persisted", async () => {
     const captured: Captured[] = [];
-    const dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-re400-dump-"));
+    const dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-re400-dump-"));
     const seenBodies: string[] = [];
     let n = 0;
     try {
-        process.env.BILI_DUMP_4XX = "1";
+        process.env.SIGMA_DUMP_4XX = "1";
         process.env.ACP_DUMP_DIR = dumpDir;
         const { proxy, upstream, proxyPort, upstreamPort } = await startHarness(captured, (bodyText, res) => {
             seenBodies.push(bodyText);
@@ -163,7 +163,7 @@ test("#762: main-path 400 learns strict-echo, next request is normalized, reject
             await close(upstream);
         }
     } finally {
-        delete process.env.BILI_DUMP_4XX;
+        delete process.env.SIGMA_DUMP_4XX;
         delete process.env.ACP_DUMP_DIR;
         setLogCapture(null);
         fs.rmSync(dumpDir, { recursive: true, force: true });
@@ -172,8 +172,8 @@ test("#762: main-path 400 learns strict-echo, next request is normalized, reject
 
 test("#762: dump stays off by default even on 4xx", async () => {
     const captured: Captured[] = [];
-    const dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-re400-off-"));
-    delete process.env.BILI_DUMP_4XX;
+    const dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-re400-off-"));
+    delete process.env.SIGMA_DUMP_4XX;
     try {
         process.env.ACP_DUMP_DIR = dumpDir;
         const { proxy, upstream, proxyPort, upstreamPort } = await startHarness(captured, (_bodyText, res) => {

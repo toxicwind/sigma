@@ -1,13 +1,13 @@
-// E2E: REAL `pi` (native package lane) through bili's native extension (#1239).
+// E2E: REAL `pi` (native package lane) through sigma's native extension (#1239).
 // Mirrors e2e-codex-fake.test.ts: a deterministic fake chat-completions upstream
 // scripts the model, so the whole native chain — proxy bootstrap, fetch
-// interception, x-bili-plugin stamping, ACP tool registration, plugin-tool
+// interception, x-sigma-plugin stamping, ACP tool registration, plugin-tool
 // execution (acp_status / compress) and real compression — runs in-process
 // with zero tokens and no network. Gated by ACP_TEST_E2E_NATIVE=1 (needs
 // `npm run build` first — the pi package loads dist/agent/pi-native.js).
 //
 // Assertions map 1:1 to #1239's acceptance list:
-//   1. traffic is intercepted + plugin-mode claimed (x-bili-plugin: pi)
+//   1. traffic is intercepted + plugin-mode claimed (x-sigma-plugin: pi)
 //   2. ACP tools are registered and callable by the model
 //   3. acp_status executes and returns the status report
 //   4. compress executes and PRODUCES compression (blocks + saved tokens)
@@ -32,7 +32,7 @@ const TMO = Number(process.env.E2E_TMO ?? 150_000);
 const WORK_ROOT = path.join(process.cwd(), "tmp");
 fs.mkdirSync(WORK_ROOT, { recursive: true });
 // pi walks up from its cwd for AGENTS.md too (#815): stay outside the repo.
-const CWD_ROOT = path.join(os.tmpdir(), "billion-context-e2e-native");
+const CWD_ROOT = path.join(os.tmpdir(), "sigma-e2e-native");
 fs.mkdirSync(CWD_ROOT, { recursive: true });
 
 const ACP_TOOLS = [
@@ -140,14 +140,14 @@ type Ctx = {
 };
 
 function cleanEnv(): NodeJS.ProcessEnv {
-  // This suite may run INSIDE a bili-driven shell (BILLION_CONTEXT_PROXY et
-  // al. preset): the native lane must bootstrap its OWN proxy, so every bili
+  // This suite may run INSIDE a sigma-driven shell (SIGMA_PROXY et
+  // al. preset): the native lane must bootstrap its OWN proxy, so every sigma
   // side-channel has to go. Host pi overrides leak real sessions too.
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
     if (
-      key.startsWith("BILI") ||
-      key.startsWith("BILLION_CONTEXT") ||
+      key.startsWith("SIGMA") ||
+      key.startsWith("SIGMA") ||
       key.startsWith("ACP_")
     )
       delete env[key];
@@ -277,7 +277,7 @@ async function startCtx(): Promise<Ctx> {
 // Graceful-stop the hermetic native proxy (SIGTERM — the server flushes
 // dirty sessions on shutdown) so persisted state is observable on disk.
 async function stopProxiesGracefully(ctx: Ctx): Promise<void> {
-  const instancesDir = path.join(ctx.xdg.state, "billion-context", "instances");
+  const instancesDir = path.join(ctx.xdg.state, "sigma", "instances");
   try {
     for (const f of fs.readdirSync(instancesDir)) {
       try {
@@ -311,7 +311,7 @@ function teardown(ctx: Ctx): void {
   }
   // The native proxy is parent-watched and dies with its pi; kill any
   // survivor recorded in the hermetic instance dir so nothing lingers.
-  const instancesDir = path.join(ctx.xdg.state, "billion-context", "instances");
+  const instancesDir = path.join(ctx.xdg.state, "sigma", "instances");
   try {
     for (const f of fs.readdirSync(instancesDir)) {
       try {
@@ -385,7 +385,7 @@ function piRun(
 function biliLog(ctx: Ctx): string {
   try {
     return fs.readFileSync(
-      path.join(ctx.xdg.state, "billion-context", "bili.log"),
+      path.join(ctx.xdg.state, "sigma", "sigma.log"),
       "utf8",
     );
   } catch {
@@ -403,7 +403,7 @@ type SessionFile = {
 };
 
 function sessionFiles(ctx: Ctx): { file: string; parsed: SessionFile }[] {
-  const dir = path.join(ctx.xdg.data, "billion-context", "sessions");
+  const dir = path.join(ctx.xdg.data, "sigma", "sessions");
   const out: { file: string; parsed: SessionFile }[] = [];
   try {
     for (const prov of fs.readdirSync(dir)) {
@@ -412,7 +412,7 @@ function sessionFiles(ctx: Ctx): { file: string; parsed: SessionFile }[] {
       try {
         entries = fs.readdirSync(provDir);
       } catch {
-        continue; // not a directory (e.g. .bili-migration markers)
+        continue; // not a directory (e.g. .sigma-migration markers)
       }
       for (const f of entries) {
         if (!f.endsWith(".json")) continue;
@@ -483,11 +483,11 @@ if (checkOnly) {
         assert.equal(
           o.plugin,
           "pi",
-          `request must be plugin-stamped (x-bili-plugin), got ${o.plugin}`,
+          `request must be plugin-stamped (x-sigma-plugin), got ${o.plugin}`,
         );
         assert.ok(
           o.conv && o.conv.length > 0,
-          "request must carry x-bili-plugin-conversation",
+          "request must carry x-sigma-plugin-conversation",
         );
       }
       const withAcp = oracle.filter((o) =>
@@ -563,11 +563,11 @@ if (checkOnly) {
         assert.equal(
           o.plugin,
           "pi",
-          `request must be plugin-stamped (x-bili-plugin), got ${o.plugin} (nmsg=${o.nmsg})`,
+          `request must be plugin-stamped (x-sigma-plugin), got ${o.plugin} (nmsg=${o.nmsg})`,
         );
         assert.ok(
           o.conv && o.conv.length > 0,
-          "request must carry x-bili-plugin-conversation",
+          "request must carry x-sigma-plugin-conversation",
         );
       }
       const foldRows = oracle.filter((o) =>
@@ -635,7 +635,7 @@ if (checkOnly) {
       );
       assert.doesNotMatch(
         r.stderr,
-        /bili-plugin\(|status fetch failed|no proxy/i,
+        /sigma-plugin\(|status fetch failed|no proxy/i,
         `command handler must not error; stderr:\n${r.stderr}`,
       );
 
@@ -644,7 +644,7 @@ if (checkOnly) {
       // hermetic instance record (native mode does not write proxy-origin).
       const instancesDir = path.join(
         ctx.xdg.state,
-        "billion-context",
+        "sigma",
         "instances",
       );
       const files = fs.existsSync(instancesDir)

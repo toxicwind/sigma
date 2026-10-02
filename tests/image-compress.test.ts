@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-process.env.BILI_PERSIST = "0";
+process.env.SIGMA_PERSIST = "0";
 
 import sharp from "sharp";
 import {
@@ -15,7 +15,7 @@ import {
     isImageFullRestored,
     type Config,
 } from "acp-kernel";
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 import { parseCompressSettings } from "../src/config.ts";
 import { applyCompressSettings, mergeCompress } from "../src/compress-settings.ts";
 import { isProxyToolFor } from "../src/absorb.ts";
@@ -88,7 +88,7 @@ function enabledCfg(extra: Record<string, unknown> = {}): Config {
 interface AnthropicImgSource { type: string; media_type: string; data: string }
 interface AnthropicImgBlock { type: string; source: AnthropicImgSource }
 
-function anthropicMsg(id: string, fx: Fixture): BiliMessage {
+function anthropicMsg(id: string, fx: Fixture): SigmaMessage {
     return {
         id,
         role: "user",
@@ -98,7 +98,7 @@ function anthropicMsg(id: string, fx: Fixture): BiliMessage {
     };
 }
 
-function antSrc(m: BiliMessage): AnthropicImgSource {
+function antSrc(m: SigmaMessage): AnthropicImgSource {
     return (m.rawAnthropicBlock as AnthropicImgBlock).source;
 }
 
@@ -214,7 +214,7 @@ test("openai carriers: multi-part mixed routing, single data URL, mirror sync, r
     const s = armedSession({ r1: "m00001", r2: "m00002" });
     const dataUrl = (f: Fixture) => `data:${f.mediaType};base64,${f.b64}`;
 
-    const multi: BiliMessage = {
+    const multi: SigmaMessage = {
         id: "r1",
         role: "user",
         contentType: "text",
@@ -226,7 +226,7 @@ test("openai carriers: multi-part mixed routing, single data URL, mirror sync, r
             { type: "image_url", image_url: { url: "https://example.com/remote.png" } },
         ],
     };
-    const single: BiliMessage = {
+    const single: SigmaMessage = {
         id: "r2",
         role: "user",
         contentType: "text",
@@ -265,7 +265,7 @@ test("responses carrier: input_image parts rewritten, mirror synced", async () =
             { type: "input_image", image_url: `data:${fx.mediaType};base64,${fx.b64}` },
         ],
     };
-    const m: BiliMessage = {
+    const m: SigmaMessage = {
         id: "r1",
         role: "user",
         contentType: "text",
@@ -290,7 +290,7 @@ test("google carrier: inlineData parts rewritten", async () => {
         { text: "hi" },
         { inlineData: { mimeType: fx.mediaType, data: fx.b64 } },
     ];
-    const m: BiliMessage = { id: "r1", role: "user", contentType: "text", text: "", rawGoogleParts: parts };
+    const m: SigmaMessage = { id: "r1", role: "user", contentType: "text", text: "", rawGoogleParts: parts };
     await applyImageCompressionPass(s, [m], { config: enabledCfg(), billing: "pixels" });
     const inline = parts[1].inlineData as { mimeType: string; data: string };
     assert.equal(inline.mimeType, "image/webp");
@@ -362,7 +362,7 @@ test("resetSessionCompression clears image state and caches", async () => {
 });
 
 test("image state survives persist/reload round-trip", async () => {
-    const P = mkdtempSync(path.join(tmpdir(), "bili-img-persist-"));
+    const P = mkdtempSync(path.join(tmpdir(), "sigma-img-persist-"));
     try {
         const store = new SessionStore({ dir: P, debounceMs: 0 });
         _setStoreForTest(store);

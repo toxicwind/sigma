@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { ACP_READONLY_TOOLS_RESPONSES, ACP_TOOLS_ANTHROPIC, ACP_TOOLS_OPENAI, ACP_TOOLS_RESPONSES, DECOMPRESS_TOOL_NAME, SEARCH_CONTEXT_TOOL_NAME, createCore, createInitialState, defaultConfig } from "acp-kernel";
 import { anthropicToCore, type AnthropicRequestBody } from "acp-kernel/wire";
-import { BILI_ACP_READONLY_TOOLS_RESPONSES, BILI_ACP_TOOLS_ANTHROPIC, BILI_ACP_TOOLS_OPENAI, BILI_ACP_TOOLS_RESPONSES } from "../src/compress-tool.ts";
+import { SIGMA_ACP_READONLY_TOOLS_RESPONSES, SIGMA_ACP_TOOLS_ANTHROPIC, SIGMA_ACP_TOOLS_OPENAI, SIGMA_ACP_TOOLS_RESPONSES } from "../src/compress-tool.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _resetSessionsForTest, getSession, type Session } from "../src/session.ts";
 import { executeSearchContext, executeSearchContextTarget } from "../src/decompress-shared.ts";
@@ -59,14 +59,14 @@ function paramsOf(entry: FlatTool): Record<string, unknown> {
     return entry.parameters ?? entry.input_schema ?? entry.function?.parameters ?? {};
 }
 
-test("#841 schema: BILI arrays add optional conversation_id to search_context (+ #1179 range args to decompress)", () => {
+test("#841 schema: SIGMA arrays add optional conversation_id to search_context (+ #1179 range args to decompress)", () => {
     const cases: [unknown[], unknown[], "flat" | "openai"][] = [
-        [BILI_ACP_TOOLS_ANTHROPIC, ACP_TOOLS_ANTHROPIC, "flat"],
-        [BILI_ACP_TOOLS_OPENAI, ACP_TOOLS_OPENAI, "openai"],
-        [BILI_ACP_TOOLS_RESPONSES, ACP_TOOLS_RESPONSES, "flat"],
+        [SIGMA_ACP_TOOLS_ANTHROPIC, ACP_TOOLS_ANTHROPIC, "flat"],
+        [SIGMA_ACP_TOOLS_OPENAI, ACP_TOOLS_OPENAI, "openai"],
+        [SIGMA_ACP_TOOLS_RESPONSES, ACP_TOOLS_RESPONSES, "flat"],
     ];
-    for (const [bili, kernel, shape] of cases) {
-        const entry = searchEntry(bili, shape);
+    for (const [sigma, kernel, shape] of cases) {
+        const entry = searchEntry(sigma, shape);
         assert.ok(entry, `search_context missing in ${shape} array`);
         const props = paramsOf(entry).properties as Record<string, Record<string, unknown>>;
         assert.equal(props.conversation_id?.type, "string");
@@ -93,7 +93,7 @@ test("#841 schema: BILI arrays add optional conversation_id to search_context (+
             if (e.input_schema) return { ...e, input_schema: p };
             return { ...e, parameters: p };
         };
-        const biliDec = bili.find((t) => nameOf(t) === DECOMPRESS_TOOL_NAME) as FlatTool | undefined;
+        const biliDec = sigma.find((t) => nameOf(t) === DECOMPRESS_TOOL_NAME) as FlatTool | undefined;
         const kernelDec = kernel.find((t) => nameOf(t) === DECOMPRESS_TOOL_NAME) as FlatTool | undefined;
         assert.ok(biliDec && kernelDec, `decompress missing in ${shape} array`);
         assert.deepEqual(stripRange(biliDec), stripRange(kernelDec), "decompress differs only by the added range params");
@@ -103,11 +103,11 @@ test("#841 schema: BILI arrays add optional conversation_id to search_context (+
         const decRequired = paramsOf(biliDec).required as string[] | undefined;
         assert.ok(!decRequired?.includes("startId") && !decRequired?.includes("endId"), "range args must stay optional");
 
-        const biliRest = bili.filter((t) => t !== entry && nameOf(t) !== DECOMPRESS_TOOL_NAME);
+        const biliRest = sigma.filter((t) => t !== entry && nameOf(t) !== DECOMPRESS_TOOL_NAME);
         const kernelRest = kernel.filter((t) => t !== kernelEntry && nameOf(t) !== DECOMPRESS_TOOL_NAME);
         assert.deepEqual(biliRest, kernelRest, "no other tool may change");
     }
-    const ro = searchEntry(BILI_ACP_READONLY_TOOLS_RESPONSES, "flat")!;
+    const ro = searchEntry(SIGMA_ACP_READONLY_TOOLS_RESPONSES, "flat")!;
     assert.equal((paramsOf(ro).properties as Record<string, Record<string, unknown>>).conversation_id?.type, "string");
     assert.equal((paramsOf(searchEntry(ACP_READONLY_TOOLS_RESPONSES, "flat")!).properties as Record<string, unknown>).conversation_id, undefined, "kernel readonly constant must not be mutated");
 });
@@ -175,12 +175,12 @@ test("#841 resident historical session served from memory without disk", () => {
     const out = executeSearchContextTarget({ query: "auth token", conversation_id: "pfa-resident" }, core, "pfa-other", makeSession("pfa-other").state);
     assert.match(out, /^Found \d+ block\(s\) for "auth token" in session pfa-resident:/);
     assert.ok(out.includes("Read-only search of historical session pfa-resident"));
-    assert.ok(out.includes("bili export pfa-resident [--full]"));
+    assert.ok(out.includes("sigma export pfa-resident [--full]"));
 });
 
 test("#841 cold-loaded historical session: read-only, file untouched, no save scheduled", async () => {
     _resetSessionsForTest();
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-xsearch-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-xsearch-"));
     try {
         const writer = new SessionStore({ dir, enabled: true, debounceMs: 0 });
         const old = makeSession("pfa-old");

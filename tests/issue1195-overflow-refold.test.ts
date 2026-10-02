@@ -148,7 +148,7 @@ test("e2e #1195 A: stated-window overflow is rescued within the SAME request —
         await once(upstream.server, "close");
     });
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstream.port}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`;
     const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: bigConversation() });
     const headers = { "content-type": "application/json", "x-acp-session": "refold-a" };
 
@@ -189,7 +189,7 @@ test("e2e #1195 B: an unfoldable payload passes the ORIGINAL overflow 400 throug
         await once(upstream.server, "close");
     });
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstream.port}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`;
     // A single enormous message: nothing to fold — preflight cannot rescue it.
     const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "MEGA_" + "payload ".repeat(60_000) }] });
     const headers = { "content-type": "application/json", "x-acp-session": "refold-b" };
@@ -229,7 +229,7 @@ test("e2e #1195 C: when the folded retry is ALSO rejected, the client sees the R
         await once(upstream.server, "close");
     });
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstream.port}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`;
     const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: bigConversation() });
     const headers = { "content-type": "application/json", "x-acp-session": "refold-c" };
 

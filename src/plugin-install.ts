@@ -1,33 +1,33 @@
-// `bili plugin install|remove|list <agent>`: deploys the thin agent plugin
+// `sigma plugin install|remove|list <agent>`: deploys the thin agent plugin
 // (dist/agent/pi.js|omp.js) or the MCP shell (dist/mcp.js) into each host's
-// native config, pointing at THIS billion-context install's absolute path —
+// native config, pointing at THIS sigma install's absolute path —
 // plugin and proxy always share one version. Every writer backs the target
 // file up first and is idempotent. Config locations:
 //   pi       ~/.pi/agent/settings.json   packages: [<abs package root>]
 //   omp      ~/.omp/agent/config.yml     extensions: [<abs>/dist/agent/omp-native.js]
 //   claude   `claude mcp add` (user scope; writes ~/.claude.json)
-//   codex    ~/.codex/config.toml        [mcp_servers.bili]
+//   codex    ~/.codex/config.toml        [mcp_servers.sigma]
 //   opencode <cfg>/opencode.json{c}|config.json (highest-precedence existing; #927)
-//            mcp.bili + native plugin dir + compaction.auto=false
-//          (plugin entry #925: bare "billion-context" for npm installs — opencode
+//            mcp.sigma + native plugin dir + compaction.auto=false
+//          (plugin entry #925: bare "sigma" for npm installs — opencode
 //           loads it via exports["./server"] and manages install/upgrade itself;
 //           local shim dir for checkout/dev installs, which are not portable)
 //   dsh      no file of its own — drives dsh's own plugin channel per profile
 //            (`dsh plugin --profile <name> add|remove`, #966); profile copies
 //            follow global self-updates via dsh-channel.refreshDshProfileBundles
-//   kimi     $KIMI_CODE_HOME/plugins/managed/billion-context/kimi.plugin.json
+//   kimi     $KIMI_CODE_HOME/plugins/managed/sigma/kimi.plugin.json
 //            + installed.json record (stdio MCP + SessionStart hook; config.toml
 //            routing happens per-session, see src/kimi/)
-//   hermes   ~/.hermes/plugins/billion-context/{plugin.yaml,__init__.py,bili.json}
+//   hermes   ~/.hermes/plugins/sigma/{plugin.yaml,__init__.py,sigma.json}
 //            (#958: Python plugin — hermes's CLI agent plugin API is Python-only;
 //            it self-spawns/attaches a proxy and routes traffic via HTTPS_PROXY +
-//            SSL_CERT_FILE (combined CA bundle), the same wire path as `bili hermes`;
+//            SSL_CERT_FILE (combined CA bundle), the same wire path as `sigma hermes`;
 //            enablement is delegated to `hermes plugins enable`)
 //   zcode    ~/.zcode/cli/config.json  hooks.enabled + SessionStart hook +
-//            mcp.servers.bili (stdio MCP); provider-store routing happens
+//            mcp.servers.sigma (stdio MCP); provider-store routing happens
 //            per-session, see src/zcode/ (no URL frozen at install time)
 // Installers throw on failure (bad/locked config, missing host CLI); the CLI
-// layer catches, prints `bili plugin: <msg>` and exits 1.
+// layer catches, prints `sigma plugin: <msg>` and exits 1.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -39,7 +39,7 @@ import { applyEdits, modify as jsoncModify, parse as jsoncParse, type ParseError
 import { resolveDshHome, resolveHermesHome, resolveKimiHome, resolvePiHome } from "./client-config.js";
 import { clearClaudeNativePort, resolveClaudeNativePort, saveClaudeNativePort } from "./config.js";
 import { isPidAlive, isProxyInstanceFile, readProxyInstanceFile } from "./instance.js";
-import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnBili, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
+import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnSigma, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
 import { fetchRegistryVersion } from "./update.js";
 import { restoreKimiBackup, unrouteKimi } from "./kimi/native.js";
 import { inspectZcodeRouting, resolveZcodeDataDir } from "./zcode/json-edit.js";
@@ -81,17 +81,17 @@ export function portableHookCommand(exe: string, args: string[] = []): string {
 
 /** #403: never freeze a dead or unverifiable origin into a client's
  *  persistent config — the MCP shell would dial it forever. An explicit
- *  BILI_MCP_PROXY env wins (the user said so); otherwise a recorded
+ *  SIGMA_MCP_PROXY env wins (the user said so); otherwise a recorded
  *  instance must be pid-alive. */
 function proxyOriginForInstall(): string {
-    const fromEnv = process.env.BILI_MCP_PROXY?.trim();
+    const fromEnv = process.env.SIGMA_MCP_PROXY?.trim();
     if (fromEnv && fromEnv.length > 0) return fromEnv;
     const inst = readProxyInstanceFile();
     if (inst === undefined) {
-        throw new Error("no bili proxy origin found — start bili first (\`bili start\` or \`bili <client>\`), then retry, or set BILI_MCP_PROXY explicitly");
+        throw new Error("no sigma proxy origin found — start sigma first (\`sigma start\` or \`sigma <client>\`), then retry, or set SIGMA_MCP_PROXY explicitly");
     }
     if (isProxyInstanceFile(inst) && !isPidAlive(inst.pid)) {
-        throw new Error(`the recorded bili proxy (pid ${inst.pid}, ${inst.origin}) is not running — start bili and retry so a dead origin is not frozen into the client config`);
+        throw new Error(`the recorded sigma proxy (pid ${inst.pid}, ${inst.origin}) is not running — start sigma and retry so a dead origin is not frozen into the client config`);
     }
     return inst.origin;
 }
@@ -111,13 +111,13 @@ function homeFile(rel: string, envOverride?: string): string {
     return path.join(base, rel);
 }
 
-// #1002: backup = the state before bili's LATEST write, but only when the
-// file changed since bili's previous write — i.e. re-snapshot USER edits,
-// never bili's own consecutive writes. That keeps the restore-on-remove
+// #1002: backup = the state before sigma's LATEST write, but only when the
+// file changed since sigma's previous write — i.e. re-snapshot USER edits,
+// never sigma's own consecutive writes. That keeps the restore-on-remove
 // chain intact (install → upgrade → remove still restores the user's
-// pre-install value instead of bili's own output) while fixing the
-// stale-forever backup: after any user edit, the next bili write re-snapshots.
-// `<file>.bili-last` carries the hash of what bili last wrote; "unchanged"
+// pre-install value instead of sigma's own output) while fixing the
+// stale-forever backup: after any user edit, the next sigma write re-snapshots.
+// `<file>.sigma-last` carries the hash of what sigma last wrote; "unchanged"
 // means the on-disk bytes still hash to that value.
 function hashText(text: string): string {
     return crypto.createHash("sha256").update(text).digest("hex");
@@ -125,7 +125,7 @@ function hashText(text: string): string {
 
 function backupBeforeWrite(file: string): void {
     if (!fs.existsSync(file)) return;
-    const bak = `${file}.bili-bak`;
+    const bak = `${file}.sigma-bak`;
     let cur: string;
     try {
         cur = hashText(fs.readFileSync(file, "utf8"));
@@ -134,21 +134,21 @@ function backupBeforeWrite(file: string): void {
     }
     let prev: string | undefined;
     try {
-        prev = fs.readFileSync(`${file}.bili-last`, "utf8").trim();
+        prev = fs.readFileSync(`${file}.sigma-last`, "utf8").trim();
     } catch {}
     if (prev === cur && fs.existsSync(bak)) return;
     fs.copyFileSync(file, bak);
 }
 
-// One writer discipline for every config write bili performs: snapshot per
+// One writer discipline for every config write sigma performs: snapshot per
 // backupBeforeWrite above, write, then record what we wrote so the NEXT
-// write can tell bili's own output apart from a user edit.
+// write can tell sigma's own output apart from a user edit.
 function writeConfigText(file: string, text: string): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     backupBeforeWrite(file);
     fs.writeFileSync(file, text);
     try {
-        fs.writeFileSync(`${file}.bili-last`, `${hashText(text)}\n`);
+        fs.writeFileSync(`${file}.sigma-last`, `${hashText(text)}\n`);
     } catch {}
 }
 
@@ -164,7 +164,7 @@ function readJson(file: string): Record<string, unknown> {
     try {
         parsed = JSON.parse(text);
     } catch (err) {
-        throw new Error(`${file}: not valid JSON (${err instanceof Error ? err.message : String(err)}) — fix it or restore ${path.basename(file)}.bili-bak first; refusing to overwrite`);
+        throw new Error(`${file}: not valid JSON (${err instanceof Error ? err.message : String(err)}) — fix it or restore ${path.basename(file)}.sigma-bak first; refusing to overwrite`);
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error(`${file}: expected a JSON object at top level, refusing to overwrite`);
@@ -178,7 +178,7 @@ function writeJson(file: string, data: unknown): void {
 
 function requireDistFile(file: string): void {
     if (!fs.existsSync(file)) {
-        process.stderr.write(`bili plugin: warning: ${file} does not exist yet (run \`npm run build\` in ${selfPackageRoot()}) — the entry will be dead until built\n`);
+        process.stderr.write(`sigma plugin: warning: ${file} does not exist yet (run \`npm run build\` in ${selfPackageRoot()}) — the entry will be dead until built\n`);
     }
 }
 
@@ -189,28 +189,28 @@ function piSettingsFile(): string {
 }
 
 // A packages entry is "ours" if it points at THIS install's package root,
-// any other billion-context install (npm: form, node_modules path, or a
+// any other sigma install (npm: form, node_modules path, or a
 // dev checkout dir — separators in either style for Windows), or the legacy
-// billion-context-pi package (0.1.x shipped as a separate package before the
-// plugin moved into billion-context itself). install() replaces every match
-// so exactly one bili plugin is live after `bili plugin install pi`.
+// sigma-pi package (0.1.x shipped as a separate package before the
+// plugin moved into sigma itself). install() replaces every match
+// so exactly one sigma plugin is live after `sigma plugin install pi`.
 export function isPiEntry(entry: string, root: string): boolean {
     return entry === root
-        || /^npm:billion-context(-pi)?(@|$)/.test(entry)
-        || /(^|[/\\])node_modules[/\\]billion-context(-pi)?([\/\\]|$)/.test(entry)
-        || /(^|[/\\])billion-context(-pi)?$/.test(entry);
+        || /^npm:sigma(-pi)?(@|$)/.test(entry)
+        || /(^|[/\\])node_modules[/\\]sigma(-pi)?([\/\\]|$)/.test(entry)
+        || /(^|[/\\])sigma(-pi)?$/.test(entry);
 }
 
-// Entries that load THIS package's pi plugin (billion-context proper).
-// Legacy `billion-context-pi` entries are deliberately excluded: that is a
+// Entries that load THIS package's pi plugin (sigma proper).
+// Legacy `sigma-pi` entries are deliberately excluded: that is a
 // separate older package — usually not installed, and it self-disables under
-// BILLION_CONTEXT_PROXY — so treating it as "installed" wrongly suppressed
+// SIGMA_PROXY — so treating it as "installed" wrongly suppressed
 // the launcher's `-e` fallback and left pi with no plugin at all.
-export function isBiliPiEntry(entry: string, root: string): boolean {
+export function isSigmaPiEntry(entry: string, root: string): boolean {
     return entry === root
-        || /^npm:billion-context(@|$)/.test(entry)
-        || /(^|[/\\])node_modules[/\\]billion-context([\/\\]|$)/.test(entry)
-        || /(^|[/\\])billion-context$/.test(entry);
+        || /^npm:sigma(@|$)/.test(entry)
+        || /(^|[/\\])node_modules[/\\]sigma([\/\\]|$)/.test(entry)
+        || /(^|[/\\])sigma$/.test(entry);
 }
 
 // #925 pi form of the npm-standard entry: for npm installs (package root
@@ -219,7 +219,7 @@ export function isBiliPiEntry(entry: string, root: string): boolean {
 // loader resolve() installs missing npm sources), `pi update` upgrades it,
 // and the config survives node prefix moves across machines. A dev/checkout
 // install keeps the abs root (pi loads local package dirs directly).
-export const PI_NPM_ENTRY = "npm:billion-context";
+export const PI_NPM_ENTRY = "npm:sigma";
 
 export function piEntryFor(root: string): string {
     return isNpmInstallForm(root) ? PI_NPM_ENTRY : root;
@@ -238,13 +238,13 @@ function piInstall(): string {
     settings.packages = kept;
     writeJson(file, settings);
     // #788: dropped entries must be visible — silently replacing a documented
-    // setup (npm:billion-context-pi) left users with no compression and no
+    // setup (npm:sigma-pi) left users with no compression and no
     // idea their config changed. Project-scope reminder mirrors the opencode
     // installer's LOCAL-scope note: a `pi install -l` entry lives in
     // <project>/.pi/settings.json, which this global strip never touches.
     const note = removed.length > 0
         ? `\npi: replaced existing entries: ${removed.join(", ")}`
-          + "\npi: also check <project>/.pi/settings.json — a project-scope billion-context-pi entry (pi install -l) lives there, not in this global settings"
+          + "\npi: also check <project>/.pi/settings.json — a project-scope sigma-pi entry (pi install -l) lives there, not in this global settings"
         : "";
     const form = entry === PI_NPM_ENTRY ? " (pi-managed — pi installs/updates it; `pi update` upgrades)" : "";
     return `pi: installed -> ${file} packages += ${entry}${form}${note}`;
@@ -268,13 +268,13 @@ function piStatus(): string {
     const packages = readJson(piSettingsFile()).packages;
     const list = Array.isArray(packages) ? (packages as unknown[]).map(String) : [];
     // Any entry that loads THIS package's plugin counts (npm: form or abs
-    // root); the legacy billion-context-pi package deliberately does not.
-    return list.some((p) => isBiliPiEntry(p, root) || p === piEntryFor(root)) ? "installed" : "not installed";
+    // root); the legacy sigma-pi package deliberately does not.
+    return list.some((p) => isSigmaPiEntry(p, root) || p === piEntryFor(root)) ? "installed" : "not installed";
 }
 
 // — omp ———————————————————————————————————————————————————————————————
 
-// An extensions entry that loads the bili omp plugin (any install): a path
+// An extensions entry that loads the sigma omp plugin (any install): a path
 // ending in dist/agent/omp.js (thin launcher-mode form) or
 // dist/agent/omp-native.js (self-spawning native form, #957). Shared by
 // install/remove/status and the launcher's loader check so all four agree on
@@ -308,18 +308,18 @@ function ompExtensionItemLines(text: string): number[] {
 }
 
 // The config.yml the plugin commands read/write. When PI_CODING_AGENT_DIR
-// points at a bili overlay (<home>-bili, created by `bili omp`), redirect to
+// points at a sigma overlay (<home>-sigma, created by `sigma omp`), redirect to
 // the real home: the overlay's config.yml may be a stale copy (a merge
-// conflict leaves a .bili-conflict instead of the live file), so editing it
+// conflict leaves a .sigma-conflict instead of the live file), so editing it
 // would silently miss the real config. A note is printed so the user sees
 // which file was actually touched.
 function ompConfigFile(): string {
     const raw = process.env.PI_CODING_AGENT_DIR?.trim();
     if (raw && raw.length > 0) {
-        if (raw.endsWith("-bili") && raw.length > "-bili".length) {
-            const realHome = raw.slice(0, -"-bili".length);
+        if (raw.endsWith("-sigma") && raw.length > "-sigma".length) {
+            const realHome = raw.slice(0, -"-sigma".length);
             process.stderr.write(
-                `bili plugin: PI_CODING_AGENT_DIR points at the bili overlay ${raw} — operating on the real omp home ${realHome} instead\n`,
+                `sigma plugin: PI_CODING_AGENT_DIR points at the sigma overlay ${raw} — operating on the real omp home ${realHome} instead\n`,
             );
             return path.join(realHome, "config.yml");
         }
@@ -336,7 +336,7 @@ function ompEntryValue(line: string): string {
     return line.replace(/#.*$/, "").trim().replace(/^-\s*/, "").replace(/^["']|["']$/g, "").trim();
 }
 
-// A bili omp entry that actually loads: matches our entry shape AND the target
+// A sigma omp entry that actually loads: matches our entry shape AND the target
 // file exists on disk (stale entries from a moved install don't count).
 function ompEntryLoadable(value: string): boolean {
     return OMP_ENTRY_RE.test(value) && fs.existsSync(value);
@@ -362,8 +362,8 @@ function ompInstall(): string {
     requireDistFile(entry);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     let text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    // Exactly one bili owner after install (#957): a lone native entry → done.
-    // Any other bili entry — pre-#957 thin dist/agent/omp.js installs or stale
+    // Exactly one sigma owner after install (#957): a lone native entry → done.
+    // Any other sigma entry — pre-#957 thin dist/agent/omp.js installs or stale
     // duplicates — is dropped and replaced by the insert below, so an old
     // install upgrades to native mode on re-install.
     let replaced: string[] = [];
@@ -415,7 +415,7 @@ function ompInstall(): string {
     backupBeforeWrite(file);
     fs.writeFileSync(file, out);
     try {
-        fs.writeFileSync(`${file}.bili-last`, `${hashText(out)}\n`);
+        fs.writeFileSync(`${file}.sigma-last`, `${hashText(out)}\n`);
     } catch {}
     const note = replaced.length > 0 ? ` (replaced ${replaced.join(", ")})` : "";
     return `omp: installed -> ${file} extensions += ${entry}${note}`;
@@ -435,7 +435,7 @@ function ompStatus(): string {
     return broken ? "broken" : "not installed";
 }
 
-/** True when the given omp home's config.yml carries a bili plugin entry
+/** True when the given omp home's config.yml carries a sigma plugin entry
  *  whose target file still exists on disk. The launcher uses this to decide
  *  whether `-e dist/agent/omp.js` is needed (omp does NOT ship the plugin):
  *  a loadable entry means omp already loads it — adding `-e` too would
@@ -473,13 +473,13 @@ export function claudeSettingsFile(env: NodeJS.ProcessEnv = process.env): string
 // #1146: /acp-cache for claude. Claude Code has no in-process command API —
 // the host's user-level MARKDOWN slash command (<configdir>/commands/<name>.md)
 // is the only seam, and it is model-mediated: the file's body expands into a
-// prompt that drives the bili acp_cache MCP tool, whose output the model pastes
+// prompt that drives the sigma acp_cache MCP tool, whose output the model pastes
 // back. Ownership is content-based (like the codex block): install never
 // clobbers a foreign/edited file, remove deletes only our exact template.
 export const CLAUDE_ACP_CACHE_COMMAND = `---
-description: billion-context prompt-cache reconciliation report (same as the acp_cache tool)
+description: sigma prompt-cache reconciliation report (same as the acp_cache tool)
 ---
-Run the \`acp_cache\` tool provided by the \`bili\` MCP server now. If the arguments below contain the word "full", call it with detail:"full"; otherwise call it with no arguments. Then paste the tool's complete output verbatim in a fenced code block — do not summarize, translate, reorder, or omit anything. If the tool is unavailable, reply exactly: bili: acp_cache tool not available (is the bili MCP server registered?)
+Run the \`acp_cache\` tool provided by the \`sigma\` MCP server now. If the arguments below contain the word "full", call it with detail:"full"; otherwise call it with no arguments. Then paste the tool's complete output verbatim in a fenced code block — do not summarize, translate, reorder, or omit anything. If the tool is unavailable, reply exactly: sigma: acp_cache tool not available (is the sigma MCP server registered?)
 
 Arguments: $ARGUMENTS
 `;
@@ -490,19 +490,19 @@ export function claudeAcpCacheCommandFile(env: NodeJS.ProcessEnv = process.env):
     return path.join(path.dirname(claudeSettingsFile(env)), "commands", "acp-cache.md");
 }
 
-/** True for an ANTHROPIC_BASE_URL value written by a bili managed block:
- *  loopback /bili/-wrapped upstream. Any port matches — an older install's
+/** True for an ANTHROPIC_BASE_URL value written by a sigma managed block:
+ *  loopback /sigma/-wrapped upstream. Any port matches — an older install's
  *  port differs from the current one, and both are ours to rewrite. */
-export function isBiliClaudeBaseUrl(value: unknown): boolean {
+export function isSigmaClaudeBaseUrl(value: unknown): boolean {
     if (typeof value !== "string") return false;
-    return /^http:\/\/127\.0\.0\.1:\d{1,5}\/bili\/https?:\/\//.test(value);
+    return /^http:\/\/127\.0\.0\.1:\d{1,5}\/sigma\/https?:\/\//.test(value);
 }
 
 export function claudeNativeBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
     const origin = `http://127.0.0.1:${resolveClaudeNativePort(env)}`;
-    const relay = env.BILI_CLAUDE_UPSTREAM?.trim();
+    const relay = env.SIGMA_CLAUDE_UPSTREAM?.trim();
     const upstream = (relay && relay.length > 0 ? relay : "https://api.anthropic.com").replace(/\/+$/, "");
-    const prefix = origin + "/bili/";
+    const prefix = origin + "/sigma/";
     return upstream.startsWith(prefix) ? upstream : prefix + upstream;
 }
 
@@ -515,19 +515,19 @@ export function applyClaudeManagedBlock(settings: Record<string, unknown>, opts:
     const notes: string[] = [];
     const env = (data.env !== null && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : {}) as Record<string, unknown>;
     const cur = env.ANTHROPIC_BASE_URL;
-    if (cur === undefined || cur === null || isBiliClaudeBaseUrl(cur)) {
+    if (cur === undefined || cur === null || isSigmaClaudeBaseUrl(cur)) {
         if (cur !== opts.baseUrl) {
             env.ANTHROPIC_BASE_URL = opts.baseUrl;
-            notes.push("env.ANTHROPIC_BASE_URL pinned to the bili proxy");
+            notes.push("env.ANTHROPIC_BASE_URL pinned to the sigma proxy");
         }
     } else {
-        notes.push(`env.ANTHROPIC_BASE_URL left untouched (foreign value ${JSON.stringify(cur)} — unset it or set BILI_CLAUDE_UPSTREAM, then reinstall)`);
+        notes.push(`env.ANTHROPIC_BASE_URL left untouched (foreign value ${JSON.stringify(cur)} — unset it or set SIGMA_CLAUDE_UPSTREAM, then reinstall)`);
     }
     const dac = env.DISABLE_AUTO_COMPACT;
     if (dac === undefined || dac === null || dac === "1") {
         if (dac !== "1") {
             env.DISABLE_AUTO_COMPACT = "1";
-            notes.push("env.DISABLE_AUTO_COMPACT=1 (bili owns compression; manual /compact survives)");
+            notes.push("env.DISABLE_AUTO_COMPACT=1 (sigma owns compression; manual /compact survives)");
         }
     } else {
         notes.push(`env.DISABLE_AUTO_COMPACT left untouched (foreign value ${JSON.stringify(dac)})`);
@@ -540,7 +540,7 @@ export function applyClaudeManagedBlock(settings: Record<string, unknown>, opts:
         sessionStart.push({ hooks: [{ type: "command", command: opts.hookCommand }] });
         hooks.SessionStart = sessionStart;
         data.hooks = hooks;
-        notes.push("hooks.SessionStart += bili proxy bootstrap");
+        notes.push("hooks.SessionStart += sigma proxy bootstrap");
     } else if (refreshOurHookCommands(sessionStart, opts.hookCommand)) {
         data.hooks = hooks;
         notes.push("hooks.SessionStart refreshed to the current hook command");
@@ -555,7 +555,7 @@ function isOurHookCommand(command: unknown): command is string {
 }
 
 /** Rewrite every hook command we own to `command`, in place; true if any
- *  changed. The entry above is appended only when no bili entry is present,
+ *  changed. The entry above is appended only when no sigma entry is present,
  *  so without this a settings file written by an older release keeps its old
  *  command forever — and a command a client shell cannot run hangs every
  *  session with no log to say why. */
@@ -585,14 +585,14 @@ export function isOursSessionStartEntry(entry: unknown): boolean {
 
 /** Pure strip of the managed block (remove path) — returns the cleaned copy
  *  and what was removed. DISABLE_AUTO_COMPACT is dropped only when it is the
- *  value we wrote ("1"); a .bili-bak with a pre-install value restores it in
+ *  value we wrote ("1"); a .sigma-bak with a pre-install value restores it in
  *  the caller. Exported for tests. */
 export function stripClaudeManagedBlock(settings: Record<string, unknown>): { data: Record<string, unknown>; removed: string[] } {
     const data = structuredClone(settings);
     const removed: string[] = [];
     const env = (data.env !== null && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : undefined) as Record<string, unknown> | undefined;
     if (env !== undefined) {
-        if (isBiliClaudeBaseUrl(env.ANTHROPIC_BASE_URL)) {
+        if (isSigmaClaudeBaseUrl(env.ANTHROPIC_BASE_URL)) {
             delete env.ANTHROPIC_BASE_URL;
             removed.push("env.ANTHROPIC_BASE_URL");
         }
@@ -616,12 +616,12 @@ export function stripClaudeManagedBlock(settings: Record<string, unknown>): { da
 }
 
 /** True when the managed settings block (the static ANTHROPIC_BASE_URL) is
- *  present — the `bili claude` launcher consults this to override the static
+ *  present — the `sigma claude` launcher consults this to override the static
  *  URL with its own ephemeral proxy (coexistence, #964 item 5). */
 export function claudeNativeInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
     try {
         const data = readJson(claudeSettingsFile(env));
-        return isBiliClaudeBaseUrl((data.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL);
+        return isSigmaClaudeBaseUrl((data.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL);
     } catch {
         return false;
     }
@@ -667,8 +667,8 @@ function defaultWhereRunner(name: string): { stdout: string | null } {
 }
 
 function claudeInstall(): string {
-    if (process.env.BILI_NATIVE_CLAUDE === "0") {
-        throw new Error("claude: install refused — BILI_NATIVE_CLAUDE=0 is set (clear it to install the native posture)");
+    if (process.env.SIGMA_NATIVE_CLAUDE === "0") {
+        throw new Error("claude: install refused — SIGMA_NATIVE_CLAUDE=0 is set (clear it to install the native posture)");
     }
     const root = selfPackageRoot();
     const mcpJs = path.join(root, "dist", "mcp.js");
@@ -677,9 +677,9 @@ function claudeInstall(): string {
     requireDistFile(bootstrapJs);
 
     // Managed block first: the static URL + bootstrap hook + compaction off.
-    // #964: persist the resolved port into the bili config too — the
+    // #964: persist the resolved port into the sigma config too — the
     // SessionStart hook does NOT inherit claude's settings.env, so without a
-    // persisted copy an env-driven port (BILI_CLAUDE_NATIVE_PORT=48790)
+    // persisted copy an env-driven port (SIGMA_CLAUDE_NATIVE_PORT=48790)
     // would live only in settings.json while the hook resolves the default
     // and brings the proxy up on the WRONG port.
     const nativePort = resolveClaudeNativePort();
@@ -699,7 +699,7 @@ function claudeInstall(): string {
     const stableOrigin = `http://127.0.0.1:${nativePort}`;
     const claude = resolveClaudeCli(process.env.CLAUDE?.trim() || "claude");
     try {
-        runClaudeCli(claude, ["mcp", "add", "bili", "--scope", "user", "-e", `BILI_MCP_PROXY=${stableOrigin}`, "--", process.execPath, mcpJs]);
+        runClaudeCli(claude, ["mcp", "add", "sigma", "--scope", "user", "-e", `SIGMA_MCP_PROXY=${stableOrigin}`, "--", process.execPath, mcpJs]);
     } catch (err) {
         const stderr = err instanceof Error && "stderr" in err ? String((err as { stderr?: Buffer | string }).stderr ?? "") : "";
         throw new Error(`claude: MCP registration failed (${stderr.trim() || (err instanceof Error ? err.message : String(err))}) — is the claude CLI on PATH? (the managed settings block at ${file} was written; rerun after fixing the CLI to complete the MCP face)`);
@@ -731,7 +731,7 @@ function claudeRemove(): string {
     if (removed.length > 0) {
         // Restore a pre-install DISABLE_AUTO_COMPACT when the backup holds
         // one (writeJson snapshotted the pristine file on first install).
-        const bak = `${file}.bili-bak`;
+        const bak = `${file}.sigma-bak`;
         try {
             if (fs.existsSync(bak)) {
                 const bakData = readJson(bak) as { env?: Record<string, unknown> };
@@ -751,7 +751,7 @@ function claudeRemove(): string {
     if (claudeMcpInstalled()) {
         const claude = resolveClaudeCli(process.env.CLAUDE?.trim() || "claude");
         try {
-            runClaudeCli(claude, ["mcp", "remove", "bili", "--scope", "user"]);
+            runClaudeCli(claude, ["mcp", "remove", "sigma", "--scope", "user"]);
             parts.push("MCP face removed");
         } catch (err) {
             throw new Error(`claude: MCP removal failed (${err instanceof Error ? err.message : String(err)})${parts.length > 0 ? ` — ${parts.join("; ")} succeeded first` : ""}`);
@@ -776,14 +776,14 @@ function claudeRemove(): string {
 
 function claudeMcpInstalled(): boolean {
     const data = readJson(claudeMcpJson()) as { mcpServers?: Record<string, unknown> };
-    return isPlainMcpObject(data.mcpServers) && "bili" in data.mcpServers;
+    return isPlainMcpObject(data.mcpServers) && "sigma" in data.mcpServers;
 }
 
 function claudeStatus(): string {
     let block = false;
     try {
         const data = readJson(claudeSettingsFile());
-        block = isBiliClaudeBaseUrl((data.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL);
+        block = isSigmaClaudeBaseUrl((data.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL);
     } catch {
         block = false;
     }
@@ -809,7 +809,7 @@ function codexToml(): string {
 }
 
 function codexBlock(): string {
-    return `\n[mcp_servers.bili]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(path.join(selfPackageRoot(), "dist", "mcp.js"))}]\nenv = { BILI_MCP_PROXY = ${JSON.stringify(proxyOriginForInstall())} }\n`;
+    return `\n[mcp_servers.sigma]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(path.join(selfPackageRoot(), "dist", "mcp.js"))}]\nenv = { SIGMA_MCP_PROXY = ${JSON.stringify(proxyOriginForInstall())} }\n`;
 }
 
 function malformedCodexArgs(block: string): boolean {
@@ -819,7 +819,7 @@ function malformedCodexArgs(block: string): boolean {
 function codexInstall(): string {
     const file = codexToml();
     const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    const existing = /^[ \t]*\[mcp_servers\.bili\][ \t]*$/m.exec(text);
+    const existing = /^[ \t]*\[mcp_servers\.sigma\][ \t]*$/m.exec(text);
     if (existing !== null) {
         // End the block at the next TABLE header line (optional indent + `[`),
         // matching codexRemove. A plain indexOf("\n[") misses an indented next
@@ -834,15 +834,15 @@ function codexInstall(): string {
         const refreshed = text.slice(0, existing.index) + canonical + text.slice(existing.index + block.length);
         writeConfigText(file, refreshed);
         const healed = malformedCodexArgs(block) ? " (repaired args: was not an array)" : "";
-        return `codex: refreshed [mcp_servers.bili] -> ${file}${healed}`;
+        return `codex: refreshed [mcp_servers.sigma] -> ${file}${healed}`;
     }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     backupBeforeWrite(file);
     fs.writeFileSync(file, text + (text.endsWith("\n") || text.length === 0 ? "" : "\n") + codexBlock());
     try {
-        fs.writeFileSync(`${file}.bili-last`, `${hashText(fs.readFileSync(file, "utf8"))}\n`);
+        fs.writeFileSync(`${file}.sigma-last`, `${hashText(fs.readFileSync(file, "utf8"))}\n`);
     } catch {}
-    return `codex: installed -> ${file} [mcp_servers.bili]`;
+    return `codex: installed -> ${file} [mcp_servers.sigma]`;
 }
 
 function codexRemove(): string {
@@ -850,7 +850,7 @@ function codexRemove(): string {
     if (!fs.existsSync(file)) return `codex: not installed (${file})`;
     const text = fs.readFileSync(file, "utf8");
     const start = (() => {
-        const m = /^[ \t]*\[mcp_servers\.bili\][ \t]*$/m.exec(text);
+        const m = /^[ \t]*\[mcp_servers\.sigma\][ \t]*$/m.exec(text);
         return m === null ? -1 : m.index;
     })();
     if (start < 0) return `codex: not installed (${file})`;
@@ -866,7 +866,7 @@ function codexRemove(): string {
 
 function codexStatus(): string {
     const text = fs.existsSync(codexToml()) ? fs.readFileSync(codexToml(), "utf8") : "";
-    return /^\[mcp_servers\.bili\]\s*$/m.test(text) ? "installed" : "not installed";
+    return /^\[mcp_servers\.sigma\]\s*$/m.test(text) ? "installed" : "not installed";
 }
 
 // — opencode ————————————————————————————————————————————————————————————
@@ -886,9 +886,9 @@ const PLUGIN_KEYS = ["plugin", "plugins"] as const;
 const ocMajorCache = new Map<string, number>();
 
 /** Host major version via `<command> --version` (probe failure → 1). Same
- *  contract as the launcher's probe; honors the BILI_CLIENT_BIN override. */
+ *  contract as the launcher's probe; honors the SIGMA_CLIENT_BIN override. */
 export function detectOpencodeMajor(): number {
-    const command = process.env.BILI_CLIENT_BIN?.trim() || "opencode";
+    const command = process.env.SIGMA_CLIENT_BIN?.trim() || "opencode";
     const hit = ocMajorCache.get(command);
     if (hit !== undefined) return hit;
     let major = 1;
@@ -935,11 +935,11 @@ export function opencodeTargetFile(): string {
 // entry must be a DIRECTORY whose index.js is the entrypoint (#754 probe). The
 // wrapper directory lives next to the config so it survives config moves.
 function opencodePluginDir(configFile: string): string {
-    return path.join(path.dirname(configFile), "plugins", "billion-context");
+    return path.join(path.dirname(configFile), "plugins", "sigma");
 }
 
 // #809/N4: opencode.json may carry a non-object `mcp` (e.g. a bare string);
-// `"bili" in <non-object>` throws TypeError. Guard so install/remove/status
+// `"sigma" in <non-object>` throws TypeError. Guard so install/remove/status
 // degrade gracefully instead of crashing (a crashing remove leaves no cleanup).
 function isPlainMcpObject(v: unknown): v is Record<string, unknown> {
     return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -965,7 +965,7 @@ function parseOpencodeConfig(text: string, file: string): Record<string, unknown
     if (errors.length > 0 || parsed === undefined) {
         const first = errors[0];
         const detail = first ? ` (offset ${first.offset})` : "";
-        throw new Error(`${file}: not valid JSON${detail} — fix it or restore ${path.basename(file)}.bili-bak first; refusing to overwrite`);
+        throw new Error(`${file}: not valid JSON${detail} — fix it or restore ${path.basename(file)}.sigma-bak first; refusing to overwrite`);
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error(`${file}: expected a JSON object at top level, refusing to overwrite`);
@@ -978,7 +978,7 @@ function loadOpencodeConfig(file: string): { original: string; data: Record<stri
     return { original, data: original === "" ? {} : parseOpencodeConfig(original, file) };
 }
 
-// Write back preserving everything bili did not touch: a missing or plain-JSON
+// Write back preserving everything sigma did not touch: a missing or plain-JSON
 // target is serialized whole (the historical behavior); a JSONC target gets
 // surgical top-level-key edits so comments and formatting elsewhere survive
 // byte-for-byte (#927). A no-op run (nothing touched) leaves the file alone.
@@ -1060,12 +1060,12 @@ function stripLegacyOpencodeAcp(data: Record<string, unknown>, notes: string[], 
         }
     }
     if (removed.length > 0) {
-        notes.push(`replaced opencode-acp plugin entries (${removed.join(", ")}) — single compression owner; restore from the .bili-bak backup if that was intended`);
+        notes.push(`replaced opencode-acp plugin entries (${removed.join(", ")}) — single compression owner; restore from the .sigma-bak backup if that was intended`);
         notes.push("also check <project>/.opencode/opencode.json — a LOCAL-scope opencode-acp install (opencode plugin opencode-acp) lives there, not in this global config");
     }
 }
 
-// #925: how THIS bili was installed decides which plugin entry install can
+// #925: how THIS sigma was installed decides which plugin entry install can
 // publish. An npm-form install (package root under node_modules — npm/pnpm/
 // yarn, both path-separator styles) ships its entry through package.json
 // exports["./server"], so opencode loads the bare package name via its own
@@ -1075,7 +1075,7 @@ export function isNpmInstallForm(root: string): boolean {
     return /(^|[/\\])node_modules[/\\]/.test(root);
 }
 
-export const OPENCODE_NPM_ENTRY = "billion-context";
+export const OPENCODE_NPM_ENTRY = "sigma";
 
 const DEV_FORM_NOTE = "dev form: machine-local shim, not portable across machines — an npm install writes the bare package name instead";
 
@@ -1137,22 +1137,22 @@ function opencodeInstall(withMcp = false): string {
     const notes: string[] = [];
     const touched = new Set<string>();
 
-    // #926: the native plugin below registers the bili tools itself (auto
-    // session-bound), so opencode gets NO mcp.bili by default — a frozen
-    // BILI_MCP_PROXY there goes stale the moment the plugin's
+    // #926: the native plugin below registers the sigma tools itself (auto
+    // session-bound), so opencode gets NO mcp.sigma by default — a frozen
+    // SIGMA_MCP_PROXY there goes stale the moment the plugin's
     // ephemeral-port proxy restarts. Default heals any entry an older
     // install froze in. --with-mcp opts in; the entry then carries no origin
     // pin (dist/mcp.js discovers the live proxy via the instance file at
-    // call time) unless BILI_MCP_PROXY is set for this install.
+    // call time) unless SIGMA_MCP_PROXY is set for this install.
     if (!withMcp) {
         const rawMcp = data.mcp;
-        if (isPlainMcpObject(rawMcp) && "bili" in rawMcp) {
-            delete rawMcp.bili;
+        if (isPlainMcpObject(rawMcp) && "sigma" in rawMcp) {
+            delete rawMcp.sigma;
             if (Object.keys(rawMcp).length === 0) delete data.mcp;
             touched.add("mcp");
-            notes.push("mcp.bili removed (stale second tool face — the native plugin provides the bili tools; install with --with-mcp to keep an MCP face)");
+            notes.push("mcp.sigma removed (stale second tool face — the native plugin provides the sigma tools; install with --with-mcp to keep an MCP face)");
         } else {
-            notes.push("mcp.bili not written (the native plugin provides the bili tools; --with-mcp adds an MCP face)");
+            notes.push("mcp.sigma not written (the native plugin provides the sigma tools; --with-mcp adds an MCP face)");
         }
     } else {
         try {
@@ -1160,45 +1160,45 @@ function opencodeInstall(withMcp = false): string {
             requireDistFile(mcpJs);
             const rawMcp = data.mcp;
             if (rawMcp != null && !isPlainMcpObject(rawMcp)) {
-                notes.push('mcp.bili skipped ("mcp" is not an object)');
+                notes.push('mcp.sigma skipped ("mcp" is not an object)');
             } else {
                 const mcp = (rawMcp as Record<string, unknown> | undefined) ?? {};
-                const explicit = process.env.BILI_MCP_PROXY?.trim();
-                const bili = mcp.bili;
-                if (bili !== null && typeof bili === "object" && !Array.isArray(bili)) {
-                    const env = (bili as Record<string, unknown>).environment;
+                const explicit = process.env.SIGMA_MCP_PROXY?.trim();
+                const sigma = mcp.sigma;
+                if (sigma !== null && typeof sigma === "object" && !Array.isArray(sigma)) {
+                    const env = (sigma as Record<string, unknown>).environment;
                     const envObj = env !== null && typeof env === "object" && !Array.isArray(env) ? (env as Record<string, unknown>) : undefined;
-                    if (envObj?.BILI_MCP_PROXY !== undefined && explicit === undefined) {
-                        delete envObj.BILI_MCP_PROXY;
-                        if (Object.keys(envObj).length === 0) delete (bili as Record<string, unknown>).environment;
+                    if (envObj?.SIGMA_MCP_PROXY !== undefined && explicit === undefined) {
+                        delete envObj.SIGMA_MCP_PROXY;
+                        if (Object.keys(envObj).length === 0) delete (sigma as Record<string, unknown>).environment;
                         touched.add("mcp");
-                        notes.push("mcp.bili present (stale BILI_MCP_PROXY pin removed — live discovery takes over)");
+                        notes.push("mcp.sigma present (stale SIGMA_MCP_PROXY pin removed — live discovery takes over)");
                     } else {
-                        notes.push("mcp.bili present");
+                        notes.push("mcp.sigma present");
                     }
                 } else {
                     const entry: Record<string, unknown> = { type: "local", command: [process.execPath, mcpJs], enabled: true };
-                    if (explicit !== undefined) entry.environment = { BILI_MCP_PROXY: explicit };
-                    mcp.bili = entry;
+                    if (explicit !== undefined) entry.environment = { SIGMA_MCP_PROXY: explicit };
+                    mcp.sigma = entry;
                     data.mcp = mcp;
                     touched.add("mcp");
-                    notes.push(explicit !== undefined ? `mcp.bili written (BILI_MCP_PROXY=${explicit})` : "mcp.bili written (no origin pin — live discovery via instance file)");
+                    notes.push(explicit !== undefined ? `mcp.sigma written (SIGMA_MCP_PROXY=${explicit})` : "mcp.sigma written (no origin pin — live discovery via instance file)");
                 }
             }
         } catch (err) {
-            notes.push(`mcp.bili skipped (${err instanceof Error ? err.message : String(err)})`);
+            notes.push(`mcp.sigma skipped (${err instanceof Error ? err.message : String(err)})`);
         }
     }
 
     // Native plugin (#820/#925): self-spawned proxy + http.request URL rewrite.
-    // Entry form depends on how THIS bili was installed — npm → bare package
+    // Entry form depends on how THIS sigma was installed — npm → bare package
     // name (exports["./server"], host-managed), checkout/dev → local shim dir.
     const root = selfPackageRoot();
     const agentJs = path.join(root, "dist", "agent", "opencode-native.js");
     requireDistFile(agentJs);
     // Single compression owner FIRST: drop any opencode-acp entry before
     // adding ours, so both never load armed in one host (#918). The write
-    // below snapshots the original config to .bili-bak (first write only).
+    // below snapshots the original config to .sigma-bak (first write only).
     stripLegacyOpencodeAcp(data, notes, touched);
     // #927 entry key for this host + #925 entry form for this install form.
     notes.push(...applyOpencodePluginEntry({ data, root, shimDir: opencodePluginDir(file), agentJs, key: pickPluginKey(detectOpencodeMajor()), touched }));
@@ -1229,11 +1229,11 @@ function opencodeRemove(): string {
     const touched = new Set<string>();
 
     const mcp = data.mcp;
-    if (isPlainMcpObject(mcp) && "bili" in mcp) {
-        delete mcp.bili;
+    if (isPlainMcpObject(mcp) && "sigma" in mcp) {
+        delete mcp.sigma;
         if (Object.keys(mcp).length === 0) delete data.mcp;
         touched.add("mcp");
-        notes.push("mcp.bili removed");
+        notes.push("mcp.sigma removed");
     }
 
     // #927: clean our entry out of whichever key spelling carries it; the
@@ -1273,7 +1273,7 @@ function opencodeRemove(): string {
     if (notes.length > 0) {
         const cur = data.compaction as Record<string, unknown> | undefined;
         if (cur && cur.auto === false) {
-            const bak = `${file}.bili-bak`;
+            const bak = `${file}.sigma-bak`;
             if (fs.existsSync(bak)) {
                 try {
                     const bakData = loadOpencodeConfig(bak).data;
@@ -1305,7 +1305,7 @@ function opencodeStatus(): string {
     const mcp = data.mcp;
     const dir = opencodePluginDir(file);
     const listed = PLUGIN_KEYS.some((k) => pluginEntries(data, k).some((p) => p === OPENCODE_NPM_ENTRY || p === dir));
-    return (isPlainMcpObject(mcp) && "bili" in mcp) || listed ? "installed" : "not installed";
+    return (isPlainMcpObject(mcp) && "sigma" in mcp) || listed ? "installed" : "not installed";
 }
 
 // — dsh ————————————————————————————————————————————————————————————————
@@ -1316,8 +1316,8 @@ function opencodeStatus(): string {
 // one owner of each profile copy, one update path (auto-update re-runs the
 // channel via refreshDshProfileBundles). Pre-unification managed blocks are
 // migrated (stripped) on install/remove: coexistence duplicates the
-// bili-native loader id and hard-fails dsh boot. The spec follows how THIS
-// bili was installed (#925 rule): npm form → bare package name (registry),
+// sigma-native loader id and hard-fails dsh boot. The spec follows how THIS
+// sigma was installed (#925 rule): npm form → bare package name (registry),
 // checkout/dev → absolute path (pnpm link:, tracks the live source).
 
 function dshInstall(): string {
@@ -1340,7 +1340,7 @@ function dshRemove(): string {
     const touched = new Set<string>();
     for (const dir of dshProfileDirs()) {
         const name = path.basename(dir);
-        if (dshProfileDependsOnBili(dir)) {
+        if (dshProfileDependsOnSigma(dir)) {
             runDshPlugin(["plugin", "--profile", name, "remove", DSH_PACKAGE]);
             touched.add(name);
             notes.push(`${name}: uninstalled via the dsh plugin channel`);
@@ -1350,8 +1350,8 @@ function dshRemove(): string {
             notes.push(`${name}: legacy managed block stripped`);
         }
     }
-    if (touched.size === 0) return "nothing to remove — no dsh profile carries billion-context";
-    return `removed bili from ${touched.size} dsh profile(s) under ${path.join(resolveDshHome(process.env), "profiles")} (${notes.join("; ")}) — restart dsh to finish`;
+    if (touched.size === 0) return "nothing to remove — no dsh profile carries sigma";
+    return `removed sigma from ${touched.size} dsh profile(s) under ${path.join(resolveDshHome(process.env), "profiles")} (${notes.join("; ")}) — restart dsh to finish`;
 }
 
 function dshStatus(): string {
@@ -1360,16 +1360,16 @@ function dshStatus(): string {
     const withBlock = dirs.filter((dir) => dshHasLegacyManagedBlock(dir));
     if (bundle.length === dirs.length && dirs.length > 0) return `installed (dsh bundle in all ${dirs.length} profiles)`;
     if (bundle.length > 0) return `installed as a dsh bundle in ${bundle.length}/${dirs.length} profiles`;
-    if (withBlock.length === dirs.length && dirs.length > 0) return "installed (legacy managed block — rerun 'bili plugin install dsh' to migrate to the dsh bundle channel)";
-    if (withBlock.length > 0) return `legacy managed block in ${withBlock.length}/${dirs.length} profiles — rerun 'bili plugin install dsh' to migrate`;
+    if (withBlock.length === dirs.length && dirs.length > 0) return "installed (legacy managed block — rerun 'sigma plugin install dsh' to migrate to the dsh bundle channel)";
+    if (withBlock.length > 0) return `legacy managed block in ${withBlock.length}/${dirs.length} profiles — rerun 'sigma plugin install dsh' to migrate`;
     return "not installed";
 }
 
 /** True when any profile carries the persistent native install — either the
- *  bundle-channel dep or a pre-unification managed block. The `bili dsh`
+ *  bundle-channel dep or a pre-unification managed block. The `sigma dsh`
  *  launcher consults this before adding its own --patch overlay: cordis
  *  rejects duplicate loader entry ids across layers, so a second
- *  `id: bili-native` insert would hard-fail dsh boot whenever the persistent
+ *  `id: sigma-native` insert would hard-fail dsh boot whenever the persistent
  *  install is present. */
 export function dshNativeInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
     let dirs: string[];
@@ -1386,12 +1386,12 @@ export function dshNativeInstalled(env: NodeJS.ProcessEnv = process.env): boolea
 // a machine-managed registry (installed.json) and runs the MANAGED COPY at
 // plugins/managed/<id>/, so the installer writes there directly with absolute
 // paths into THIS package's dist — plugin and proxy share one version and
-// `npm i -g billion-context@latest` upgrades both. The plugin declares one
+// `npm i -g sigma@latest` upgrades both. The plugin declares one
 // stdio MCP server (the per-session bootstrap + ACP tool shell) and one
 // SessionStart hook (attach-only fast path); config.toml itself is only
 // touched at session start by those entries, never here.
 
-const KIMI_PLUGIN_ID = "billion-context";
+const KIMI_PLUGIN_ID = "sigma";
 
 function kimiHome(): string {
     return resolveKimiHome(process.env);
@@ -1457,7 +1457,7 @@ export function detectKimiVersion(env: NodeJS.ProcessEnv = process.env): string 
     if (out === undefined) throw new Error("kimi CLI not found on PATH or in $KIMI_CODE_HOME/bin — install Kimi Code first (`npm i -g @moonshot-ai/kimi-code`)");
     const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(out);
     if (m && parseInt(m[1], 10) < 2) {
-        throw new Error(`Kimi Code ${m[0]} is too old for native mode (needs >= 2.0.0) — upgrade with \`npm i -g @moonshot-ai/kimi-code@latest\` and retry; \`bili kimi\` launcher mode still works`);
+        throw new Error(`Kimi Code ${m[0]} is too old for native mode (needs >= 2.0.0) — upgrade with \`npm i -g @moonshot-ai/kimi-code@latest\` and retry; \`sigma kimi\` launcher mode still works`);
     }
     return m ? m[0] : out.trim();
 }
@@ -1474,8 +1474,8 @@ function kimiPluginManifest(root: string): Record<string, unknown> {
     return {
         name: KIMI_PLUGIN_ID,
         version: selfVersion(),
-        description: "billion-context: ACP context-compression proxy (native mode)",
-        mcpServers: { bili: { command: "node", args: [path.join(root, "dist", "kimi", "native-mcp.js")], cwd: "./" } },
+        description: "sigma: ACP context-compression proxy (native mode)",
+        mcpServers: { sigma: { command: "node", args: [path.join(root, "dist", "kimi", "native-mcp.js")], cwd: "./" } },
         hooks: [{ event: "SessionStart", command: portableHookCommand("node", [path.join(root, "dist", "kimi", "bootstrap-hook.js")]), timeout: 30 }],
     };
 }
@@ -1496,7 +1496,7 @@ function kimiInstall(): string {
     const record: KimiInstalledRecord = { id: KIMI_PLUGIN_ID, root: dir, source: "local-path", enabled: true, installedAt: existing?.installedAt ?? now, updatedAt: now };
     reg.plugins = existing ? reg.plugins.map((p) => (p.id === KIMI_PLUGIN_ID ? record : p)) : [...reg.plugins, record];
     writeJsonAtomic(file, reg);
-    return `wrote the billion-context plugin into ${dir} (kimi ${version}) — start a new Kimi Code session to activate`;
+    return `wrote the sigma plugin into ${dir} (kimi ${version}) — start a new Kimi Code session to activate`;
 }
 
 function kimiRemove(): string {
@@ -1515,7 +1515,7 @@ function kimiRemove(): string {
     const restored = restoreKimiBackup({ log: (msg) => notes.push(msg) });
     if (restored.restored) notes.push("restored config.toml from the pre-install snapshot");
     else unrouteKimi({ log: (msg) => notes.push(msg) });
-    return removed ? `removed the billion-context plugin${notes.length > 0 ? ` (${notes.join("; ")})` : ""} — start a new Kimi Code session to finish` : "not installed";
+    return removed ? `removed the sigma plugin${notes.length > 0 ? ` (${notes.join("; ")})` : ""} — start a new Kimi Code session to finish` : "not installed";
 }
 
 function kimiStatus(): string {
@@ -1525,7 +1525,7 @@ function kimiStatus(): string {
         registered = readKimiInstalledRegistry(kimiRegistryFile()).plugins.some((p) => p.id === KIMI_PLUGIN_ID);
     } catch {}
     if (manifestOk && registered) return "installed";
-    if (manifestOk || registered) return "partially installed — rerun 'bili plugin install kimi' to fix";
+    if (manifestOk || registered) return "partially installed — rerun 'sigma plugin install kimi' to fix";
     return "not installed";
 }
 
@@ -1533,10 +1533,10 @@ function kimiStatus(): string {
 // Python plugin: hermes's CLI agent plugin API is Python-only, so the lane copies
 // the shipped source verbatim into the user plugin dir instead of pointing at dist.
 // Enablement is delegated to `hermes plugins enable` — hermes owns config.yaml, we
-// never parse it. The bili.json sidecar points the plugin at THIS install's
+// never parse it. The sigma.json sidecar points the plugin at THIS install's
 // dist/index.js + node runtime, so a global self-update moves both together.
 
-const HERMES_PLUGIN_ID = "billion-context";
+const HERMES_PLUGIN_ID = "sigma";
 // cmd.exe's canonical "command missing" line (its exit code is not reliably
 // 9009 when spawned via CreateProcess — CI-verified).
 const CMD_NOT_FOUND_RE = /is not recognized as an internal or external command/i;
@@ -1583,18 +1583,18 @@ function hermesInstallCore(): void {
     fs.writeFileSync(path.join(dir, "__init__.py"), initSrc);
     fs.writeFileSync(path.join(dir, "plugin.yaml"), yamlSrc.replace(/^version:.*/m, `version: "${selfVersion()}"`));
     const sidecar: HermesSidecar = { proxyScript: path.join(root, "dist", "index.js"), nodePath: process.execPath };
-    fs.writeFileSync(path.join(dir, "bili.json"), `${JSON.stringify(sidecar, null, 2)}\n`);
+    fs.writeFileSync(path.join(dir, "sigma.json"), `${JSON.stringify(sidecar, null, 2)}\n`);
 }
 
 function hermesInstall(): string {
     hermesInstallCore();
     const dir = hermesPluginDir();
     const enable = runHermesCli(["plugins", "enable", HERMES_PLUGIN_ID]);
-    if (enable.ok) return `wrote the billion-context plugin into ${dir} and enabled it — start a new hermes session to activate`;
+    if (enable.ok) return `wrote the sigma plugin into ${dir} and enabled it — start a new hermes session to activate`;
     const hint = enable.reason === "not-found"
-        ? "the hermes CLI was not found on PATH — enable it manually: hermes plugins enable billion-context"
-        : `enabling via the hermes CLI failed (${enable.reason}) — enable it manually: hermes plugins enable billion-context`;
-    return `wrote the billion-context plugin into ${dir}; ${hint}`;
+        ? "the hermes CLI was not found on PATH — enable it manually: hermes plugins enable sigma"
+        : `enabling via the hermes CLI failed (${enable.reason}) — enable it manually: hermes plugins enable sigma`;
+    return `wrote the sigma plugin into ${dir}; ${hint}`;
 }
 
 function hermesRemove(): string {
@@ -1603,13 +1603,13 @@ function hermesRemove(): string {
     fs.rmSync(dir, { recursive: true, force: true });
     const disable = runHermesCli(["plugins", "disable", HERMES_PLUGIN_ID]);
     return disable.ok
-        ? `removed the billion-context plugin (${dir}) and disabled it — start a new hermes session to finish`
-        : `removed the billion-context plugin (${dir}); if hermes still lists it, disable it manually: hermes plugins disable billion-context`;
+        ? `removed the sigma plugin (${dir}) and disabled it — start a new hermes session to finish`
+        : `removed the sigma plugin (${dir}); if hermes still lists it, disable it manually: hermes plugins disable sigma`;
 }
 
 function hermesStatus(): string {
     const dir = hermesPluginDir();
-    return fs.existsSync(path.join(dir, "__init__.py")) && fs.existsSync(path.join(dir, "bili.json")) ? "installed" : "not installed";
+    return fs.existsSync(path.join(dir, "__init__.py")) && fs.existsSync(path.join(dir, "sigma.json")) ? "installed" : "not installed";
 }
 
 // — dispatch ————————————————————————————————————————————————————————————
@@ -1647,7 +1647,7 @@ export function isOursZcodeMcpServer(server: unknown): boolean {
 
 /** Managed-block apply for ~/.zcode/cli/config.json (#1145). Pure over the
  *  parsed doc: enables hooks, upserts our SessionStart entry, and owns ONLY
- *  mcp.servers.bili when it already points at our dist — a user's own "bili"
+ *  mcp.servers.sigma when it already points at our dist — a user's own "sigma"
  *  server throws instead of being clobbered (§7.3). */
 export function applyZcodeManagedConfig(doc: Record<string, unknown>, opts: { hookEntry: string; mcpEntry: string }): { data: Record<string, unknown>; notes: string[] } {
     const data = structuredClone(doc);
@@ -1660,17 +1660,17 @@ export function applyZcodeManagedConfig(doc: Record<string, unknown>, opts: { ho
     const events = zcodeAsPlain(hooks.events) ?? {};
     const sessionStart = Array.isArray(events.SessionStart) ? [...(events.SessionStart as unknown[])] : [];
     const kept = sessionStart.filter((e) => !isOursZcodeHookEntry(e));
-    if (kept.length !== sessionStart.length) notes.push("replaced a previous bili SessionStart entry");
+    if (kept.length !== sessionStart.length) notes.push("replaced a previous sigma SessionStart entry");
     kept.push({ hooks: [{ type: "process", command: "node", args: [opts.hookEntry] }] });
     events.SessionStart = kept;
     hooks.events = events;
     data.hooks = hooks;
     const mcp = zcodeAsPlain(data.mcp) ?? {};
     const servers = zcodeAsPlain(mcp.servers) ?? {};
-    if (servers.bili !== undefined && !isOursZcodeMcpServer(servers.bili)) {
-        throw new Error(`${zcodeUserConfigFile()} already defines mcp.servers.bili owned by something else — rename or remove it first; refusing to overwrite`);
+    if (servers.sigma !== undefined && !isOursZcodeMcpServer(servers.sigma)) {
+        throw new Error(`${zcodeUserConfigFile()} already defines mcp.servers.sigma owned by something else — rename or remove it first; refusing to overwrite`);
     }
-    servers.bili = { type: "stdio", command: "node", args: [opts.mcpEntry] };
+    servers.sigma = { type: "stdio", command: "node", args: [opts.mcpEntry] };
     mcp.servers = servers;
     data.mcp = mcp;
     return { data, notes };
@@ -1696,9 +1696,9 @@ export function stripZcodeManagedConfig(doc: Record<string, unknown>): { data: R
     const mcp = zcodeAsPlain(data.mcp);
     if (mcp) {
         const servers = zcodeAsPlain(mcp.servers);
-        if (servers && servers.bili !== undefined && isOursZcodeMcpServer(servers.bili)) {
-            removed.push("mcp.servers.bili");
-            delete servers.bili;
+        if (servers && servers.sigma !== undefined && isOursZcodeMcpServer(servers.sigma)) {
+            removed.push("mcp.servers.sigma");
+            delete servers.sigma;
             if (Object.keys(servers).length === 0) delete mcp.servers;
             if (Object.keys(mcp).length === 0) delete data.mcp;
         }
@@ -1715,7 +1715,7 @@ function zcodeInstall(): string {
     const file = zcodeUserConfigFile();
     const { data, notes } = applyZcodeManagedConfig(readJson(file), { hookEntry, mcpEntry });
     writeJson(file, data);
-    return `wrote the billion-context hook+MCP into ${file}${notes.length > 0 ? ` (${notes.join("; ")})` : ""} — start a new ZCode session to activate`;
+    return `wrote the sigma hook+MCP into ${file}${notes.length > 0 ? ` (${notes.join("; ")})` : ""} — start a new ZCode session to activate`;
 }
 
 function zcodeRemove(): string {
@@ -1729,7 +1729,7 @@ function zcodeRemove(): string {
             // are the reason it is on (never drop a user-owned switch).
             let bak: Record<string, unknown> | undefined;
             try {
-                bak = JSON.parse(fs.readFileSync(`${file}.bili-bak`, "utf8")) as Record<string, unknown>;
+                bak = JSON.parse(fs.readFileSync(`${file}.sigma-bak`, "utf8")) as Record<string, unknown>;
             } catch {}
             const hooks = zcodeAsPlain(data.hooks);
             if (hooks && Object.keys(hooks).length === 1 && hooks.enabled === true) {
@@ -1743,7 +1743,7 @@ function zcodeRemove(): string {
     } catch {}
     const restored = restoreZcodeBackup({ log: (msg) => notes.push(msg) });
     if (!restored.restored) unrouteZcode({ log: () => {} });
-    return notes.length > 0 ? `removed the billion-context zcode lane (${notes.join("; ")}) — start a new ZCode session to finish` : "not installed";
+    return notes.length > 0 ? `removed the sigma zcode lane (${notes.join("; ")}) — start a new ZCode session to finish` : "not installed";
 }
 
 function zcodeStatus(): string {
@@ -1753,9 +1753,9 @@ function zcodeStatus(): string {
         const doc = readJson(zcodeUserConfigFile());
         const sessionStart = zcodeAsPlain(zcodeAsPlain(doc.hooks)?.events)?.SessionStart;
         hasHook = Array.isArray(sessionStart) && (sessionStart as unknown[]).some(isOursZcodeHookEntry);
-        hasMcp = isOursZcodeMcpServer(zcodeAsPlain(zcodeAsPlain(doc.mcp)?.servers)?.bili);
+        hasMcp = isOursZcodeMcpServer(zcodeAsPlain(zcodeAsPlain(doc.mcp)?.servers)?.sigma);
     } catch {}
-    let status = hasHook && hasMcp ? "installed" : hasHook || hasMcp ? "partially installed — rerun 'bili plugin install zcode' to fix" : "not installed";
+    let status = hasHook && hasMcp ? "installed" : hasHook || hasMcp ? "partially installed — rerun 'sigma plugin install zcode' to fix" : "not installed";
     try {
         const routed = inspectZcodeRouting(resolveZcodeDataDir(process.env));
         if (routed && routed.wrapped.length > 0) status += ` (routing ${routed.kind} store: ${routed.wrapped.map((w) => w.id).join(", ")})`;
@@ -1765,7 +1765,7 @@ function zcodeStatus(): string {
 
 // — doctor (#1235) —————————————————————————————————————————————————————
 
-/** Structured per-lane presence for `bili doctor`: what the lane's entries
+/** Structured per-lane presence for `sigma doctor`: what the lane's entries
  *  point at, which on-disk copy it loads, and the copy's version when
  *  resolvable. Read-only. Multi-face probes degrade to partial info on
  *  malformed config; single-source probes (pi/opencode/zcode) propagate the
@@ -1802,7 +1802,7 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         const root = selfPackageRoot();
         const packages = readJson(piSettingsFile()).packages;
         const list = Array.isArray(packages) ? (packages as unknown[]).map(String) : [];
-        const entries = list.filter((p) => isBiliPiEntry(p, root) || p === piEntryFor(root));
+        const entries = list.filter((p) => isSigmaPiEntry(p, root) || p === piEntryFor(root));
         if (entries.length === 0) return laneAbsent();
         if (entries.includes(PI_NPM_ENTRY)) {
             const store = path.join(resolvePiHome(process.env), "agent", "npm", "node_modules", PI_NPM_ENTRY.slice("npm:".length));
@@ -1848,16 +1848,16 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         try {
             const data = readJson(claudeSettingsFile());
             const baseUrl = (data.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL;
-            if (typeof baseUrl === "string" && isBiliClaudeBaseUrl(baseUrl)) {
+            if (typeof baseUrl === "string" && isSigmaClaudeBaseUrl(baseUrl)) {
                 out.installed = true;
                 out.pointers.push(`env.ANTHROPIC_BASE_URL=${baseUrl}`);
             }
         } catch {}
         try {
             const mcpData = readJson(claudeMcpJson()) as { mcpServers?: Record<string, unknown> };
-            const bili = mcpData.mcpServers?.bili;
-            if (bili !== null && typeof bili === "object" && !Array.isArray(bili)) {
-                const s = bili as Record<string, unknown>;
+            const sigma = mcpData.mcpServers?.sigma;
+            if (sigma !== null && typeof sigma === "object" && !Array.isArray(sigma)) {
+                const s = sigma as Record<string, unknown>;
                 out.installed = true;
                 const args = Array.isArray(s.args) ? (s.args as unknown[]).map(String) : [];
                 out.pointers.push([s.command, ...args].filter((x) => typeof x === "string" && x.length > 0).join(" "));
@@ -1878,8 +1878,8 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         } catch {
             return laneAbsent();
         }
-        if (!/^\[mcp_servers\.bili\]\s*$/m.test(text)) return laneAbsent();
-        const start = text.indexOf("[mcp_servers.bili]");
+        if (!/^\[mcp_servers\.sigma\]\s*$/m.test(text)) return laneAbsent();
+        const start = text.indexOf("[mcp_servers.sigma]");
         const rest = text.slice(start);
         const nextSection = /^\[[^\]\n]+\]/m.exec(rest.slice(1));
         const block = nextSection !== null ? rest.slice(0, 1 + nextSection.index) : rest;
@@ -1906,7 +1906,7 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         const first = targets[0];
         return {
             installed: true,
-            pointers: [`[mcp_servers.bili] command=${command || "?"} args=[${args.join(", ")}]`],
+            pointers: [`[mcp_servers.sigma] command=${command || "?"} args=[${args.join(", ")}]`],
             targets,
             form: "managed-block",
             copyVersion: first !== undefined ? pkgVersionAt(rootFromDistFile(first)) : undefined,
@@ -1917,10 +1917,10 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         const { data } = loadOpencodeConfig(file);
         const dir = opencodePluginDir(file);
         const listed = PLUGIN_KEYS.flatMap((k) => pluginEntries(data, k)).filter((p) => p === OPENCODE_NPM_ENTRY || p === dir);
-        const hasMcp = isPlainMcpObject(data.mcp) && "bili" in data.mcp;
+        const hasMcp = isPlainMcpObject(data.mcp) && "sigma" in data.mcp;
         if (listed.length === 0 && !hasMcp) return laneAbsent();
         const out: LanePresence = { installed: true, pointers: [...listed], targets: [], form: "none" };
-        if (hasMcp) out.pointers.push("mcp.bili");
+        if (hasMcp) out.pointers.push("mcp.sigma");
         if (listed.includes(OPENCODE_NPM_ENTRY)) {
             out.form = "npm";
         } else if (listed.includes(dir)) {
@@ -1971,7 +1971,7 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         try {
             const man = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as Record<string, unknown>;
             if (typeof man.version === "string") out.copyVersion = man.version;
-            const mcpArgs = zcodeAsPlain(zcodeAsPlain(man.mcpServers)?.bili)?.args;
+            const mcpArgs = zcodeAsPlain(zcodeAsPlain(man.mcpServers)?.sigma)?.args;
             for (const a of Array.isArray(mcpArgs) ? (mcpArgs as unknown[]).map(String) : []) {
                 if (path.isAbsolute(a)) out.targets.push(a);
             }
@@ -1990,7 +1990,7 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
         if (!fs.existsSync(path.join(dir, "__init__.py"))) return laneAbsent();
         const out: LanePresence = { installed: true, pointers: [dir], targets: [], form: "local-path" };
         try {
-            const sidecar = JSON.parse(fs.readFileSync(path.join(dir, "bili.json"), "utf8")) as HermesSidecar;
+            const sidecar = JSON.parse(fs.readFileSync(path.join(dir, "sigma.json"), "utf8")) as HermesSidecar;
             if (typeof sidecar.proxyScript === "string" && sidecar.proxyScript.length > 0) out.targets.push(sidecar.proxyScript);
         } catch {}
         try {
@@ -2004,8 +2004,8 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
     const doc = readJson(zcodeUserConfigFile());
     const sessionStart = zcodeAsPlain(zcodeAsPlain(doc.hooks)?.events)?.SessionStart;
     const hasHook = Array.isArray(sessionStart) && (sessionStart as unknown[]).some(isOursZcodeHookEntry);
-    const mcpBili = zcodeAsPlain(zcodeAsPlain(doc.mcp)?.servers)?.bili;
-    const hasMcp = isOursZcodeMcpServer(mcpBili);
+    const mcpSigma = zcodeAsPlain(zcodeAsPlain(doc.mcp)?.servers)?.sigma;
+    const hasMcp = isOursZcodeMcpServer(mcpSigma);
     if (!hasHook && !hasMcp) return laneAbsent();
     const out: LanePresence = { installed: hasHook && hasMcp, pointers: [], targets: [], form: "managed-block" };
     if (!out.installed) out.pointers.push(hasHook ? "hook present, MCP face missing" : "MCP face present, hook missing");
@@ -2021,7 +2021,7 @@ export function inspectLanePresence(agent: PluginAgent): LanePresence {
             if (Array.isArray(hooks)) for (const h of hooks as unknown[]) collectArgs(zcodeAsPlain(h)?.args);
         }
     }
-    if (hasMcp) collectArgs(zcodeAsPlain(mcpBili)?.args);
+    if (hasMcp) collectArgs(zcodeAsPlain(mcpSigma)?.args);
     const first = out.targets[0];
     if (first !== undefined) out.copyVersion = pkgVersionAt(rootFromDistFile(first));
     return out;
@@ -2063,18 +2063,18 @@ export function pluginStatusAll(): Array<{ agent: string; status: string; channe
 // #991 single-writer: every lane's update path, user-facing. Host-managed
 // copies (pi's npm entry, opencode's plugin dir) are only ever updated by
 // their host; dsh profile bundles track the global version; reference lanes
-// (omp/claude/codex/kimi/hermes/zcode) follow the global bili install itself —
-// hermes additionally re-copies its Python files via `bili plugin update hermes`.
+// (omp/claude/codex/kimi/hermes/zcode) follow the global sigma install itself —
+// hermes additionally re-copies its Python files via `sigma plugin update hermes`.
 export const UPDATE_CHANNEL: Record<PluginAgent, string> = {
-    pi: "pi update (pi owns the npm:billion-context copy)",
-    omp: "the global bili install (entry points at it)",
-    claude: "the global bili install (hook/MCP point at it)",
-    codex: "the global bili install (the mcp launcher shells out to it)",
+    pi: "pi update (pi owns the npm:sigma copy)",
+    omp: "the global sigma install (entry points at it)",
+    claude: "the global sigma install (hook/MCP point at it)",
+    codex: "the global sigma install (the mcp launcher shells out to it)",
     opencode: "opencode's own plugin manager (opencode owns the copy)",
-    dsh: "the global bili self-update (profile bundles track it)",
-    kimi: "the global bili install (plugin points at its dist)",
-    hermes: "the global bili install (sidecar points at its dist); `bili plugin update hermes` re-copies the plugin",
-    zcode: "the global bili install (hook/MCP point at its dist)",
+    dsh: "the global sigma self-update (profile bundles track it)",
+    kimi: "the global sigma install (plugin points at its dist)",
+    hermes: "the global sigma install (sidecar points at its dist); `sigma plugin update hermes` re-copies the plugin",
+    zcode: "the global sigma install (hook/MCP point at its dist)",
 };
 
 export interface PluginUpdateOpts {
@@ -2087,23 +2087,23 @@ export interface PluginUpdateOpts {
     log?: (level: "info" | "warn", msg: string) => void;
 }
 
-/** `bili plugin update [agent]` — bring every lane's bili presence up to
+/** `sigma plugin update [agent]` — bring every lane's sigma presence up to
  *  date, each through its OWN owner (#991 single-writer):
  *  - reference lanes (omp/claude/codex/kimi) need nothing per-lane: they
  *    point at the global install, so only the global copy updates;
  *  - host-managed copies (pi npm entry, opencode plugin entry) are never
- *    overwritten by bili — the report says which host command upgrades
+ *    overwritten by sigma — the report says which host command upgrades
  *    them;
  *  - dsh profile bundles are re-resolved to the latest registry version
  *    through dsh's own plugin channel.
  *  Returns user-facing lines. Network is only touched when a dsh profile
- *  actually depends on bili (version lookup) or globalCheck is provided. */
+ *  actually depends on sigma (version lookup) or globalCheck is provided. */
 export async function pluginUpdate(agents: readonly PluginAgent[] | undefined, opts: PluginUpdateOpts): Promise<string[]> {
     const log = opts.log ?? (() => {});
     const lines: string[] = [];
     if (opts.globalCheck) {
         await opts.globalCheck();
-        lines.push("global bili copy: update check ran (see log above; it skips copies owned by a host)");
+        lines.push("global sigma copy: update check ran (see log above; it skips copies owned by a host)");
     }
     for (const agent of agents ?? PLUGIN_AGENTS) {
         try {
@@ -2121,7 +2121,7 @@ async function updateLane(agent: PluginAgent, opts: PluginUpdateOpts, log: (leve
         const list = Array.isArray(packages) ? (packages as unknown[]).map(String) : [];
         const root = selfPackageRoot();
         if (list.some((p) => p === PI_NPM_ENTRY)) {
-            return ["pi: the plugin copy is pi-managed (npm:billion-context) — `pi update` upgrades it; bili never overwrites it (#991)"];
+            return ["pi: the plugin copy is pi-managed (npm:sigma) — `pi update` upgrades it; sigma never overwrites it (#991)"];
         }
         if (list.some((p) => isPiEntry(p, root))) {
             return ["pi: entry points at this checkout — rebuild the checkout (`npm run build`) to pick up changes"];
@@ -2133,7 +2133,7 @@ async function updateLane(agent: PluginAgent, opts: PluginUpdateOpts, log: (leve
         const { data } = loadOpencodeConfig(file);
         const dir = opencodePluginDir(file);
         if (PLUGIN_KEYS.some((k) => pluginEntries(data, k).some((p) => p === OPENCODE_NPM_ENTRY))) {
-            return ["opencode: the plugin copy is opencode-managed — upgrade/reload it via opencode's plugin manager; bili never overwrites it (#991)"];
+            return ["opencode: the plugin copy is opencode-managed — upgrade/reload it via opencode's plugin manager; sigma never overwrites it (#991)"];
         }
         if (PLUGIN_KEYS.some((k) => pluginEntries(data, k).some((p) => p === dir))) {
             return ["opencode: plugin points at this checkout — rebuild the checkout (`npm run build`) to pick up changes"];
@@ -2147,8 +2147,8 @@ async function updateLane(agent: PluginAgent, opts: PluginUpdateOpts, log: (leve
         } catch {
             return ["dsh: never initialized on this machine — nothing to update"];
         }
-        const targets = dirs.filter((dir) => dshProfileDependsOnBili(dir));
-        if (targets.length === 0) return ["dsh: no profile depends on billion-context — nothing to update"];
+        const targets = dirs.filter((dir) => dshProfileDependsOnSigma(dir));
+        if (targets.length === 0) return ["dsh: no profile depends on sigma — nothing to update"];
         const latest = await fetchRegistryVersion(opts, opts.packageName);
         if (!latest) return ["dsh: could not resolve the latest version from npm — leaving profile bundles alone"];
         const before = targets.length;
@@ -2158,8 +2158,8 @@ async function updateLane(agent: PluginAgent, opts: PluginUpdateOpts, log: (leve
     if (agent === "hermes") {
         if (hermesStatus() !== "installed") return ["hermes: not installed — nothing to update"];
         hermesInstallCore();
-        return [`hermes: re-copied the plugin into ${hermesPluginDir()} (bili ${selfVersion()}) — restart hermes to pick it up`];
+        return [`hermes: re-copied the plugin into ${hermesPluginDir()} (sigma ${selfVersion()}) — restart hermes to pick it up`];
     }
     const via = UPDATE_CHANNEL[agent];
-    return [`${agent}: the plugin entry follows the global bili install — it updates together with it (${via})`];
+    return [`${agent}: the plugin entry follows the global sigma install — it updates together with it (${via})`];
 }

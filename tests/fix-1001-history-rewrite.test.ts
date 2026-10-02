@@ -16,7 +16,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 
 // #1001: a client (opencode) silently native-compacted its own history mid-session
-// after a model switch. bili saw the rewritten history with no announcement channel:
+// after a model switch. sigma saw the rewritten history with no announcement channel:
 // A-era blocks orphaned (kernel renders them at the head), refs non-monotonic
 // (preflight emitted reversed ranges), byRaw/byRef leaking dead ids.
 
@@ -175,7 +175,7 @@ test("#1001 e2e openai-wire: silent client history rewrite → boundary marked, 
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/chat/completions`;
     const post = (model: string, messages: Array<{ role: string; content: string }>): Promise<{ status: number; body: string }> =>
         fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": SID }, body: JSON.stringify({ model, max_tokens: 1024, stream: true, messages }) }).then(async (r) => ({ status: r.status, body: await r.text() }));
 
@@ -235,7 +235,7 @@ test("#1001 e2e openai-wire: silent client history rewrite → boundary marked, 
 // #1001 问题3: the documented line form split across sibling array elements
 // (refs header + summary as separate strings) previously died with
 // kind=no-valid-ranges, dropped=2. Kernel 0.0.79 coalesces them; this guards
-// the pinned kernel actually carries the fix through the bili funnel.
+// the pinned kernel actually carries the fix through the sigma funnel.
 test("#1001 问题3: split-element line form compresses instead of failing (kernel coalesce)", () => {
     const session = makeSession();
     const core = createCore();

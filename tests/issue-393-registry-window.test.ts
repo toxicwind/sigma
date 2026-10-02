@@ -22,7 +22,7 @@ import { setLogCapture } from "../src/logger.ts";
 // #393: Claude Opus 5 via a relay (Anthropic /v1/messages) was treated as 200K
 // instead of 1M. Four root causes, each fixed and covered here:
 //   1. the models.dev lookup was gated on a host that only exists in MITM /
-//      zero-config /bili/ mode, so plain --upstream mode always fell to the
+//      zero-config /sigma/ mode, so plain --upstream mode always fell to the
 //      static table (claude-* -> 200K);
 //   2. the status panel had a hardcoded 200K fallback and
 //      effectiveContextLimit was only written in plugin mode;
@@ -125,11 +125,11 @@ test("#393: bundledSnapshotLookup resolves the -thinking variant to the base mod
 
 // --- Fix 1 + 3 (integration): --upstream mode (host=undefined) resolves the registry ---
 
-test("#393: --upstream mode (no /bili/ prefix) still runs the models.dev lookup", async () => {
+test("#393: --upstream mode (no /sigma/ prefix) still runs the models.dev lookup", async () => {
     setRegistryForTest(bundledRegistryForTestsOnly()!);
     const rig = await startRig();
     try {
-        // No /bili/ prefix and no MITM -> route=undefined -> host=undefined.
+        // No /sigma/ prefix and no MITM -> route=undefined -> host=undefined.
         // The registry lookup must still run (Fix 1): openai/gpt-5.4 sits at
         // 1,050,000 in the snapshot vs the 400K built-in row — only the
         // registry can produce it (non-tier-gated family, so #1321's tier cap
@@ -137,7 +137,7 @@ test("#393: --upstream mode (no /bili/ prefix) still runs the models.dev lookup"
         const sid = "upstream-gpt";
         const r = await fetch(`http://127.0.0.1:${rig.proxyPort}/v1/messages`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-acp-session": sid, "x-bili-plugin": "test-agent" },
+            headers: { "content-type": "application/json", "x-acp-session": sid, "x-sigma-plugin": "test-agent" },
             body: body("gpt-5.4"),
         });
         assert.equal(r.status, 200);
@@ -161,7 +161,7 @@ test("#1321: --upstream mode caps tier-gated claude at the standard window witho
             const sid = `tier-${model}`;
             const r = await fetch(`http://127.0.0.1:${rig.proxyPort}/v1/messages`, {
                 method: "POST",
-                headers: { "content-type": "application/json", "x-acp-session": sid, "x-bili-plugin": "test-agent" },
+                headers: { "content-type": "application/json", "x-acp-session": sid, "x-sigma-plugin": "test-agent" },
                 body: body(model),
             });
             assert.equal(r.status, 200);
@@ -173,7 +173,7 @@ test("#1321: --upstream mode caps tier-gated claude at the standard window witho
         const sid = "tier-beta";
         const r = await fetch(`http://127.0.0.1:${rig.proxyPort}/v1/messages`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-acp-session": sid, "x-bili-plugin": "test-agent", "anthropic-beta": "context-1m-2025-08-07" },
+            headers: { "content-type": "application/json", "x-acp-session": sid, "x-sigma-plugin": "test-agent", "anthropic-beta": "context-1m-2025-08-07" },
             body: body("claude-opus-5"),
         });
         assert.equal(r.status, 200);
@@ -187,7 +187,7 @@ test("#1321: --upstream mode caps tier-gated claude at the standard window witho
 
 // --- Fix 2 (integration): wire mode (no plugin header) records effectiveContextLimit ---
 
-test("#393: wire mode (no x-bili-plugin) also records effectiveContextLimit", async () => {
+test("#393: wire mode (no x-sigma-plugin) also records effectiveContextLimit", async () => {
     setRegistryForTest(bundledRegistryForTestsOnly()!);
     const rig = await startRig();
     try {

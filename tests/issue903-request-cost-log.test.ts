@@ -11,7 +11,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
 
-// #903: long sessions keep resending the full harness history to bili even
+// #903: long sessions keep resending the full harness history to sigma even
 // when the folded context stays small — the per-request cost line makes that
 // growth observable: `[session] request: N msgs, inbound=<wire bytes>,
 // local=<ms from body-read start to handoff>` (+ outbound=<forwarded bytes>
@@ -84,7 +84,7 @@ test("e2e: per-request cost line reports msg count, inbound wire size and local 
     const lines: string[] = [];
     setLogCapture((_level, msg) => lines.push(msg));
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const headers = { "content-type": "application/json", "x-acp-session": "cost-sess" };
 
         const mkBody = (pads: number): { messages: unknown[]; raw: string } => {

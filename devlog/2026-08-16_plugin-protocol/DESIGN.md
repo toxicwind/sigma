@@ -1,7 +1,7 @@
 # DESIGN - Cooperative plugin protocol
 
 - Task ID: `2026-08-16_plugin-protocol`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: 2026-08-16
 - Status: Accepted
 
@@ -22,7 +22,7 @@
 ## 3. Protocol (v1)
 
 1. `GET /__bili/plugin/manifest` → `{protocolVersion, version, toolNames, tools: {anthropic, openai, responses}, headers, toolEndpoint}`. Plugin registers the four tools natively from the served schemas.
-2. Request headers: `x-bili-plugin: <agent>` + `x-bili-plugin-conversation: <id>`. Effects: session enters plugin mode → wire tool injection suppressed (`injectTools = opts.compress.injectTool && !pluginMode` in all three prepare* fns), compress loop never intercepts proxy-named tools (they are native client tools), session id keyed by the conversation id (first in `clientConversationHeader` priority), philosophy prompt + nudge keep flowing.
+2. Request headers: `x-sigma-plugin: <agent>` + `x-sigma-plugin-conversation: <id>`. Effects: session enters plugin mode → wire tool injection suppressed (`injectTools = opts.compress.injectTool && !pluginMode` in all three prepare* fns), compress loop never intercepts proxy-named tools (they are native client tools), session id keyed by the conversation id (first in `clientConversationHeader` priority), philosophy prompt + nudge keep flowing.
 3. `POST /__bili/plugin/tool {conversationId, tool, args}` → executes under the session lock via the same `executeProxyTool` the wire loop uses, against the last prepare()'s processed view (`rememberPluginMessages`), returns `{ok, tool, conversationId, result}`.
 4. Verbatim response passthrough: `pipeThroughWithUsage` (SSE) / `pipePluginJson` (JSON) forward upstream bytes untouched while sniffing usage into `session.stats` (anthropic message_start/message_delta, openai chunk.usage, responses response.completed) — required because `lastInputTokens` feeds the next nudge decision.
 

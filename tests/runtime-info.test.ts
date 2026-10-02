@@ -40,28 +40,28 @@ function mockRes(): { res: http.ServerResponse; body(): string } {
 
 describe("runtime-info header parsing (#955)", () => {
     it("max-output is honored only from a plugin request", () => {
-        const headers = { "x-bili-plugin": "dsh", "x-bili-plugin-max-output": "32768" };
+        const headers = { "x-sigma-plugin": "dsh", "x-sigma-plugin-max-output": "32768" };
         assert.equal(pluginReportedMaxOutput(headers), 32768);
-        assert.equal(pluginReportedMaxOutput({ "x-bili-plugin-max-output": "32768" }), undefined);
-        assert.equal(pluginReportedMaxOutput({ "x-bili-plugin": "dsh", "x-bili-plugin-max-output": "nope" }), undefined);
-        assert.equal(pluginReportedMaxOutput({ "x-bili-plugin": "dsh", "x-bili-plugin-max-output": "0" }), undefined);
+        assert.equal(pluginReportedMaxOutput({ "x-sigma-plugin-max-output": "32768" }), undefined);
+        assert.equal(pluginReportedMaxOutput({ "x-sigma-plugin": "dsh", "x-sigma-plugin-max-output": "nope" }), undefined);
+        assert.equal(pluginReportedMaxOutput({ "x-sigma-plugin": "dsh", "x-sigma-plugin-max-output": "0" }), undefined);
     });
 
     it("model id is honored only from a plugin request and must be a bare token", () => {
-        assert.equal(pluginReportedModel({ "x-bili-plugin": "pi", "x-bili-plugin-model": "qwen3.5-33b" }), "qwen3.5-33b");
-        assert.equal(pluginReportedModel({ "x-bili-plugin-model": "qwen" }), undefined);
-        assert.equal(pluginReportedModel({ "x-bili-plugin": "pi", "x-bili-plugin-model": "a b" }), undefined);
+        assert.equal(pluginReportedModel({ "x-sigma-plugin": "pi", "x-sigma-plugin-model": "qwen3.5-33b" }), "qwen3.5-33b");
+        assert.equal(pluginReportedModel({ "x-sigma-plugin-model": "qwen" }), undefined);
+        assert.equal(pluginReportedModel({ "x-sigma-plugin": "pi", "x-sigma-plugin-model": "a b" }), undefined);
     });
 
     it("header/model cross-check: a different body model rejects the plugin headers (#956 hardening)", () => {
-        const h = { "x-bili-plugin": "pi", "x-bili-plugin-model": "qwen-a" };
+        const h = { "x-sigma-plugin": "pi", "x-sigma-plugin-model": "qwen-a" };
         assert.equal(pluginHeadersMatchModel(h, "qwen-a"), true);
         assert.equal(pluginHeadersMatchModel(h, "qwen-b"), false);
         // provider/model composite bodies match the bare stamped id
         assert.equal(pluginHeadersMatchModel(h, "sglang/qwen-a"), true);
         assert.equal(pluginHeadersMatchModel(h, "sglang/qwen-b"), false);
         // no model header = pre-#956 trust preserved
-        assert.equal(pluginHeadersMatchModel({ "x-bili-plugin": "pi" }, "qwen-b"), true);
+        assert.equal(pluginHeadersMatchModel({ "x-sigma-plugin": "pi" }, "qwen-b"), true);
         assert.equal(pluginHeadersMatchModel(h, undefined), true);
     });
 });
@@ -167,7 +167,7 @@ interface Harness {
 async function startHarness(): Promise<Harness> {
     // isolate the state dir: prefix-affinity hydration reattaches anonymous
     // sessions from disk, which would defeat the "no session yet" preconditions
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-ri-state-"));
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-ri-state-"));
     const prevStateHome = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = stateHome;
     const upstream = http.createServer((req, res) => {
@@ -233,9 +233,9 @@ describe("runtime-info in the native-window chain (#955, e2e)", () => {
         });
         assert.equal(report.status, 200);
 
-        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin": "dsh", "x-bili-plugin-conversation": "conv-ri-1" },
+            headers: { "content-type": "application/json", "x-sigma-plugin": "dsh", "x-sigma-plugin-conversation": "conv-ri-1" },
             body: JSON.stringify({ model: "test-model", stream: false, messages: [{ role: "user", content: "hello" }] }),
         });
         assert.equal(resp.status, 200);
@@ -252,9 +252,9 @@ describe("runtime-info in the native-window chain (#955, e2e)", () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ agent: "dsh", model: "test-model", contextWindow: 111111, source: "client-config" }),
         });
-        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin": "dsh", "x-bili-plugin-conversation": "conv-ri-2", "x-bili-plugin-context-window": "222222" },
+            headers: { "content-type": "application/json", "x-sigma-plugin": "dsh", "x-sigma-plugin-conversation": "conv-ri-2", "x-sigma-plugin-context-window": "222222" },
             body: JSON.stringify({ model: "test-model", stream: false, messages: [{ role: "user", content: "hello" }] }),
         });
         assert.equal(resp.status, 200);
@@ -268,9 +268,9 @@ describe("runtime-info in the native-window chain (#955, e2e)", () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ agent: "dsh", model: "other-model", contextWindow: 111111, source: "client-config" }),
         });
-        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin": "dsh", "x-bili-plugin-conversation": "conv-ri-3" },
+            headers: { "content-type": "application/json", "x-sigma-plugin": "dsh", "x-sigma-plugin-conversation": "conv-ri-3" },
             body: JSON.stringify({ model: "test-model", stream: false, messages: [{ role: "user", content: "hello" }] }),
         });
         assert.equal(resp.status, 200);
@@ -325,9 +325,9 @@ describe("runtime-info pre-first-request status (#955)", () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ agent: "dsh", model: "test-model", contextWindow: 262144, source: "client-config" }),
         });
-        const req = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const req = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin": "dsh", "x-bili-plugin-conversation": "conv-pre-1" },
+            headers: { "content-type": "application/json", "x-sigma-plugin": "dsh", "x-sigma-plugin-conversation": "conv-pre-1" },
             body: JSON.stringify({ model: "test-model", stream: false, messages: [{ role: "user", content: "hello" }] }),
         });
         assert.equal(req.status, 200);

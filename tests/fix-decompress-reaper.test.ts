@@ -41,11 +41,11 @@ function buildLargeBlock(tag: string, bodySize: number) {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 test("resolveDecompress reaper: caps tracked temp files, unlinks oldest", async () => {
-    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "bili-reap-"));
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-reap-"));
     const prevTmpdir = process.env.TMPDIR;
-    const prevCap = process.env.BILI_DECOMPRESS_TMP_CAP;
+    const prevCap = process.env.SIGMA_DECOMPRESS_TMP_CAP;
     process.env.TMPDIR = scratch;
-    process.env.BILI_DECOMPRESS_TMP_CAP = "3";
+    process.env.SIGMA_DECOMPRESS_TMP_CAP = "3";
     try {
         const written: string[] = [];
         for (let i = 0; i < 5; i++) {
@@ -66,8 +66,8 @@ test("resolveDecompress reaper: caps tracked temp files, unlinks oldest", async 
     } finally {
         if (prevTmpdir === undefined) delete process.env.TMPDIR;
         else process.env.TMPDIR = prevTmpdir;
-        if (prevCap === undefined) delete process.env.BILI_DECOMPRESS_TMP_CAP;
-        else process.env.BILI_DECOMPRESS_TMP_CAP = prevCap;
+        if (prevCap === undefined) delete process.env.SIGMA_DECOMPRESS_TMP_CAP;
+        else process.env.SIGMA_DECOMPRESS_TMP_CAP = prevCap;
         try {
             for (const f of fs.readdirSync(scratch)) fs.unlinkSync(path.join(scratch, f));
             fs.rmdirSync(scratch);

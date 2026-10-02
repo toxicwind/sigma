@@ -6,41 +6,41 @@
 
 ## Background
 
-Issue #788 (source: analysis of billion-context-pi#445, where a real pi user
-who followed the documented `pi install npm:billion-context-pi` path started
-seeing the thin-plugin warning and believed pi needed `bili` running). Two
+Issue #788 (source: analysis of sigma-pi#445, where a real pi user
+who followed the documented `pi install npm:sigma-pi` path started
+seeing the thin-plugin warning and believed pi needed `sigma` running). Two
 defects in this package:
 
 1. **Silent entry removal.** `piInstall()` (src/plugin-install.ts) filters
    every `packages` entry matching `isPiEntry()` out of
-   `~/.pi/agent/settings.json` before appending the bili root — and
-   `isPiEntry()` deliberately matches `npm:billion-context-pi` /
-   `node_modules/billion-context-pi` paths. The command output only reported
+   `~/.pi/agent/settings.json` before appending the sigma root — and
+   `isPiEntry()` deliberately matches `npm:sigma-pi` /
+   `node_modules/sigma-pi` paths. The command output only reported
    the addition; nothing was printed about what was removed. A user who ran
-   `pi install npm:billion-context-pi` then `bili plugin install pi` lost the
+   `pi install npm:sigma-pi` then `sigma plugin install pi` lost the
    in-process plugin silently: plain `pi` launches had no context compression
    at all, contradicting the README "Which do I need?" tables that recommend
-   billion-context-pi as the pi path.
+   sigma-pi as the pi path.
 2. **Proxy-assuming `/acp` warning.** src/agent/pi.ts registers `/acp`
    unconditionally; when no proxy baseURL is detected it notified
-   `bili: no proxy detected (run via \`bili <client>\` or set a /bili/
+   `sigma: no proxy detected (run via \`sigma <client>\` or set a /sigma/
    baseURL)`. For users who never intend proxy mode the actionable exit is
-   removing the plugin, not launching through bili — the message steered them
+   removing the plugin, not launching through sigma — the message steered them
    into a different usage mode of the same product family.
 
-The removal itself is intentional design (exactly one bili plugin must stay
+The removal itself is intentional design (exactly one sigma plugin must stay
 live after install, or both would double-register the ACP tools); the defect
 is that it happened without any notice.
 
 ## Requirements
 
-1. `bili plugin install pi` names every entry it drops in its output
-   (e.g. `pi: replaced existing entries: npm:billion-context-pi`).
-2. `bili plugin remove pi` names the entry it drops in its output.
+1. `sigma plugin install pi` names every entry it drops in its output
+   (e.g. `pi: replaced existing entries: npm:sigma-pi`).
+2. `sigma plugin remove pi` names the entry it drops in its output.
 3. The `/acp` no-proxy warning is neutral: it offers BOTH exits — launch via
-   `bili <client>` for proxy mode, or remove the plugin if the user uses
-   billion-context-pi / doesn't want a proxy. Agent-aware wording (the
-   remove hint mentions `billion-context-pi` only for pi).
+   `sigma <client>` for proxy mode, or remove the plugin if the user uses
+   sigma-pi / doesn't want a proxy. Agent-aware wording (the
+   remove hint mentions `sigma-pi` only for pi).
 4. Existing behavior unchanged otherwise: same entries removed, same backup
    file, same idempotency (`already installed`), `not installed` when absent.
 
@@ -55,4 +55,4 @@ is that it happened without any notice.
 - tests/plugin-agent.test.ts: roundtrip + legacy-replacement fixtures assert
   the new lines (and their absence on fresh installs); the `/acp` test asserts
   the dual-exit wording; new omp variant asserts agent-awareness and that the
-  billion-context-pi hint is pi-only.
+  sigma-pi hint is pi-only.

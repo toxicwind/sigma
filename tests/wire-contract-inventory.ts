@@ -11,19 +11,19 @@ import { defaultConfig } from "acp-kernel";
 import { handlePluginManifest } from "../src/plugin.ts";
 import {
     ABSORB_TOOL_RESPONSES,
-    BILI_ACP_READONLY_TOOLS_RESPONSES,
-    BILI_ACP_TOOLS_ANTHROPIC,
-    BILI_ACP_TOOLS_GOOGLE,
-    BILI_ACP_TOOLS_OPENAI,
-    BILI_ACP_TOOLS_RESPONSES,
-    BILI_DECOMPRESS_TOOL,
-    BILI_DECOMPRESS_TOOL_GOOGLE,
-    BILI_DECOMPRESS_TOOL_OPENAI,
-    BILI_DECOMPRESS_TOOL_RESPONSES,
-    BILI_SEARCH_CONTEXT_TOOL,
-    BILI_SEARCH_CONTEXT_TOOL_GOOGLE,
-    BILI_SEARCH_CONTEXT_TOOL_OPENAI,
-    BILI_SEARCH_CONTEXT_TOOL_RESPONSES,
+    SIGMA_ACP_READONLY_TOOLS_RESPONSES,
+    SIGMA_ACP_TOOLS_ANTHROPIC,
+    SIGMA_ACP_TOOLS_GOOGLE,
+    SIGMA_ACP_TOOLS_OPENAI,
+    SIGMA_ACP_TOOLS_RESPONSES,
+    SIGMA_DECOMPRESS_TOOL,
+    SIGMA_DECOMPRESS_TOOL_GOOGLE,
+    SIGMA_DECOMPRESS_TOOL_OPENAI,
+    SIGMA_DECOMPRESS_TOOL_RESPONSES,
+    SIGMA_SEARCH_CONTEXT_TOOL,
+    SIGMA_SEARCH_CONTEXT_TOOL_GOOGLE,
+    SIGMA_SEARCH_CONTEXT_TOOL_OPENAI,
+    SIGMA_SEARCH_CONTEXT_TOOL_RESPONSES,
     IMAGE_FULL_TOOL_GOOGLE,
     RULE_TOOL,
     RULE_TOOL_GOOGLE,
@@ -86,24 +86,24 @@ function buildKernelGolden(): Record<string, unknown> {
     };
 }
 
-function buildBiliGolden(): Record<string, unknown> {
+function buildSigmaGolden(): Record<string, unknown> {
     return {
         base: {
-            anthropic: BILI_ACP_TOOLS_ANTHROPIC,
-            openai: BILI_ACP_TOOLS_OPENAI,
-            responses: BILI_ACP_TOOLS_RESPONSES,
-            google: BILI_ACP_TOOLS_GOOGLE,
-            responsesReadOnly: BILI_ACP_READONLY_TOOLS_RESPONSES,
+            anthropic: SIGMA_ACP_TOOLS_ANTHROPIC,
+            openai: SIGMA_ACP_TOOLS_OPENAI,
+            responses: SIGMA_ACP_TOOLS_RESPONSES,
+            google: SIGMA_ACP_TOOLS_GOOGLE,
+            responsesReadOnly: SIGMA_ACP_READONLY_TOOLS_RESPONSES,
         },
         extended: {
-            searchContextAnthropic: BILI_SEARCH_CONTEXT_TOOL,
-            searchContextOpenAi: BILI_SEARCH_CONTEXT_TOOL_OPENAI,
-            searchContextResponses: BILI_SEARCH_CONTEXT_TOOL_RESPONSES,
-            searchContextGoogle: BILI_SEARCH_CONTEXT_TOOL_GOOGLE,
-            decompressAnthropic: BILI_DECOMPRESS_TOOL,
-            decompressOpenAi: BILI_DECOMPRESS_TOOL_OPENAI,
-            decompressResponses: BILI_DECOMPRESS_TOOL_RESPONSES,
-            decompressGoogle: BILI_DECOMPRESS_TOOL_GOOGLE,
+            searchContextAnthropic: SIGMA_SEARCH_CONTEXT_TOOL,
+            searchContextOpenAi: SIGMA_SEARCH_CONTEXT_TOOL_OPENAI,
+            searchContextResponses: SIGMA_SEARCH_CONTEXT_TOOL_RESPONSES,
+            searchContextGoogle: SIGMA_SEARCH_CONTEXT_TOOL_GOOGLE,
+            decompressAnthropic: SIGMA_DECOMPRESS_TOOL,
+            decompressOpenAi: SIGMA_DECOMPRESS_TOOL_OPENAI,
+            decompressResponses: SIGMA_DECOMPRESS_TOOL_RESPONSES,
+            decompressGoogle: SIGMA_DECOMPRESS_TOOL_GOOGLE,
         },
         synthesized: {
             absorbResponses: ABSORB_TOOL_RESPONSES,
@@ -134,7 +134,7 @@ function captureManifest(config: Parameters<typeof handlePluginManifest>[1]): Re
 export function buildGoldens(): GoldenSpec[] {
     return [
         { name: "kernel.json", layer: "acp-kernel exports (pinned)", build: buildKernelGolden },
-        { name: "bili.json", layer: "bili-built surfaces (compress-tool.ts)", build: buildBiliGolden },
+        { name: "sigma.json", layer: "sigma-built surfaces (compress-tool.ts)", build: buildSigmaGolden },
         { name: "manifest-default.json", layer: "plugin manifest, default config", build: () => captureManifest(defaultConfig(100_000)) },
         { name: "manifest-optin.json", layer: "plugin manifest, absorb+rules+ccr enabled", build: () => captureManifest({ ...defaultConfig(100_000), absorb: { ...K.DEFAULT_ABSORB_CONFIG, enabled: true }, rules: { enabled: true }, ccr: { ...K.DEFAULT_CCR_CONFIG, enabled: true } }) },
     ];

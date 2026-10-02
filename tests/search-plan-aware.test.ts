@@ -26,7 +26,7 @@ import { startServer } from "../src/server.ts";
 import type { ProxyOptions } from "../src/config.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 
-process.env.BILI_PERSIST = "0";
+process.env.SIGMA_PERSIST = "0";
 
 const pad = (n: number): string => String(n).padStart(5, "0");
 
@@ -330,7 +330,7 @@ test("e2e anthropic: plan-aware steering rides the search tool result; cache_con
     setRegistryForTest({});
     const captured: string[] = [];
     const { proxyPort, upstreamPort, closeAll } = await startPlanProxy(captured, true);
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
     try {
         const res = await fetch(url, {
             method: "POST",
@@ -360,7 +360,7 @@ test("e2e anthropic: planAware off (default) leaves the search output untouched"
     setRegistryForTest({});
     const captured: string[] = [];
     const { proxyPort, upstreamPort, closeAll } = await startPlanProxy(captured, false);
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
     try {
         const res = await fetch(url, {
             method: "POST",

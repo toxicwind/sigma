@@ -85,12 +85,12 @@ async function startHarness(opts: HarnessOpts): Promise<Harness> {
 }
 
 async function sendTurn(h: Harness, conversationId: string): Promise<void> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: {
             "content-type": "application/json",
-            "x-bili-plugin": "pi-plugin/0.0.1",
-            "x-bili-plugin-conversation": conversationId,
+            "x-sigma-plugin": "pi-plugin/0.0.1",
+            "x-sigma-plugin-conversation": conversationId,
         },
         body: JSON.stringify({
             model: "claude-test",

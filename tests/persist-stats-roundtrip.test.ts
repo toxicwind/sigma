@@ -27,7 +27,7 @@ function makeSession(id: string): Session {
 // every restart silently resets the denominator/numerator and acp_status
 // reports a bogus ratio. Persist → fresh store → same numbers.
 test("stats retrieval-quality counters survive a reload round-trip", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-pq-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-pq-"));
     try {
         const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
         const s = makeSession("pq-1");

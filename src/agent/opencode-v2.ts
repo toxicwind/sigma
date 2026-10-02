@@ -111,9 +111,9 @@ export interface V2PluginContext {
 const WINDOW_REFRESH_MS = 60000;
 
 // Kill switch = fully inert (same semantics as detectProxyBase): gates header stamping, tool forwarding, compaction reporting.
-const pluginDisabled = (): boolean => process.env.BILLION_CONTEXT_PLUGIN === "0";
+const pluginDisabled = (): boolean => process.env.SIGMA_PLUGIN === "0";
 
-const V2_BILI_TOOLS = [...ACP_TOOLS_OPENAI, ABSORB_TOOL_OPENAI].map((t) => ({
+const V2_SIGMA_TOOLS = [...ACP_TOOLS_OPENAI, ABSORB_TOOL_OPENAI].map((t) => ({
     name: t.function.name,
     description: t.function.description,
     input: t.function.parameters,
@@ -200,20 +200,20 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
             const headers = e.request?.headers;
             const sid = typeof e.sessionID === "string" ? e.sessionID : "";
             if (!headers || typeof headers.set !== "function" || !sid || !state.proxyBase) return;
-            headers.set("x-bili-plugin-conversation", sid);
-            headers.set("x-bili-plugin", "opencode");
+            headers.set("x-sigma-plugin-conversation", sid);
+            headers.set("x-sigma-plugin", "opencode");
             // #1102: one session id per persona (subagents get child ids) —
             // instruction drift (AGENTS.md reconcile) must not fork the
             // compression session.
-            headers.set("x-bili-plugin-instructions-mutable", "1");
+            headers.set("x-sigma-plugin-instructions-mutable", "1");
             const model = e.model;
             if (model && typeof model.providerID === "string" && typeof model.id === "string") {
                 const key = `${model.providerID}/${model.id}`;
                 const window = state.windows?.get(key);
-                if (window !== undefined) headers.set("x-bili-plugin-context-window", String(window));
+                if (window !== undefined) headers.set("x-sigma-plugin-context-window", String(window));
                 const output = state.outputs?.get(key);
-                if (output !== undefined) headers.set("x-bili-plugin-max-output", String(output));
-                headers.set("x-bili-plugin-model", model.id);
+                if (output !== undefined) headers.set("x-sigma-plugin-max-output", String(output));
+                headers.set("x-sigma-plugin-model", model.id);
                 reportRuntimeInfoOnChange(state.proxyBase, { agent: "opencode", model: model.id, contextWindow: window, maxOutput: output, source: "client-config" });
             }
             reportDerived(sid);
@@ -241,16 +241,16 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
         if (hookReg) registrations.push(hookReg);
 
         const toolReg = await ctx.tool?.transform?.((editor) => {
-            for (const t of V2_BILI_TOOLS) {
+            for (const t of V2_SIGMA_TOOLS) {
                 editor.add({
                     name: t.name,
                     description: t.description,
                     input: t.input,
                     options: { codemode: false, permission: "allow" },
                     execute: async (args, tctx) => {
-                        if (pluginDisabled()) return { content: "bili: disabled (BILLION_CONTEXT_PLUGIN=0)" };
+                        if (pluginDisabled()) return { content: "sigma: disabled (SIGMA_PLUGIN=0)" };
                         const base = state.proxyBase ?? proxyBaseFromEnv();
-                        if (!base) return { content: "bili: no proxy detected (launch opencode through `bili opencode`, or point the provider baseURL at the bili proxy)" };
+                        if (!base) return { content: "sigma: no proxy detected (launch opencode through `sigma opencode`, or point the provider baseURL at the sigma proxy)" };
                         try {
                             // Panel-first for acp_status: the proxy's status
                             // endpoint renders the same rich panel the /acp
@@ -269,7 +269,7 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
                         } catch (err) {
                             const msg = err instanceof Error ? err.message : String(err);
                             if (msg.includes("no model request has arrived with this conversation id yet")) {
-                                return { content: "bili: no ACP state for this session yet — no model request has been routed through the proxy. Tell the user to send one normal message first; ACP activates automatically once model traffic flows through the proxy (verify the provider baseURL goes through bili, or launch via `bili opencode` / the installed plugin)." };
+                                return { content: "sigma: no ACP state for this session yet — no model request has been routed through the proxy. Tell the user to send one normal message first; ACP activates automatically once model traffic flows through the proxy (verify the provider baseURL goes through sigma, or launch via `sigma opencode` / the installed plugin)." };
                             }
                             return { content: msg };
                         }
@@ -286,20 +286,20 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
             const commandReg = await ctx.command?.transform?.((editor) => {
                 editor.add({
                     name: "acp",
-                    description: "Show ACP status (billion-context proxy)",
+                    description: "Show ACP status (sigma proxy)",
                     execute: async (input) => {
                         const sid = typeof input.sessionID === "string" ? input.sessionID : "";
                         if (!sid) {
-                            console.warn("[bili-opencode] /acp invoked without a sessionID; cannot render ACP status");
+                            console.warn("[sigma-opencode] /acp invoked without a sessionID; cannot render ACP status");
                             return;
                         }
                         let text: string;
                         if (pluginDisabled()) {
-                            text = "bili: disabled (BILLION_CONTEXT_PLUGIN=0)";
+                            text = "sigma: disabled (SIGMA_PLUGIN=0)";
                         } else {
                             const base = state.proxyBase ?? proxyBaseFromEnv();
                             if (!base) {
-                                text = "bili: no proxy detected (set BILLION_CONTEXT_PROXY or point the provider at the proxy's /bili/ URL, then run /acp again)";
+                                text = "sigma: no proxy detected (set SIGMA_PROXY or point the provider at the proxy's /sigma/ URL, then run /acp again)";
                             } else {
                                 try {
                                     const status = await fetchStatus(base, sid);
@@ -313,24 +313,24 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
                                             version = undefined;
                                         }
                                         text = version !== undefined
-                                            ? `billion-context@${version} — proxy connected, no ACP session yet. Send a model request, then run /acp again.`
-                                            : "bili: no ACP session yet (send a model request first, then run /acp)";
+                                            ? `sigma@${version} — proxy connected, no ACP session yet. Send a model request, then run /acp again.`
+                                            : "sigma: no ACP session yet (send a model request first, then run /acp)";
                                     } else if (!status) {
                                         // fetchStatus soft-fails to undefined both when the proxy 404s an absent or
                                         // never-seen conversation and when the proxy is unreachable. Probe the
                                         // manifest to claim "connected" only when it answers.
                                         const version = await fetchProxyVersion(base).catch(() => undefined);
                                         text = version !== undefined
-                                            ? `billion-context@${version} — proxy connected, no ACP session yet. Send a model request, then run /acp again.`
-                                            : "bili: cannot reach the bili proxy (run `bili start`, then run /acp again)";
+                                            ? `sigma@${version} — proxy connected, no ACP session yet. Send a model request, then run /acp again.`
+                                            : "sigma: cannot reach the sigma proxy (run `sigma start`, then run /acp again)";
                                     } else {
                                         const errText = status?.error;
                                         text = typeof errText === "string" && errText.length > 0
-                                            ? `bili: proxy returned no status panel (${errText})`
-                                            : "bili: proxy returned no status panel";
+                                            ? `sigma: proxy returned no status panel (${errText})`
+                                            : "sigma: proxy returned no status panel";
                                     }
                                 } catch (err) {
-                                    text = `bili: /acp failed (${err instanceof Error ? err.message : String(err)})`;
+                                    text = `sigma: /acp failed (${err instanceof Error ? err.message : String(err)})`;
                                 }
                             }
                         }
@@ -344,7 +344,7 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
                                 : text;
                             await ctx.session?.synthetic?.({ sessionID: sid, text: V2_SYNTHETIC_TEXT, description, resume: false });
                         } catch (err) {
-                            console.error(`[bili-opencode] /acp render failed: ${err instanceof Error ? err.message : String(err)}`);
+                            console.error(`[sigma-opencode] /acp render failed: ${err instanceof Error ? err.message : String(err)}`);
                         }
                     },
                 });
@@ -358,26 +358,26 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
                     execute: async (input) => {
                         const sid = typeof input.sessionID === "string" ? input.sessionID : "";
                         if (!sid) {
-                            console.warn("[bili-opencode] /acp-cache invoked without a sessionID; cannot render the cache report");
+                            console.warn("[sigma-opencode] /acp-cache invoked without a sessionID; cannot render the cache report");
                             return;
                         }
                         let text: string;
                         if (pluginDisabled()) {
-                            text = "bili: disabled (BILLION_CONTEXT_PLUGIN=0)";
+                            text = "sigma: disabled (SIGMA_PLUGIN=0)";
                         } else {
                             const base = state.proxyBase ?? proxyBaseFromEnv();
                             const argsText = typeof input.arguments === "string" ? input.arguments : "";
                             const toolArgs = /(^|\s)(--)?full(\s|$)/.test(argsText) ? { detail: "full" as const } : {};
                             if (!base) {
-                                text = "bili: no proxy detected (set BILLION_CONTEXT_PROXY or point the provider at the proxy's /bili/ URL, then run /acp-cache again)";
+                                text = "sigma: no proxy detected (set SIGMA_PROXY or point the provider at the proxy's /sigma/ URL, then run /acp-cache again)";
                             } else {
                                 try {
                                     text = await forwardTool(base, sid, "acp_cache", toolArgs);
                                 } catch (err) {
                                     const msg = err instanceof Error ? err.message : String(err);
                                     text = msg.includes("no model request has arrived")
-                                        ? "bili: no ACP session yet for this conversation (send a model request first, then run /acp-cache)"
-                                        : `bili: cache report failed (${msg})`;
+                                        ? "sigma: no ACP session yet for this conversation (send a model request first, then run /acp-cache)"
+                                        : `sigma: cache report failed (${msg})`;
                                 }
                             }
                         }
@@ -387,14 +387,14 @@ export function createOpencodeV2Setup(options: OpencodeV2SetupOptions = {}): (ct
                                 : text;
                             await ctx.session?.synthetic?.({ sessionID: sid, text: V2_SYNTHETIC_TEXT, description, resume: false });
                         } catch (err) {
-                            console.error(`[bili-opencode] /acp-cache render failed: ${err instanceof Error ? err.message : String(err)}`);
+                            console.error(`[sigma-opencode] /acp-cache render failed: ${err instanceof Error ? err.message : String(err)}`);
                         }
                     },
                 });
             });
             if (commandReg) registrations.push(commandReg);
         } catch (err) {
-            console.warn(`[bili-opencode] /acp command registration unavailable; continuing without it: ${err instanceof Error ? err.message : String(err)}`);
+            console.warn(`[sigma-opencode] /acp command registration unavailable; continuing without it: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         const subscription = ctx.event?.subscribe?.({ signal: ac.signal });

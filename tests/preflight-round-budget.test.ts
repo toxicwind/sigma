@@ -111,7 +111,7 @@ test("e2e preflight: a payload that needs more folds than one round allows is st
         const payloadTokens = materialiseTokens(MESSAGES, FILLER_REPEATS);
         assert.ok(payloadTokens > WINDOW, `fixture must start over the window (${payloadTokens} vs ${WINDOW})`);
 
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "budget-deep-fold" },
             body: JSON.stringify({ model: "gpt-test", stream: true, messages: longMessages(MESSAGES, FILLER_REPEATS) }),
@@ -155,7 +155,7 @@ test("e2e preflight: beyond the round budget the fail-fast reports the post-fold
         const REPEATS = 200;
         assert.ok(materialiseTokens(COUNT, REPEATS) > WINDOW * 3, `fixture must start well over the window (${materialiseTokens(COUNT, REPEATS)} vs ${WINDOW})`);
 
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "budget-exhaust-state" },
             body: JSON.stringify({ model: "gpt-test", stream: true, messages: longMessages(COUNT, REPEATS) }),

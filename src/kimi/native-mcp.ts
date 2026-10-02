@@ -1,5 +1,5 @@
-// kimi native MCP entry (#963): spawned per-session by the billion-context
-// plugin. Bootstraps a bili proxy, routes config.toml through it, verifies
+// kimi native MCP entry (#963): spawned per-session by the sigma
+// plugin. Bootstraps a sigma proxy, routes config.toml through it, verifies
 // the ACP tool manifest BEFORE stamping the plugin-mode header (round 1
 // rides wire mode), then serves the ACP tools over stdio with a watchdog
 // that respawns the proxy or reverts routing on its death.
@@ -44,7 +44,7 @@ function startWatchdog(applied: KimiRouteApplied, attached: boolean, log: (msg: 
                 { scriptPath: nativeProxyScriptPath() },
             );
             if (handle.origin !== state.origin) {
-                process.env.BILI_MCP_PROXY = handle.origin;
+                process.env.SIGMA_MCP_PROXY = handle.origin;
                 const routed = await routeKimiConfig({ origin: handle.origin, log });
                 if (!routed) throw new Error("proxy respawned but the kimi config rewrite failed");
                 await activateKimiPluginMode(routed, { log });
@@ -75,7 +75,7 @@ export async function main(): Promise<void> {
     if (!applied) {
         process.exit(0);
     }
-    process.env.BILI_MCP_PROXY = applied.origin;
+    process.env.SIGMA_MCP_PROXY = applied.origin;
     try {
         const tools = await fetchManifest(applied.origin, "anthropic");
         if (tools.length === 0) throw new Error("manifest returned no tools");
@@ -91,7 +91,7 @@ export async function main(): Promise<void> {
 
 if (process.argv[1] && /(?:^|[\\/])native-mcp\.(?:ts|js)$/.test(process.argv[1])) {
     main().catch((err) => {
-        process.stderr.write(`[bili-kimi] fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+        process.stderr.write(`[sigma-kimi] fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
         process.exit(1);
     });
 }

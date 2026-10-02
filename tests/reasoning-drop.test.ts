@@ -2,13 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dropCompressReasoning, resolveReasoningDrop, DEFAULT_COMPRESS_REASONING, type CompressReasoningConfig } from "../src/reasoning-drop.ts";
 import { mergeCompress } from "../src/compress-settings.ts";
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 
-const R = (text: string, id = "r"): BiliMessage => ({ id, role: "assistant", contentType: "reasoning", text });
-const CALL = (toolName = "compress", toolCallId = "t1"): BiliMessage => ({ id: "c", role: "assistant", contentType: "tool-call", toolName, toolCallId, text: "{}" });
-const RESULT = (toolCallId = "t1"): BiliMessage => ({ id: "res", role: "user", contentType: "tool-result", toolName: "compress", toolCallId, text: "ok" });
-const USER = (text = "hi"): BiliMessage => ({ id: "u", role: "user", contentType: "text", text });
-const TEXT = (text = "hm"): BiliMessage => ({ id: "txt", role: "assistant", contentType: "text", text });
+const R = (text: string, id = "r"): SigmaMessage => ({ id, role: "assistant", contentType: "reasoning", text });
+const CALL = (toolName = "compress", toolCallId = "t1"): SigmaMessage => ({ id: "c", role: "assistant", contentType: "tool-call", toolName, toolCallId, text: "{}" });
+const RESULT = (toolCallId = "t1"): SigmaMessage => ({ id: "res", role: "user", contentType: "tool-result", toolName: "compress", toolCallId, text: "ok" });
+const USER = (text = "hi"): SigmaMessage => ({ id: "u", role: "user", contentType: "text", text });
+const TEXT = (text = "hm"): SigmaMessage => ({ id: "txt", role: "assistant", contentType: "text", text });
 
 test("default: drops oversized reasoning run before a closed compress call", () => {
     const msgs = [R("x".repeat(3000)), CALL(), RESULT(), USER("next")];

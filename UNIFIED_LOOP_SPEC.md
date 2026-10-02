@@ -1,18 +1,18 @@
 # Unified Compress-Loop — Design Spec (Phase 1+2)
 
 ## Problem
-The generic billion-context proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the blowup). Root cause confirmed by the user.
+The generic sigma proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the blowup). Root cause confirmed by the user.
 
 `executeProxyTool` is also copy-pasted ×3 (compress-loop.ts:47, compress-loop-anthropic.ts:59, compress-loop-responses.ts:85).
 
 ## Reference (the ONLY behavioral reference)
-**billion-context-pi** (`/home/dog/projects/billion-context-pi/src/`), the Pi adapter. It uses an **executor model** (one tool call = one Pi turn, no loop). Key principles to mirror in the loop:
+**sigma-pi** (`/home/dog/projects/sigma-pi/src/`), the Pi adapter. It uses an **executor model** (one tool call = one Pi turn, no loop). Key principles to mirror in the loop:
 - `wireSystemPrompt` (index.ts:229-235): philosophy is a **transient system prompt** returned via Pi's `before_agent_start` event — rebuilt fresh each turn, NOT in message history, does NOT accumulate.
 - `wireContextTransform` (index.ts:103-227): runs `core.processTurn({messages, state, config, tokenCount})` once per LLM call; nudge is a **per-turn append** (comment index.ts:178-179: "the next context event rebuilds the array from scratch, so it does NOT permanently pollute context").
 - Kernel `hideConsumedCompressCalls(state, messages)` runs inside processTurn each turn (hide-consumed.ts, exported index.ts:51) — hides consumed/failed compress records, keeps active-block compress calls ("keep the successful compressions"), rewrites kept compress text to live ranges.
 - Kernel `protected.ts`: `ALWAYS_PROTECTED_TOOLS=["compress"]`, recent-zone + last-user protection.
 
-**Alignment goal**: the proxy's loop must apply the SAME per-turn hygiene bili-pi gets for free (transient philosophy + hideConsumed), but per ROUND of the loop.
+**Alignment goal**: the proxy's loop must apply the SAME per-turn hygiene sigma-pi gets for free (transient philosophy + hideConsumed), but per ROUND of the loop.
 
 ## Architecture: protocol-agnostic core + thin adapters
 
@@ -74,7 +74,7 @@ async function* runCompressLoop(
 ): AsyncGenerator<Buffer>
 ```
 
-Round logic (per bili-pi hygiene):
+Round logic (per sigma-pi hygiene):
 1. `for round in 1..MAX_ROUNDS` (MAX_ROUNDS = 10):
    - Parse `upstream` stream via `adapter.parseStream`.
    - Accumulate assistant text; for each tool_call:
@@ -110,7 +110,7 @@ Originals (`src/compress-loop.ts`, `src/compress-loop-anthropic.ts`, `src/compre
 In `server.ts:1131-1200`, gate on `process.env.ACP_LOOP_V2 === "1"`:
 - if set → use `runCompressLoop(...)` with `pickAdapter(protocol)`.
 - else → existing baseline loops (unchanged).
-This allows A/B comparison in live tests (`ACP_LOOP_V2=1 bili-test-pi ...`).
+This allows A/B comparison in live tests (`ACP_LOOP_V2=1 sigma-test-pi ...`).
 
 The transient `systemPrompt` = `buildCompressSystemPrompt()` (or `buildCompressTextSystemPrompt()` when `ctx.textProtocol`). Import from compress-tool.ts. Pass as the `systemPrompt` arg — do NOT inject into requestBody.input/messages in core (the adapter places it per-protocol).
 
@@ -168,6 +168,6 @@ Run via `node --import tsx --test tests/loop-*.test.ts` (node/npm at /home/dog/.
 - Manual smoke: `ACP_LOOP_V2=1` path at least imports + a round-trip works under mocked fetch.
 
 ## Out of scope for this delegation
-- Live testing (bili-test-pi/codex/claude) — Phase 4, done by lead.
+- Live testing (sigma-test-pi/codex/claude) — Phase 4, done by lead.
 - Double-agent review — Phase 5, done by lead.
 - Removing/reverting PR#90's MUTATING/READONLY split in baseline files — leave baseline as-is.

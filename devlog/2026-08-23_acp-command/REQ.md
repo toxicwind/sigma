@@ -1,7 +1,7 @@
 # REQ - `/acp` status command for the agent plugin
 
 - Task ID: `2026-08-23_acp-command`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: 2026-08-23
 - Status: Done
 - Priority: P2
@@ -27,7 +27,7 @@
   - Node: >= 20
   - OS/Arch: linux-x64
 - **Minimal reproduction steps**:
-  1) Run an agent through the proxy (`bili pi` / `bili omp`, or a `/bili/` baseURL).
+  1) Run an agent through the proxy (`sigma pi` / `sigma omp`, or a `/sigma/` baseURL).
   2) Send at least one model request (so the proxy has a session).
   3) Type `/acp` in the agent TUI.
 - **Relevant configuration**: none (the command is registered by the plugin
@@ -68,7 +68,7 @@
 - **Affected modules & entry files**:
   - `src/agent/pi.ts` — add `CommandCtx` type, `registerCommand?` to `ExtensionAPI`,
     `fmtTok`/`renderAcpStatus` helpers, and the `/acp` registration in
-    `createBiliPlugin` (shared by pi and omp).
+    `createSigmaPlugin` (shared by pi and omp).
 - **Risks**: Low — additive, guarded, no proxy changes.
 - **Rollback strategy**: revert the single commit; `/acp` disappears, nothing else
   changes.

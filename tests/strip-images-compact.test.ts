@@ -19,7 +19,7 @@ function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-// #618 review nit: with stripImages enabled and NO bili compaction item in the
+// #618 review nit: with stripImages enabled and NO sigma compaction item in the
 // request, prepareResponsesCompact fell back to the raw request buffer —
 // historical images rode along on the /responses/compact passthrough.
 test("/responses/compact passthrough forwards the post-strip body", async () => {
@@ -59,7 +59,7 @@ test("/responses/compact passthrough forwards the post-strip body", async () => 
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     try {
         const img = { type: "input_image", image_url: "data:image/png;base64,QUJD", detail: "high" };
         const msg = (id: string, content: unknown[]) => ({ type: "message", id, status: "completed", role: "user", content });

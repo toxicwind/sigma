@@ -32,33 +32,33 @@ function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-test("/bili/ resolves upstream host and full path from embedded URL", () => {
+test("/sigma/ resolves upstream host and full path from embedded URL", () => {
     const opts = loadOptions({ ACP_PORT: "8787" });
-    assert.deepEqual(resolveUpstream(opts, "/bili/https://relay.example/openai/v1/responses?foo=a%2Fb"), {
+    assert.deepEqual(resolveUpstream(opts, "/sigma/https://relay.example/openai/v1/responses?foo=a%2Fb"), {
         upstream: "https://relay.example",
         rewrittenUrl: "https://relay.example/openai/v1/responses?foo=a%2Fb",
         explicitProtocol: undefined,
         tunnel: true,
     });
-    assert.deepEqual(resolveUpstream(opts, "/bili/https://relay.example/openai/v1/future/unknown?x=1"), {
+    assert.deepEqual(resolveUpstream(opts, "/sigma/https://relay.example/openai/v1/future/unknown?x=1"), {
         upstream: "https://relay.example",
         rewrittenUrl: "https://relay.example/openai/v1/future/unknown?x=1",
         explicitProtocol: undefined,
         tunnel: true,
     });
-    assert.deepEqual(resolveUpstream(opts, "/bili/responses/https://relay.example/custom-path"), {
+    assert.deepEqual(resolveUpstream(opts, "/sigma/responses/https://relay.example/custom-path"), {
         upstream: "https://relay.example",
         rewrittenUrl: "https://relay.example/custom-path",
         explicitProtocol: "responses",
         tunnel: true,
     });
-    assert.deepEqual(resolveUpstream(opts, "/bili/anthropic/https://relay.example/api/generate"), {
+    assert.deepEqual(resolveUpstream(opts, "/sigma/anthropic/https://relay.example/api/generate"), {
         upstream: "https://relay.example",
         rewrittenUrl: "https://relay.example/api/generate",
         explicitProtocol: "anthropic",
         tunnel: true,
     });
-    assert.equal(resolveUpstream(opts, "/bili-not-owned/responses"), undefined);
+    assert.equal(resolveUpstream(opts, "/sigma-not-owned/responses"), undefined);
 });
 
 test("#535/#562: absolute-form request URLs route as forward-proxy targets", () => {
@@ -97,20 +97,20 @@ test("#535/#562: absolute-form request URLs route as forward-proxy targets", () 
     assert.equal(resolveUpstream(opts, "/v1/chat/completions", { headers: { host: "127.0.0.1:8787" } } as never), undefined, "origin-form stays own-API");
 });
 
-test("#562: forward-proxy and /bili/ forms of the same upstream resolve the same model window", () => {
+test("#562: forward-proxy and /sigma/ forms of the same upstream resolve the same model window", () => {
     const opts = loadOptions({ ACP_PORT: "8787" });
     const fwd = resolveUpstream(opts, "http://model-server.example.invalid:8080/v1/responses", { headers: { host: "model-server.example.invalid:8080" } } as never);
-    const bili = resolveUpstream(opts, "/bili/http://model-server.example.invalid:8080/v1/responses");
-    assert.ok(fwd && bili, "both access modes must produce a route");
-    assert.equal(fwd.rewrittenUrl, bili.rewrittenUrl, "forward-proxy and /bili/ must share one target resolution");
+    const sigma = resolveUpstream(opts, "/sigma/http://model-server.example.invalid:8080/v1/responses");
+    assert.ok(fwd && sigma, "both access modes must produce a route");
+    assert.equal(fwd.rewrittenUrl, sigma.rewrittenUrl, "forward-proxy and /sigma/ must share one target resolution");
     const routes: ProviderRoutes = {
         "http://model-server.example.invalid:8080": { models: { "example-model": { context: 120_000 } } },
     };
     assert.equal(resolveConfiguredContextLimit(routes, fwd.rewrittenUrl, "example-model"), 120_000, "forward-proxy hits the per-upstream window, not the global default");
-    assert.equal(resolveConfiguredContextLimit(routes, bili.rewrittenUrl, "example-model"), 120_000);
+    assert.equal(resolveConfiguredContextLimit(routes, sigma.rewrittenUrl, "example-model"), 120_000);
 });
 
-test("/bili/ integration preserves query, subscription, account and thread headers", async () => {
+test("/sigma/ integration preserves query, subscription, account and thread headers", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
     let captured: { url: string; headers: http.IncomingHttpHeaders; body: string } | undefined;
@@ -146,10 +146,10 @@ test("/bili/ integration preserves query, subscription, account and thread heade
         autoUpdate: false,
         mitm: { enabled: false, domains: [] },
     };
-    const bili = await startServer(opts);
-    if (!bili.listening) await once(bili, "listening");
+    const sigma = await startServer(opts);
+    if (!sigma.listening) await once(sigma, "listening");
     try {
-        const response = await fetch(`http://127.0.0.1:${biliPort}/bili/http://127.0.0.1:${upstreamPort}/backend-api/codex/future/unknown?x=1&encoded=a%2Fb`, {
+        const response = await fetch(`http://127.0.0.1:${biliPort}/sigma/http://127.0.0.1:${upstreamPort}/backend-api/codex/future/unknown?x=1&encoded=a%2Fb`, {
             method: "POST",
             headers: {
                 authorization: "Bearer OfficialSubscription",
@@ -169,7 +169,7 @@ test("/bili/ integration preserves query, subscription, account and thread heade
         assert.equal(captured.headers["x-thread-id"], "thread-1");
         assert.equal(captured.body, '{"future":true}');
     } finally {
-        await close(bili);
+        await close(sigma);
         await close(upstream);
     }
 });
@@ -198,36 +198,36 @@ test("proxy precedence, NO_PROXY, HTTPS proxies and self-loop detection are dete
         systemProxy: { enabled: true, https: "http://system.example:8080" },
         biliPort: 8787,
     }), { proxy: "http://system.example:8080/", source: "windows-system" });
-    assert.throws(() => parseHttpProxy("http://127.0.0.1:8787", 8787), /loop back into bili/);
-    assert.throws(() => parseHttpProxy("http://[::ffff:7f00:1]:8787", 8787), /loop back into bili/);
+    assert.throws(() => parseHttpProxy("http://127.0.0.1:8787", 8787), /loop back into sigma/);
+    assert.throws(() => parseHttpProxy("http://[::ffff:7f00:1]:8787", 8787), /loop back into sigma/);
     assert.equal(parseHttpProxy("https://proxy.example:9443")?.protocol, "https:");
 });
 
-test("loadOptions keeps BILI_UPSTREAM_PROXY above config/environment fallback", () => {
+test("loadOptions keeps SIGMA_UPSTREAM_PROXY above config/environment fallback", () => {
     const opts = loadOptions({
         ACP_PORT: "9100",
-        BILI_UPSTREAM_PROXY: "https://explicit.example:9443",
+        SIGMA_UPSTREAM_PROXY: "https://explicit.example:9443",
         HTTPS_PROXY: "http://fallback.example:8080",
         ALL_PROXY: "http://all.example:8080",
         NO_PROXY: "localhost,127.0.0.1",
     });
     assert.equal(opts.proxy, "https://explicit.example:9443");
-    assert.equal(opts.proxySource, "bili-env");
+    assert.equal(opts.proxySource, "sigma-env");
     assert.deepEqual(opts.proxyFallback, {
         httpsProxy: "http://fallback.example:8080",
         allProxy: "http://all.example:8080",
         noProxy: "localhost,127.0.0.1",
         biliPort: 9100,
-        globalSource: "bili-env",
+        globalSource: "sigma-env",
         explicitDirect: false,
     });
 });
 
 test("default (unset mode) is direct, not env auto-detect (#346)", () => {
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = "/nonexistent/bili-test-config.json";
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = "/nonexistent/sigma-test-config.json";
     try {
-        // No BILI_UPSTREAM_PROXY_MODE and no BILI_UPSTREAM_PROXY, but HTTPS_PROXY is
+        // No SIGMA_UPSTREAM_PROXY_MODE and no SIGMA_UPSTREAM_PROXY, but HTTPS_PROXY is
         // set in the environment. Before the #346 fix, unset mode auto-detected the
         // env proxy; now unset means "direct" (matches the web UI default + ZCode).
         const opts = loadOptions({
@@ -240,18 +240,18 @@ test("default (unset mode) is direct, not env auto-detect (#346)", () => {
         const decision = resolveProxyDecision(opts.routes, opts.proxy, "https://api.example.com/v1", opts.proxyFallback);
         assert.deepEqual(decision, { source: "direct" });
     } finally {
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE;
-        else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE;
+        else process.env.SIGMA_CONFIG_FILE = prevConfig;
     }
 });
 
 test("explicit 'auto' mode still follows the env proxy (#346 opt-in)", () => {
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = "/nonexistent/bili-test-config.json";
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = "/nonexistent/sigma-test-config.json";
     try {
         const opts = loadOptions({
             ACP_PORT: "9102",
-            BILI_UPSTREAM_PROXY_MODE: "auto",
+            SIGMA_UPSTREAM_PROXY_MODE: "auto",
             HTTPS_PROXY: "http://fallback.example:8080",
         });
         assert.equal(opts.proxySource, "auto");
@@ -259,8 +259,8 @@ test("explicit 'auto' mode still follows the env proxy (#346 opt-in)", () => {
         const decision = resolveProxyDecision(opts.routes, opts.proxy, "https://api.example.com/v1", opts.proxyFallback);
         assert.deepEqual(decision, { proxy: "http://fallback.example:8080/", source: "HTTPS_PROXY" });
     } finally {
-        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE;
-        else process.env.BILI_CONFIG_FILE = prevConfig;
+        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE;
+        else process.env.SIGMA_CONFIG_FILE = prevConfig;
     }
 });
 

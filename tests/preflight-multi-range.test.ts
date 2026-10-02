@@ -118,7 +118,7 @@ test("#574 regression: oldest range's summary unusable → preflight moves to th
     const proxyPort = proxy.address().port;
 
     try {
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "multi-range-regress-sess" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: conversation(24) }),
@@ -152,7 +152,7 @@ test("#574 truthful exhaustion: every range's summary unusable → 502 only afte
     const proxyPort = proxy.address().port;
 
     try {
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "multi-range-exhaust-sess" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: conversation(16) }),
@@ -189,7 +189,7 @@ test("#574 budget cap: many unusable ranges → exactly MAX_SUMMARY_CALLS_PER_PR
     const proxyPort = proxy.address().port;
 
     try {
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "multi-range-budget-sess" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: conversation(48) }),

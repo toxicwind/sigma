@@ -1,4 +1,4 @@
-# WORKLOG — jcode launcher (`bili jcode`)
+# WORKLOG — jcode launcher (`sigma jcode`)
 
 ## Date
 2026-09-13
@@ -12,7 +12,7 @@
   ModelWindowScope += "jcode".
 - src/cli.ts: help usage row, launcher list, mechanism para, example.
 - tests/launcher.test.ts: isLaunchClient jcode case; buildJcodeEnv case
-  (HTTPS_PROXY/SSL_CERT_FILE/BILLION_CONTEXT_PROXY/NO_PROXY loopback,
+  (HTTPS_PROXY/SSL_CERT_FILE/SIGMA_PROXY/NO_PROXY loopback,
   baseEnv preserved); discoverRoutes jcode allowlist case.
 
 ## Verification
@@ -27,6 +27,6 @@ pre-existing and unrelated to this series.
   JCODE_DEFAULT_MODEL_HOSTS. jcode config is TOML (~/.jcode/config.toml);
   adding a TOML reader would enable per-provider host discovery the way
   trae reads JSON. Until then, extra MITM domains ride ambient
-  BILI_MITM_DOMAINS. Loopback legs stay direct via the built-in NO_PROXY.
+  SIGMA_MITM_DOMAINS. Loopback legs stay direct via the built-in NO_PROXY.
 - No collectModelWindows branch for jcode (convention: unhandled scopes
   collect nothing).

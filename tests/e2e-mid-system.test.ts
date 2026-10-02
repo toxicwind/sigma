@@ -158,7 +158,7 @@ test("e2e #355: multi-segment compress never puts a system message mid-conversat
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
 
     const history: Array<{ role: string; content: string }> = [];
     try {

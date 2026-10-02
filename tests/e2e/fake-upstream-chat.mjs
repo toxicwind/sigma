@@ -1,5 +1,5 @@
 // Deterministic fake chat-completions upstream for the native-client E2E lanes
-// (#1239): drives a REAL host client (`pi`, `opencode`) through bili's native
+// (#1239): drives a REAL host client (`pi`, `opencode`) through sigma's native
 // extension so interception, plugin-mode stamping, ACP tool registration and
 // compression ACTUALLY happen in-process, no real model/network. The prompt of
 // the FIRST user message scripts the conversation: every "请调用<tool>" marker
@@ -180,7 +180,7 @@ const server = http.createServer((req, res) => {
                 const lastUserRefMatch = lastUserMsg
                     ? flatContent(lastUserMsg.content).match(/\x3cacp\s+[^>]*?\x3e(m\d{5})\x3c\/acp\x3e/)
                     : null;
-                const convKey = req.headers["x-bili-plugin-conversation"] ?? "anon";
+                const convKey = req.headers["x-sigma-plugin-conversation"] ?? "anon";
                 const reply = answerFor(convKey, firstUserText, parsed);
                 try {
                     fs.appendFileSync(REQLOG, JSON.stringify({
@@ -188,10 +188,10 @@ const server = http.createServer((req, res) => {
                         url: req.url,
                         stream: !!parsed.stream,
                         model: parsed.model,
-                        plugin: req.headers["x-bili-plugin"] ?? null,
-                        conv: req.headers["x-bili-plugin-conversation"] ?? null,
-                        ctxwin: req.headers["x-bili-plugin-context-window"] ?? null,
-                        maxout: req.headers["x-bili-plugin-max-output"] ?? null,
+                        plugin: req.headers["x-sigma-plugin"] ?? null,
+                        conv: req.headers["x-sigma-plugin-conversation"] ?? null,
+                        ctxwin: req.headers["x-sigma-plugin-context-window"] ?? null,
+                        maxout: req.headers["x-sigma-plugin-max-output"] ?? null,
                         tools: (parsed.tools ?? []).map((t) => t?.function?.name ?? t?.name),
                         nmsg: messages.length,
                         roles: messages.map((x) => x?.role).join(","),

@@ -43,7 +43,7 @@ async function startHarness(marker: boolean): Promise<Harness> {
     upstream.listen(0, "127.0.0.1");
     await once(upstream, "listening");
     const upstreamPort = upstream.address().port;
-    _setStoreForTest(new SessionStore({ dir: path.join(os.tmpdir(), `bili-store-gate-${marker ? "marker" : "native"}-${Math.random().toString(36).slice(2)}`), debounceMs: 0 }));
+    _setStoreForTest(new SessionStore({ dir: path.join(os.tmpdir(), `sigma-store-gate-${marker ? "marker" : "native"}-${Math.random().toString(36).slice(2)}`), debounceMs: 0 }));
     setRegistryForTest({});
     const route: Record<string, unknown> = { models: { "gpt-test": { context: 400_000 } } };
     if (marker) route.compressProtocol = "marker";
@@ -78,7 +78,7 @@ async function startHarness(marker: boolean): Promise<Harness> {
 }
 
 async function sendBigToolResult(h: Harness, sessionId: string): Promise<void> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/${h.upstreamUrl}/v1/responses`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/${h.upstreamUrl}/v1/responses`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": sessionId },
         body: JSON.stringify({

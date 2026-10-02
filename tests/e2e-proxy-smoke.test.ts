@@ -140,7 +140,7 @@ test("e2e proxy smoke: compress tool-call -> re-request -> round-2 streams in re
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
     const big = "x".repeat(3000);
     const body = {
         model: "gpt-test",

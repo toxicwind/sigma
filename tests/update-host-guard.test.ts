@@ -21,10 +21,10 @@ test("hostManagedInstall: pnpm virtual-store paths are pnpm-owned", () => {
     const base = mkdtempSync(path.join(tmpdir(), "bc-host-guard-"));
     try {
         // dsh profile bundle layout (dsh's pnpm forwarder)
-        const dshBundle = path.join(base, ".dsh", "profiles", "default", "node_modules", ".pnpm", "billion-context@0.1.121", "node_modules", "billion-context");
+        const dshBundle = path.join(base, ".dsh", "profiles", "default", "node_modules", ".pnpm", "sigma@0.1.121", "node_modules", "sigma");
         assert.equal(hostManagedInstall(dshBundle)?.owner, "pnpm");
         // pnpm global layout
-        const pnpmGlobal = path.join(base, "pnpm", "global", "5", ".pnpm", "billion-context@0.1.121", "node_modules", "billion-context");
+        const pnpmGlobal = path.join(base, "pnpm", "global", "5", ".pnpm", "sigma@0.1.121", "node_modules", "sigma");
         assert.equal(hostManagedInstall(pnpmGlobal)?.owner, "pnpm");
         assert.match(hostManagedInstall(dshBundle)!.channel, /dsh profiles refresh/);
     } finally {
@@ -35,23 +35,23 @@ test("hostManagedInstall: pnpm virtual-store paths are pnpm-owned", () => {
 test("hostManagedInstall: host agent homes own their trees", () => {
     const base = mkdtempSync(path.join(tmpdir(), "bc-host-guard-"));
     try {
-        const piDir = path.join(base, "pi-root", "node_modules", "billion-context");
+        const piDir = path.join(base, "pi-root", "node_modules", "sigma");
         assert.equal(hostManagedInstall(piDir, { PI_HOME: path.join(base, "pi-root") })?.owner, "pi");
         assert.match(hostManagedInstall(piDir, { PI_HOME: path.join(base, "pi-root") })!.channel, /pi update/);
 
-        const ocDir = path.join(base, "xdg", "opencode", "node_modules", "billion-context");
+        const ocDir = path.join(base, "xdg", "opencode", "node_modules", "sigma");
         assert.equal(hostManagedInstall(ocDir, { XDG_DATA_HOME: path.join(base, "xdg") })?.owner, "opencode");
 
-        const dshDir = path.join(base, "dsh-root", "plugins", "billion-context");
+        const dshDir = path.join(base, "dsh-root", "plugins", "sigma");
         assert.equal(hostManagedInstall(dshDir, { DSH_HOME: path.join(base, "dsh-root") })?.owner, "dsh");
 
-        const kimiDir = path.join(base, "kimi-root", "plugins", "managed", "billion-context");
+        const kimiDir = path.join(base, "kimi-root", "plugins", "managed", "sigma");
         assert.equal(hostManagedInstall(kimiDir, { KIMI_CODE_HOME: path.join(base, "kimi-root") })?.owner, "kimi");
 
         // PI_CODING_AGENT_DIR relocates BOTH the pi and omp homes (omp is a
         // pi fork and shares the env) — either owner is correct; what matters
         // is the guard fires on that tree.
-        const ompDir = path.join(base, "omp-root", "node_modules", "billion-context");
+        const ompDir = path.join(base, "omp-root", "node_modules", "sigma");
         const ompOwner = hostManagedInstall(ompDir, { PI_CODING_AGENT_DIR: path.join(base, "omp-root") })?.owner;
         assert.ok(ompOwner === "pi" || ompOwner === "omp", `unexpected owner ${ompOwner}`);
     } finally {
@@ -59,14 +59,14 @@ test("hostManagedInstall: host agent homes own their trees", () => {
     }
 });
 
-test("hostManagedInstall: bili-owned dirs (npm global layout, scratch) stay updatable", () => {
+test("hostManagedInstall: sigma-owned dirs (npm global layout, scratch) stay updatable", () => {
     const base = mkdtempSync(path.join(tmpdir(), "bc-host-guard-"));
     try {
         assert.equal(hostManagedInstall(path.join(base, "install")), undefined);
-        // plain npm global layout: <home>/.local/lib/node_modules/billion-context
+        // plain npm global layout: <home>/.local/lib/node_modules/sigma
         // must NOT be classified as opencode-owned even though both live under
         // the same XDG-ish tree root.
-        assert.equal(hostManagedInstall(path.join(base, "home", ".local", "lib", "node_modules", "billion-context"), { HOME: path.join(base, "home") }), undefined);
+        assert.equal(hostManagedInstall(path.join(base, "home", ".local", "lib", "node_modules", "sigma"), { HOME: path.join(base, "home") }), undefined);
     } finally {
         rmSync(base, { recursive: true, force: true });
     }
@@ -87,7 +87,7 @@ function makeFixture(relInstall: string): Fixture {
     mkdirSync(path.join(installDir, "dist"), { recursive: true });
     writeFileSync(
         path.join(installDir, "package.json"),
-        JSON.stringify({ name: "billion-context", version: "1.2.3", type: "module", main: "dist/index.js", bin: { bili: "./dist/index.js" } }),
+        JSON.stringify({ name: "sigma", version: "1.2.3", type: "module", main: "dist/index.js", bin: { sigma: "./dist/index.js" } }),
     );
     writeFileSync(path.join(installDir, "dist", "index.js"), "export const loaded = '1.2.3';\n");
     return { root, installDir, cacheDir, cleanup: () => rmSync(root, { recursive: true, force: true }) };
@@ -96,7 +96,7 @@ function makeFixture(relInstall: string): Fixture {
 function makeTarball(root: string, version: string): { tgz: Buffer; integrity: string } {
     const src = path.join(root, "pkg");
     mkdirSync(path.join(src, "package", "dist"), { recursive: true });
-    writeFileSync(path.join(src, "package", "package.json"), JSON.stringify({ name: "billion-context", version, type: "module", main: "dist/index.js", bin: { bili: "./dist/index.js" } }));
+    writeFileSync(path.join(src, "package", "package.json"), JSON.stringify({ name: "sigma", version, type: "module", main: "dist/index.js", bin: { sigma: "./dist/index.js" } }));
     writeFileSync(path.join(src, "package", "dist", "index.js"), `export const loaded = '${version}';\n`);
     const tgzPath = path.join(root, "pkg.tgz");
     tar.c({ cwd: src, file: tgzPath, gzip: true, sync: true }, ["package"]);
@@ -113,7 +113,7 @@ async function withTarballFetch<T>(tgz: Buffer, fn: () => Promise<T>): Promise<T
 }
 
 test("installViaTarball: refuses a pnpm-store install dir and leaves it untouched", { timeout: 30_000 }, async () => {
-    const fx = makeFixture(path.join("node_modules", ".pnpm", "billion-context@1.2.3", "node_modules", "billion-context"));
+    const fx = makeFixture(path.join("node_modules", ".pnpm", "sigma@1.2.3", "node_modules", "sigma"));
     process.env.XDG_CACHE_HOME = fx.cacheDir;
     try {
         const { tgz, integrity } = makeTarball(fx.root, "2.0.0");
@@ -129,7 +129,7 @@ test("installViaTarball: refuses a pnpm-store install dir and leaves it untouche
 });
 
 test("installViaTarball: refuses a pi-owned install dir", { timeout: 30_000 }, async () => {
-    const fx = makeFixture(path.join(".pi", "agent", "node_modules", "billion-context"));
+    const fx = makeFixture(path.join(".pi", "agent", "node_modules", "sigma"));
     process.env.XDG_CACHE_HOME = fx.cacheDir;
     process.env.PI_HOME = path.join(fx.root, ".pi", "agent");
     try {

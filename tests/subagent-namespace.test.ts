@@ -120,7 +120,7 @@ test("e2e #150: guardian subagent request bypasses the main session's compressio
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
 
     const SESSION_ID = "e2e-guard-sess";
     const AUTH_SENTENCE = "I approve running `rm -rf /tmp/cache` exactly as the model proposed, bound to approve_exec_1.";

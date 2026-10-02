@@ -1,6 +1,6 @@
-// Thin opencode plugin for the billion-context proxy (`bili opencode`).
+// Thin opencode plugin for the sigma proxy (`sigma opencode`).
 //
-// Activates ONLY when BILLION_CONTEXT_PROXY is set (the launcher sets it);
+// Activates ONLY when SIGMA_PROXY is set (the launcher sets it);
 // otherwise it is a no-op so shipping it inside the package is harmless.
 // Mirrors the pi/omp plugin (src/agent/pi.ts):
 //   - registers the /acp command (config hook + command.execute.before)
@@ -19,7 +19,7 @@
 import { LAUNCHER_DEFAULT_HOST, ensureProxyRunning } from "../launcher.js";
 import { createAcpCommandHooks } from "./opencode-acp-command.js";
 import { nativeProxyScriptPath, singleFlight } from "./native-bootstrap.js";
-import { createLiveOriginResolver, installNativeFetchIntercept, isModelApiUrl, replaceRequestTarget, routedBiliModelUrl, type NativeInterceptState } from "./native-intercept.js";
+import { createLiveOriginResolver, installNativeFetchIntercept, isModelApiUrl, replaceRequestTarget, routedSigmaModelUrl, type NativeInterceptState } from "./native-intercept.js";
 import { createOpencodeV2Setup, type V2HttpRequestEvent, type V2State } from "./opencode-v2.js";
 import { fetchProxyVersion } from "./shared.js";
 
@@ -56,11 +56,11 @@ interface OpencodeHooks {
     "command.execute.before"?: (input: import("./opencode-acp-command.js").OpencodeCommandInput, output: { parts: unknown[] }) => Promise<void>;
 }
 
-const proxyBase = process.env.BILLION_CONTEXT_PROXY ?? "";
+const proxyBase = process.env.SIGMA_PROXY ?? "";
 
 // #1135: shared lifecycle state for BOTH lanes — the V1 fetch patch and the
 // V2 http.request route observe the same proxy and drive the same recovery.
-// The launcher's proxy is often SHARED across multiple `bili opencode`
+// The launcher's proxy is often SHARED across multiple `sigma opencode`
 // launches (instance discovery attaches later launches to the first one);
 // when the owning launcher exits, its parent-pid watchdog tears the proxy
 // down and every attach-side client's baked URLs point at a dead port.
@@ -86,7 +86,7 @@ const intercept: NativeInterceptState | undefined = proxyBase === "" ? undefined
     ready: Promise.resolve(proxyBase),
     respawn: singleFlight(() => (_respawnForTest ?? respawnOwnProxy)()),
     onGiveUp: () => {
-        delete process.env.BILLION_CONTEXT_PROXY;
+        delete process.env.SIGMA_PROXY;
     },
 };
 
@@ -98,7 +98,7 @@ async function respawnOwnProxy(): Promise<string | undefined> {
         const version = await fetchProxyVersion(proxyBase).catch(() => undefined);
         if (version !== undefined) {
             if (intercept !== undefined) intercept.origin = proxyBase;
-            process.env.BILLION_CONTEXT_PROXY = proxyBase;
+            process.env.SIGMA_PROXY = proxyBase;
             return proxyBase;
         }
     }
@@ -108,22 +108,22 @@ async function respawnOwnProxy(): Promise<string | undefined> {
             { scriptPath: nativeProxyScriptPath() },
         );
         if (intercept !== undefined) intercept.origin = handle.origin;
-        process.env.BILLION_CONTEXT_PROXY = handle.origin;
+        process.env.SIGMA_PROXY = handle.origin;
         return handle.origin;
     } catch (err) {
-        console.error(`[bili-opencode] proxy respawn failed — model traffic goes direct (uncompressed): ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`[sigma-opencode] proxy respawn failed — model traffic goes direct (uncompressed): ${err instanceof Error ? err.message : String(err)}`);
         return undefined;
     }
 }
 
 const server = async (ctx: OpencodePluginContext): Promise<OpencodeHooks> => {
     if (!proxyBase) return {};
-    console.log("[bili-opencode] plugin active (proxy " + proxyBase + ")");
+    console.log("[sigma-opencode] plugin active (proxy " + proxyBase + ")");
     // V1 host: same SDK-default-baseURL gap as the native entry — the
     // launcher's config-file rewrite only catches explicit baseURLs. Global
     // fetch patch catches the rest; runtime recovery rides the shared state.
     if (intercept !== undefined && installNativeFetchIntercept(intercept)) {
-        console.log("[bili-opencode] v1: fetch patch installed (catches providers without an explicit baseURL)");
+        console.log("[sigma-opencode] v1: fetch patch installed (catches providers without an explicit baseURL)");
     }
     return {
         ...createAcpCommandHooks(() => intercept?.origin ?? proxyBase, ctx),
@@ -131,7 +131,7 @@ const server = async (ctx: OpencodePluginContext): Promise<OpencodeHooks> => {
 };
 
 // V2 lane: routes provider requests through the LIVE proxy origin. Handles
-// BOTH URL shapes: baked `<proxy>/bili/<upstream>` overlays from the
+// BOTH URL shapes: baked `<proxy>/sigma/<upstream>` overlays from the
 // launcher's config rewrite (re-baked to the current origin on recovery) and
 // raw model-API URLs from SDK-default providers (routed like the native
 // entry does). A dead origin degrades to a DIRECT send of the upstream URL
@@ -142,13 +142,13 @@ const route = intercept === undefined ? undefined : (() => {
     return async (e: V2HttpRequestEvent, s: V2State): Promise<void> => {
         const url = typeof e.request?.url === "string" ? e.request.url : undefined;
         if (url === undefined) return;
-        const upstream = routedBiliModelUrl(url);
+        const upstream = routedSigmaModelUrl(url);
         if (upstream === undefined && !isModelApiUrl(url)) return;
         const live = await resolveLive();
         if (live === undefined) {
             if (!warned) {
                 warned = true;
-                console.error("[bili-opencode] no live bili proxy — model requests go direct (uncompressed)");
+                console.error("[sigma-opencode] no live sigma proxy — model requests go direct (uncompressed)");
             }
             s.proxyBase = undefined;
             if (upstream !== undefined) replaceRequestTarget(e, upstream);
@@ -156,11 +156,11 @@ const route = intercept === undefined ? undefined : (() => {
         }
         warned = false;
         s.proxyBase = live;
-        const target = `${live}/bili/${upstream ?? url}`;
+        const target = `${live}/sigma/${upstream ?? url}`;
         if (target !== url) replaceRequestTarget(e, target);
     };
 })();
 
 const setup = createOpencodeV2Setup(route === undefined ? {} : { route });
 
-export default { id: "billion-context-opencode", setup, server };
+export default { id: "sigma-opencode", setup, server };

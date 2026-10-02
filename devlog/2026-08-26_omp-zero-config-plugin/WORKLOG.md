@@ -1,10 +1,10 @@
 # WORKLOG
 
-1. Confirmed the omp 17.3.8 distribution package has no billion-context traces. The `bili omp`
+1. Confirmed the omp 17.3.8 distribution package has no sigma traces. The `sigma omp`
    branch originally had no -e injection (pi had one).
 2. Implemented `ompPluginLoadedFrom` + the launcher -e injection + a 3-state test (a `runLaunch omp`
    matrix and a four-state unit test).
-3. e2e hunted the culprit: the argv injection succeeded but the `x-bili-plugin` header count was 0
+3. e2e hunted the culprit: the argv injection succeeded but the `x-sigma-plugin` header count was 0
    → the probe showed omp only sends `session_start` and has no `before_provider_headers` event.
 4. Tried an identity register (POST `/__bili/plugin/register` with `identity: true`). The server-side
    binding was verified end to end (reproduced with curl, and omp's real consume matched), but it
@@ -15,7 +15,7 @@
    `injectTool=${shouldInject}` (the raw flag) instead of `injectTools` (the effective value) →
    fixed to print the effective value plus a plugin-mode marker.
 6. Final verification: two headless task rounds with 4/4 wire tools injected + FINAL-E2E-OK, and
-   the tmux interactive /acp panel rendering (billion-context@0.1.54, Context 0%/200k).
+   the tmux interactive /acp panel rendering (sigma@0.1.54, Context 0%/200k).
    603/603 + typecheck + build.
 
 Lessons:

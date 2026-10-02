@@ -118,7 +118,7 @@ describe("#684 exit sentinels", () => {
         assert.equal(c.lines.length, 0);
     });
 
-    it("#1327 anthropic wire: counts only blocks bili actually lost, not pre-existing gaps", () => {
+    it("#1327 anthropic wire: counts only blocks sigma actually lost, not pre-existing gaps", () => {
         const c = collector();
         const inbound = [
             { role: "assistant", content: [{ type: "thinking", thinking: "t" }, { type: "tool_use", id: "tu1", name: "n", input: {} }] },

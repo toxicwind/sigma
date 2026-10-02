@@ -35,12 +35,12 @@ interface Harness {
 async function startProxy(upstream: http.Server | net.Server, passthrough: boolean): Promise<Harness> {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-fix806-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-fix806-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, "{}", "utf8");
-    const previous = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const upstreamPort = (upstream.address() as { port: number }).port;
     const port = await freePort();
     const opts: ProxyOptions = {
@@ -70,7 +70,7 @@ async function startProxy(upstream: http.Server | net.Server, passthrough: boole
         port,
         stop: async () => { await close(proxy); },
         cleanup: () => {
-            if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+            if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
             rmSync(root, { recursive: true, force: true });
         },
     };
@@ -79,21 +79,21 @@ async function startProxy(upstream: http.Server | net.Server, passthrough: boole
 const CHAT_BODY = JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] });
 
 test("requestWatchdogBudgetMs: env override, default, and invalid values", () => {
-    const prevWd = process.env.BILI_REQUEST_WATCHDOG_MS;
-    const prevUp = process.env.BILI_UPSTREAM_TIMEOUT_MS;
+    const prevWd = process.env.SIGMA_REQUEST_WATCHDOG_MS;
+    const prevUp = process.env.SIGMA_UPSTREAM_TIMEOUT_MS;
     try {
-        delete process.env.BILI_REQUEST_WATCHDOG_MS;
-        delete process.env.BILI_UPSTREAM_TIMEOUT_MS;
+        delete process.env.SIGMA_REQUEST_WATCHDOG_MS;
+        delete process.env.SIGMA_UPSTREAM_TIMEOUT_MS;
         assert.equal(requestWatchdogBudgetMs(), 2 * UPSTREAM_TIMEOUT_MS);
-        process.env.BILI_REQUEST_WATCHDOG_MS = "1500";
+        process.env.SIGMA_REQUEST_WATCHDOG_MS = "1500";
         assert.equal(requestWatchdogBudgetMs(), 1500);
-        process.env.BILI_REQUEST_WATCHDOG_MS = "0";
+        process.env.SIGMA_REQUEST_WATCHDOG_MS = "0";
         assert.equal(requestWatchdogBudgetMs(), 0);
-        process.env.BILI_REQUEST_WATCHDOG_MS = "garbage";
+        process.env.SIGMA_REQUEST_WATCHDOG_MS = "garbage";
         assert.equal(requestWatchdogBudgetMs(), 2 * UPSTREAM_TIMEOUT_MS);
     } finally {
-        if (prevWd === undefined) delete process.env.BILI_REQUEST_WATCHDOG_MS; else process.env.BILI_REQUEST_WATCHDOG_MS = prevWd;
-        if (prevUp === undefined) delete process.env.BILI_UPSTREAM_TIMEOUT_MS; else process.env.BILI_UPSTREAM_TIMEOUT_MS = prevUp;
+        if (prevWd === undefined) delete process.env.SIGMA_REQUEST_WATCHDOG_MS; else process.env.SIGMA_REQUEST_WATCHDOG_MS = prevWd;
+        if (prevUp === undefined) delete process.env.SIGMA_UPSTREAM_TIMEOUT_MS; else process.env.SIGMA_UPSTREAM_TIMEOUT_MS = prevUp;
     }
 });
 
@@ -106,8 +106,8 @@ test("silent upstream: accepted request ends in 504 instead of hanging forever (
         socket.on("error", () => {});
     });
     await new Promise<void>((r) => silent.listen(0, "127.0.0.1", () => r()));
-    const prev = process.env.BILI_REQUEST_WATCHDOG_MS;
-    process.env.BILI_REQUEST_WATCHDOG_MS = "1500";
+    const prev = process.env.SIGMA_REQUEST_WATCHDOG_MS;
+    process.env.SIGMA_REQUEST_WATCHDOG_MS = "1500";
     const harness = await startProxy(silent, false);
     try {
         const ac = new AbortController();
@@ -132,7 +132,7 @@ test("silent upstream: accepted request ends in 504 instead of hanging forever (
         assert.ok(elapsed >= 1400, `watchdog fired before its budget elapsed (${elapsed}ms < 1500ms)`);
         assert.ok(elapsed < 10_000, `watchdog took too long to fire (${elapsed}ms)`);
     } finally {
-        if (prev === undefined) delete process.env.BILI_REQUEST_WATCHDOG_MS; else process.env.BILI_REQUEST_WATCHDOG_MS = prev;
+        if (prev === undefined) delete process.env.SIGMA_REQUEST_WATCHDOG_MS; else process.env.SIGMA_REQUEST_WATCHDOG_MS = prev;
         await harness.stop();
         harness.cleanup();
         // undici does not destroy its side of an aborted pre-response socket
@@ -164,8 +164,8 @@ test("healthy long stream survives the watchdog — idle semantics, not total ti
         req.on("close", () => clearInterval(t));
     });
     await new Promise<void>((r) => streaming.listen(0, "127.0.0.1", () => r()));
-    const prev = process.env.BILI_REQUEST_WATCHDOG_MS;
-    process.env.BILI_REQUEST_WATCHDOG_MS = "1500";
+    const prev = process.env.SIGMA_REQUEST_WATCHDOG_MS;
+    process.env.SIGMA_REQUEST_WATCHDOG_MS = "1500";
     const harness = await startProxy(streaming, true);
     try {
         const res = await fetch(`http://127.0.0.1:${harness.port}/v1/chat/completions`, {
@@ -178,7 +178,7 @@ test("healthy long stream survives the watchdog — idle semantics, not total ti
         const expected = Array.from({ length: totalChunks }, (_, i) => `chunk-${i + 1}\n`).join("");
         assert.equal(text, expected, "full stream must reach the client despite outliving the idle budget");
     } finally {
-        if (prev === undefined) delete process.env.BILI_REQUEST_WATCHDOG_MS; else process.env.BILI_REQUEST_WATCHDOG_MS = prev;
+        if (prev === undefined) delete process.env.SIGMA_REQUEST_WATCHDOG_MS; else process.env.SIGMA_REQUEST_WATCHDOG_MS = prev;
         await harness.stop();
         harness.cleanup();
         (streaming as http.Server).closeAllConnections?.();
@@ -192,8 +192,8 @@ test("fast healthy response is unaffected by the watchdog (#806)", async () => {
         res.end('{"ok":true}');
     });
     await new Promise<void>((r) => fast.listen(0, "127.0.0.1", () => r()));
-    const prev = process.env.BILI_REQUEST_WATCHDOG_MS;
-    process.env.BILI_REQUEST_WATCHDOG_MS = "60000";
+    const prev = process.env.SIGMA_REQUEST_WATCHDOG_MS;
+    process.env.SIGMA_REQUEST_WATCHDOG_MS = "60000";
     const harness = await startProxy(fast, true);
     try {
         const res = await fetch(`http://127.0.0.1:${harness.port}/v1/chat/completions`, {
@@ -204,7 +204,7 @@ test("fast healthy response is unaffected by the watchdog (#806)", async () => {
         assert.equal(res.status, 200);
         assert.equal(await res.text(), '{"ok":true}');
     } finally {
-        if (prev === undefined) delete process.env.BILI_REQUEST_WATCHDOG_MS; else process.env.BILI_REQUEST_WATCHDOG_MS = prev;
+        if (prev === undefined) delete process.env.SIGMA_REQUEST_WATCHDOG_MS; else process.env.SIGMA_REQUEST_WATCHDOG_MS = prev;
         await harness.stop();
         harness.cleanup();
         (fast as http.Server).closeAllConnections?.();

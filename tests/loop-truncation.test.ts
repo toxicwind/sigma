@@ -156,7 +156,7 @@ function assertAnthropicErrorStream(s: string): void {
 }
 
 test("#413 T1: 0-event EOF → retried once; failed retry → well-formed error stream, single log line", async () => {
-    process.env.BILI_REPLAY_RETRY_MAX = "1";
+    process.env.SIGMA_REPLAY_RETRY_MAX = "1";
     const captured: { level: string; msg: string }[] = [];
     setLogCapture((level, msg) => captured.push({ level, msg }));
     const logSink: string[] = [];
@@ -174,7 +174,7 @@ test("#413 T1: 0-event EOF → retried once; failed retry → well-formed error 
     } finally {
         mock.restore();
         setLogCapture(null);
-        delete process.env.BILI_REPLAY_RETRY_MAX;
+        delete process.env.SIGMA_REPLAY_RETRY_MAX;
     }
 });
 

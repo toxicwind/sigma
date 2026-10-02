@@ -13,14 +13,14 @@ import { _resetPluginStateForTest } from "../src/plugin.ts";
 import { listSessions } from "../src/session.ts";
 
 // #473: the #371 fake-completion detect+retry (opt-in via
-// BILI_FAKE_COMPLETION_RETRIES) sat AFTER the plugin-mode early return, so
+// SIGMA_FAKE_COMPLETION_RETRIES) sat AFTER the plugin-mode early return, so
 // plugin-mode clients (pi / omp — the original #361/#371 reporters) never got
 // the backstop. These tests drive a plugin session through the gate.
 
 const FAKE_MARK = "FAKE-COMPLETION-MARKER";
 // antml-style tool-call XML written as TEXT (hex escapes; never a real block)
 const FAKE_XML = `\x3cinvoke name="get_weather"\x3e\x3cparameter name="city"\x3eSF\x3c/parameter\x3e\x3c/invoke\x3e`;
-const HINT_MARK = "[billion-context]";
+const HINT_MARK = "[sigma]";
 
 function listen(server: http.Server): Promise<void> {
     if (server.listening) return Promise.resolve();
@@ -125,7 +125,7 @@ async function startRig(proto: Proto): Promise<Rig> {
     return {
         proxyPort,
         proxyUrl: (p) => `http://127.0.0.1:${proxyPort}${p}`,
-        modelUrl: () => `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}${path}`,
+        modelUrl: () => `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}${path}`,
         requests,
         closeAll: async () => {
             await close(proxy);
@@ -149,7 +149,7 @@ async function readAll(res: Response): Promise<string> {
 }
 
 test("#473 plugin openai chat: fake completion triggers the hinted retry and the client sees the recovered tool block", async () => {
-    process.env.BILI_FAKE_COMPLETION_RETRIES = "1";
+    process.env.SIGMA_FAKE_COMPLETION_RETRIES = "1";
     const rig = await startRig("openai");
     try {
         await register(rig, "i473-openai");
@@ -169,7 +169,7 @@ test("#473 plugin openai chat: fake completion triggers the hinted retry and the
         assert.ok(!text.includes(FAKE_MARK), "fake completion never reached the client");
         assert.ok(listSessions().some((s) => (s.metadata.fakeCompletionStreak as number | undefined) === 0), "session streak reset after the clean retry");
     } finally {
-        delete process.env.BILI_FAKE_COMPLETION_RETRIES;
+        delete process.env.SIGMA_FAKE_COMPLETION_RETRIES;
         await rig.closeAll();
     }
 });
@@ -193,7 +193,7 @@ test("#473 default (retries=0): plugin mode stays verbatim passthrough — one u
 });
 
 test("#473 plugin anthropic: fake completion retried with the hint merged; recovered tool_use reaches the client", async () => {
-    process.env.BILI_FAKE_COMPLETION_RETRIES = "1";
+    process.env.SIGMA_FAKE_COMPLETION_RETRIES = "1";
     const rig = await startRig("anthropic");
     try {
         await register(rig, "i473-anthropic");
@@ -214,7 +214,7 @@ test("#473 plugin anthropic: fake completion retried with the hint merged; recov
         assert.ok(text.includes("real_tool_ok"), "client received the recovered tool_use block");
         assert.ok(!text.includes(FAKE_MARK), "fake completion never reached the client");
     } finally {
-        delete process.env.BILI_FAKE_COMPLETION_RETRIES;
+        delete process.env.SIGMA_FAKE_COMPLETION_RETRIES;
         await rig.closeAll();
     }
 });

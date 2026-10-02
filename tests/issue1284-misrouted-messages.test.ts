@@ -47,12 +47,12 @@ interface Harness {
 async function startProxy(upstream: http.Server): Promise<Harness> {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-issue1284-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-issue1284-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, "{}", "utf8");
-    const previous = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const upstreamPort = (upstream.address() as { port: number }).port;
     const proxyPort = await freePort();
     const opts: ProxyOptions = {
@@ -83,13 +83,13 @@ async function startProxy(upstream: http.Server): Promise<Harness> {
         upstreamPort,
         stop: async () => { await close(proxy); },
         cleanup: () => {
-            if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+            if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
             rmSync(root, { recursive: true, force: true });
         },
     };
 }
 
-test("non-LLM endpoint ending in /messages claimed via the /bili/ tunnel → relayed verbatim, not rejected (#1284)", async () => {
+test("non-LLM endpoint ending in /messages claimed via the /sigma/ tunnel → relayed verbatim, not rejected (#1284)", async () => {
     const seen: Array<{ path: string; body: string }> = [];
     const upstream = await upstreamServer(200, (p, b) => seen.push({ path: p, body: b }));
     const harness = await startProxy(upstream);
@@ -100,13 +100,13 @@ test("non-LLM endpoint ending in /messages claimed via the /bili/ tunnel → rel
             created_at: "2026-09-23T08:00:00Z",
             peer_id: "agent-main",
         });
-        const url = `http://127.0.0.1:${harness.proxyPort}/bili/http://127.0.0.1:${harness.upstreamPort}/openviking/api/v1/sessions/sess-abc/messages`;
+        const url = `http://127.0.0.1:${harness.proxyPort}/sigma/http://127.0.0.1:${harness.upstreamPort}/openviking/api/v1/sessions/sess-abc/messages`;
         const res = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: singleMessage,
         });
-        assert.equal(res.status, 200, "a non-conversation body must not be vetoed by bili — the upstream owns its API contract");
+        assert.equal(res.status, 200, "a non-conversation body must not be vetoed by sigma — the upstream owns its API contract");
         const body = (await res.json()) as Record<string, any>;
         assert.equal(body.ok, true);
         assert.equal(seen.length, 1);
@@ -119,13 +119,13 @@ test("non-LLM endpoint ending in /messages claimed via the /bili/ tunnel → rel
     }
 });
 
-test("non-LLM endpoint ending in /chat/completions claimed via the /bili/ tunnel → relayed verbatim (#1284)", async () => {
+test("non-LLM endpoint ending in /chat/completions claimed via the /sigma/ tunnel → relayed verbatim (#1284)", async () => {
     const seen: Array<{ path: string; body: string }> = [];
     const upstream = await upstreamServer(200, (p, b) => seen.push({ path: p, body: b }));
     const harness = await startProxy(upstream);
     try {
         const body = JSON.stringify({ tool: "summarize", payload: { doc: "quarterly report" } });
-        const url = `http://127.0.0.1:${harness.proxyPort}/bili/http://127.0.0.1:${harness.upstreamPort}/internal/tools/chat/completions`;
+        const url = `http://127.0.0.1:${harness.proxyPort}/sigma/http://127.0.0.1:${harness.upstreamPort}/internal/tools/chat/completions`;
         const res = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },

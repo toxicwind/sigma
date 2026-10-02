@@ -156,7 +156,7 @@ test("#1024: rendered page — catalog is the single source of truth and every C
 
 test("#1024: embedded client parses and persists the language choice", () => {
     assert.doesNotThrow(() => new Function(WEB_CLIENT));
-    assert.match(WEB_CLIENT, /bili-language/);
+    assert.match(WEB_CLIENT, /sigma-language/);
     assert.match(WEB_CLIENT, /language-toggle/);
     assert.match(WEB_CLIENT, /MESSAGES=/);
 });

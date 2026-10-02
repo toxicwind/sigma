@@ -3,7 +3,7 @@
 ## Source
 
 Found live while validating the hermes launcher (#223): a reviewer session
-running under `bili hermes` against SGLang kept dying with
+running under `sigma hermes` against SGLang kept dying with
 `hermes: Unknown tool '' → Max retries (3) exceeded → Stopping as partial`
 while the proxy logged `acp-loop round 1: 0 call(s)`.
 

@@ -10,8 +10,8 @@ import type { Session } from "../src/session.ts";
 import { setLogCapture } from "../src/logger.ts";
 
 // These tests inspect raw on-disk session files directly (bypassing the store
-// codec), so pin the plain-JSON format: #1080 made BILIZSTD1 the default.
-process.env.BILI_PERSIST_ZSTD = "0";
+// codec), so pin the plain-JSON format: #1080 made SIGMAZSTD1 the default.
+process.env.SIGMA_PERSIST_ZSTD = "0";
 
 function jsonFilesUnder(dir: string): string[] {
     const out: string[] = [];
@@ -41,7 +41,7 @@ function makeSession(id: string, meta: Session["meta"] = {}): Session {
 
 function withDir<T>(name: string, fn: (dir: string) => Promise<T> | T): Promise<unknown> {
     return test(name, async () => {
-        const dir = mkdtempSync(join(tmpdir(), "bili-401-"));
+        const dir = mkdtempSync(join(tmpdir(), "sigma-401-"));
         try {
             await fn(dir);
         } finally {
@@ -100,7 +100,7 @@ await withDir("boot() loads everything in a single directory walk and deletes no
     await store.writeNow(makeSession("keep-300"));
     await store.writeNow(makeSession("keep-301"));
     assert.equal(jsonFilesUnder(dir).length, 302);
-    writeFileSync(join(dir, ".bili-migration-286.done"), String(Date.now()), "utf8");
+    writeFileSync(join(dir, ".sigma-migration-286.done"), String(Date.now()), "utf8");
 
     const cold = new SessionStore({ dir, debounceMs: 5, enabled: true });
     const origReadFileSync = fsShared.readFileSync;
@@ -136,7 +136,7 @@ await withDir("#286 migration runs exactly once ever (completion marker)", async
         assert.ok(map1.has("conv-123"), "rekeyed under the client conversation id");
         assert.ok(!map1.has("old-hash-id"));
         assert.equal(lines.filter((m) => m.includes("one-time migration")).length, 1);
-        assert.ok(existsSync(join(dir, ".bili-migration-286.done")), "completion marker written");
+        assert.ok(existsSync(join(dir, ".sigma-migration-286.done")), "completion marker written");
         assert.equal(jsonFilesUnder(dir).length, 1, "loser file deleted");
 
         lines.length = 0;

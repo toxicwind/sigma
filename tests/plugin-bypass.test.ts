@@ -1,4 +1,4 @@
-// #920 legacy lane: requests marked x-bili-plugin-bypass are forwarded
+// #920 legacy lane: requests marked x-sigma-plugin-bypass are forwarded
 // VERBATIM — no wire tool injection, no nudge, no session binding — because
 // the absorbed opencode-acp owns compression for those sessions.
 import assert from "node:assert/strict";
@@ -80,9 +80,9 @@ afterEach(async () => {
 describe("plugin bypass header (#920)", () => {
     it("bypassed requests are forwarded verbatim — no tool injection, no nudge", async () => {
         const body = { model: "test-model", stream: false, messages: [{ role: "user", content: "hello legacy session" }] };
-        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-plugin-bypass": "1" },
+            headers: { "content-type": "application/json", "x-sigma-plugin-bypass": "1" },
             body: JSON.stringify(body),
         });
         assert.equal(resp.status, 200);
@@ -90,12 +90,12 @@ describe("plugin bypass header (#920)", () => {
         const seen = JSON.parse(h!.captured[0]!.body) as { tools?: unknown[]; messages: unknown[] };
         assert.equal(seen.tools, undefined);
         assert.deepEqual(seen.messages, body.messages);
-        assert.equal(h!.captured[0]!.headers["x-bili-plugin-bypass"], "1");
+        assert.equal(h!.captured[0]!.headers["x-sigma-plugin-bypass"], "1");
     });
 
     it("without the header the same request gets the plugin pipeline (tools injected)", async () => {
         const body = { model: "test-model", stream: false, messages: [{ role: "user", content: "hello new session" }] };
-        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/bili/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h!.proxyPort}/sigma/http://127.0.0.1:${h!.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(body),

@@ -84,18 +84,18 @@ describe("rewriteV1Providers", () => {
         assert.equal(n, 2);
         const openai = (cfg.provider?.openai?.options ?? {}) as V1ProviderOptions;
         const local = (cfg.provider?.local?.options ?? {}) as V1ProviderOptions;
-        assert.equal(openai.baseURL, `${origin}/bili/https://api.openai.com/v1`);
-        assert.equal(local.baseURL, `${origin}/bili/http://127.0.0.1:8199/v1`);
+        assert.equal(openai.baseURL, `${origin}/sigma/https://api.openai.com/v1`);
+        assert.equal(local.baseURL, `${origin}/sigma/http://127.0.0.1:8199/v1`);
         // untouched sibling keys
         assert.equal(openai.apiKey, "sk-x");
     });
 
     it("is idempotent for already-wrapped URLs", () => {
         const cfg: V1Config = {
-            provider: { wrapped: { options: { baseURL: `${origin}/bili/https://api.openai.com/v1` } } },
+            provider: { wrapped: { options: { baseURL: `${origin}/sigma/https://api.openai.com/v1` } } },
         };
         assert.equal(rewriteV1Providers(cfg, origin), 0);
-        assert.equal(cfg.provider?.wrapped?.options?.baseURL, `${origin}/bili/https://api.openai.com/v1`);
+        assert.equal(cfg.provider?.wrapped?.options?.baseURL, `${origin}/sigma/https://api.openai.com/v1`);
     });
 
     it("skips non-http and missing baseURLs, handles absent provider table", () => {
@@ -114,11 +114,11 @@ describe("rewriteV1Providers", () => {
 
     it("unwraps double-wrapped upstreams instead of nesting", () => {
         const cfg: V1Config = {
-            provider: { x: { options: { baseURL: `http://other:1/bili/https://api.anthropic.com` } } },
+            provider: { x: { options: { baseURL: `http://other:1/sigma/https://api.anthropic.com` } } },
         };
         const n = rewriteV1Providers(cfg, origin);
         assert.equal(n, 1);
-        assert.equal(cfg.provider?.x?.options?.baseURL, `${origin}/bili/https://api.anthropic.com`);
+        assert.equal(cfg.provider?.x?.options?.baseURL, `${origin}/sigma/https://api.anthropic.com`);
     });
 
     it("disables compaction.auto while merging existing settings", () => {
@@ -197,13 +197,13 @@ describe("createV1ServerHooks", () => {
 
         const cfg: V1Config = { provider: { o: { options: { baseURL: "https://api.openai.com/v1" } } } };
         await hooks.config?.(cfg);
-        assert.equal(cfg.provider?.o?.options?.baseURL, `${origin}/bili/https://api.openai.com/v1`);
+        assert.equal(cfg.provider?.o?.options?.baseURL, `${origin}/sigma/https://api.openai.com/v1`);
         assert.ok(cfg.command?.acp);
 
         const headers: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_1" }, { headers });
-        assert.equal(headers["x-bili-plugin"], "opencode");
-        assert.equal(headers["x-bili-plugin-conversation"], "ses_1");
+        assert.equal(headers["x-sigma-plugin"], "opencode");
+        assert.equal(headers["x-sigma-plugin-conversation"], "ses_1");
 
         const compress = hooks.tool?.compress;
         assert.ok(compress);
@@ -219,10 +219,10 @@ describe("createV1ServerHooks", () => {
         assert.ok(hooks.config);
         const cfg: V1Config = { provider: { o: { options: { baseURL: "https://api.openai.com/v1" } } } };
         await hooks.config?.(cfg);
-        assert.equal(cfg.provider?.o?.options?.baseURL, `${origin}/bili/https://api.openai.com/v1`);
+        assert.equal(cfg.provider?.o?.options?.baseURL, `${origin}/sigma/https://api.openai.com/v1`);
     });
 
-    it("stamps x-bili-plugin-context-window from config-declared model limits (omits when absent)", async () => {
+    it("stamps x-sigma-plugin-context-window from config-declared model limits (omits when absent)", async () => {
         const deps = makeDeps();
         const hooks = createV1ServerHooks(() => origin, {}, deps);
         assert.ok(hooks["chat.headers"]);
@@ -234,13 +234,13 @@ describe("createV1ServerHooks", () => {
         await hooks.config?.(cfg);
         const h1: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_w", model: { providerID: "openai", id: "gpt" } }, { headers: h1 });
-        assert.equal(h1["x-bili-plugin-context-window"], "128000");
+        assert.equal(h1["x-sigma-plugin-context-window"], "128000");
         const h2: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_w", model: { providerID: "openai", id: "other" } }, { headers: h2 });
-        assert.equal(h2["x-bili-plugin-context-window"], undefined);
+        assert.equal(h2["x-sigma-plugin-context-window"], undefined);
         const h3: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_w" }, { headers: h3 });
-        assert.equal(h3["x-bili-plugin-context-window"], undefined);
+        assert.equal(h3["x-sigma-plugin-context-window"], undefined);
     });
 
     it("command.execute.before only reacts to /acp", async () => {
@@ -250,7 +250,7 @@ describe("createV1ServerHooks", () => {
         // /acp path throws the sentinel after rendering — assert the sentinel shape
         await assert.rejects(
             hooks["command.execute.before"]?.({ command: "acp", sessionID: "ses_x" }),
-            /__BILI_ACP_HANDLED__/,
+            /__SIGMA_ACP_HANDLED__/,
         );
     });
 
@@ -274,14 +274,14 @@ describe("createV1ServerHooks", () => {
         const hooks = createV1ServerHooks(() => live, {}, makeDeps());
         const headers: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_1" }, { headers });
-        assert.equal(headers["x-bili-plugin"], undefined);
-        assert.equal(headers["x-bili-plugin-conversation"], undefined);
+        assert.equal(headers["x-sigma-plugin"], undefined);
+        assert.equal(headers["x-sigma-plugin-conversation"], undefined);
         const out = await hooks.tool?.compress?.execute({}, { sessionID: "ses_1" });
         assert.match(out, /no live proxy/);
         live = "http://127.0.0.1:19199";
         const h2: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_1" }, { headers: h2 });
-        assert.equal(h2["x-bili-plugin"], "opencode");
+        assert.equal(h2["x-sigma-plugin"], "opencode");
     });
 });
 
@@ -369,20 +369,20 @@ describe("createV1ServerHooks legacy routing (#920)", () => {
         // headers: legacy bypasses, new stamps plugin mode
         const h1: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_legacy" } as never, { headers: h1 });
-        assert.equal(h1["x-bili-plugin"], undefined);
-        assert.equal(h1["x-bili-plugin-bypass"], "1");
+        assert.equal(h1["x-sigma-plugin"], undefined);
+        assert.equal(h1["x-sigma-plugin-bypass"], "1");
         const h2: Record<string, string> = {};
         await hooks["chat.headers"]?.({ sessionID: "ses_new" } as never, { headers: h2 });
-        assert.equal(h2["x-bili-plugin"], "opencode");
-        assert.equal(h2["x-bili-plugin-conversation"], "ses_new");
-        assert.equal(h2["x-bili-plugin-bypass"], undefined);
+        assert.equal(h2["x-sigma-plugin"], "opencode");
+        assert.equal(h2["x-sigma-plugin-conversation"], "ses_new");
+        assert.equal(h2["x-sigma-plugin-bypass"], undefined);
 
-        // /acp command: legacy session -> acp handler (no throw); new -> bili handler (throws __BILI_ACP_HANDLED__ after render)
+        // /acp command: legacy session -> acp handler (no throw); new -> sigma handler (throws __SIGMA_ACP_HANDLED__ after render)
         // output must reach the absorbed acp handler (its handlers are two-arg (input, output))
         await hooks["command.execute.before"]?.({ command: "acp", sessionID: "ses_legacy", arguments: "" }, { parts: [] });
         assert.ok(events.includes("legacy-command:acp:ses_legacy:output"));
         events.length = 0;
-        await assert.rejects(hooks["command.execute.before"]?.({ command: "acp", sessionID: "ses_new", arguments: "" }), /__BILI_ACP_HANDLED__/);
+        await assert.rejects(hooks["command.execute.before"]?.({ command: "acp", sessionID: "ses_new", arguments: "" }), /__SIGMA_ACP_HANDLED__/);
         assert.equal(events.filter((e) => e.startsWith("legacy-command")).length, 0);
 
         // transforms gated to legacy sessions only; output reaches acp on the legacy lane
@@ -421,7 +421,7 @@ describe("createV1ServerHooks legacy routing (#920)", () => {
         });
         await assert.rejects(
             hooks["command.execute.before"]?.({ command: "acp-cache", sessionID: "ses_legacy" }),
-            /__BILI_ACP_HANDLED__/,
+            /__SIGMA_ACP_HANDLED__/,
         );
         assert.equal(prompts.length, 1);
         assert.match(prompts[0].text, /unavailable for this legacy DCP session/);
@@ -446,13 +446,13 @@ describe("createV1ServerHooks legacy routing (#920)", () => {
         // its permission write survived the merge
         assert.deepEqual(cfg.permission, { deny: ["dcp_*"] });
         // and the rewrite still happened
-        assert.equal((cfg.provider.testprov?.options as V1ProviderOptions).baseURL, "http://127.0.0.1:19999/bili/http://127.0.0.1:19998/v1");
+        assert.equal((cfg.provider.testprov?.options as V1ProviderOptions).baseURL, "http://127.0.0.1:19999/sigma/http://127.0.0.1:19998/v1");
     });
 });
 
 describe("legacy session state file (#920)", () => {
     it("detects legacy sessions by acp state file and sanitizes ids", () => {
-        const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-legacy-state-"));
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-legacy-state-"));
         process.env.XDG_DATA_HOME = path.join(home, "data");
         try {
             fs.mkdirSync(path.dirname(legacyAcpStatePath("ses_old")), { recursive: true });
@@ -535,7 +535,7 @@ describe("derived-session inheritance report (#1362)", () => {
             const hooks = createV1ServerHooks(() => proxy.origin, { client }, v1Deps());
             const headers: Record<string, string> = {};
             await hooks["chat.headers"]?.({ sessionID: "ses_child" }, { headers });
-            assert.equal(headers["x-bili-plugin-conversation"], "ses_child");
+            assert.equal(headers["x-sigma-plugin-conversation"], "ses_child");
             await waitFor("register", () => proxy.registers.length >= 1);
             assert.deepEqual(proxy.registers[0], { conversationId: "ses_child", agent: "opencode", identity: true, parentConversationId: "ses_parent" });
             await hooks["chat.headers"]?.({ sessionID: "ses_child" }, { headers: {} });
@@ -621,7 +621,7 @@ describe("derived-session inheritance report (#1362)", () => {
             const hooks = createV1ServerHooks(() => proxy.origin, { client }, v1Deps({ isLegacy: () => true }));
             const headers: Record<string, string> = {};
             await hooks["chat.headers"]?.({ sessionID: "ses_legacy" }, { headers });
-            assert.equal(headers["x-bili-plugin-bypass"], "1");
+            assert.equal(headers["x-sigma-plugin-bypass"], "1");
             await new Promise((r) => setTimeout(r, 50));
             assert.equal(gets, 0, "session.get never consulted for legacy traffic");
             assert.deepEqual(proxy.registers, []);

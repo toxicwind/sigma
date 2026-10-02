@@ -187,7 +187,7 @@ async function runForkScenario(forkAdoption: boolean): Promise<{ parentBlocks: n
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${relayPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${relayPort}/v1/chat/completions`;
 
     const history: ChatMsg[] = [];
     const preExisting = new Set(listSessions().map((s) => s.id));

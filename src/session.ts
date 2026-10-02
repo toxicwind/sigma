@@ -296,7 +296,7 @@ export function effectiveConfig(session: Session | undefined, fallback: Config):
 const sessions = new Map<string, Session>();
 
 // `|| 256` only catches falsy (0/NaN); Math.max(1, ...) also rejects negatives.
-let MAX_SESSIONS = Math.max(1, Number.parseInt(process.env.BILI_MAX_SESSIONS ?? "256", 10) || 256);
+let MAX_SESSIONS = Math.max(1, Number.parseInt(process.env.SIGMA_MAX_SESSIONS ?? "256", 10) || 256);
 
 let initialized = false;
 
@@ -434,7 +434,7 @@ export function peekSession(id: string): Session | undefined {
 
 // #1086: does THIS instance hold processed compression state for the given
 // conversation? Memory first, then the persisted record (covers the
-// auto-update restart: memory is gone, disk state survives). A bili instance
+// auto-update restart: memory is gone, disk state survives). A sigma instance
 // only ever creates a session record when it PROCESSED the request, so
 // "record exists" ⇒ "the ACP artifacts this client re-sends are ours" — the
 // exemption the chain-detection content fallback needs before passing a

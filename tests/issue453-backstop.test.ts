@@ -123,7 +123,7 @@ async function drive(o: DriveOpts): Promise<{ turn2Body: Record<string, unknown>
     const pPort = (proxy.address() as { port: number }).port;
 
     try {
-        const url = `http://127.0.0.1:${pPort}/bili/http://127.0.0.1:${upPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${pPort}/sigma/http://127.0.0.1:${upPort}/v1/chat/completions`;
         const headers = { "content-type": "application/json", "x-acp-session": o.sessionId, ...(o.extraHeaders ?? {}) };
         const r1 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: "m", max_tokens: 20_000, messages: [{ role: "user", content: "hello" }] }) });
         assert.equal(r1.status, 200);

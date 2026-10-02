@@ -40,9 +40,9 @@ jobs:
             echo "version=$REQ" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          CUR="$(npm view billion-context version)"
+          CUR="$(npm view sigma version)"
           if [ -z "$CUR" ]; then
-            echo "::error::cannot read the npm latest version of billion-context"
+            echo "::error::cannot read the npm latest version of sigma"
             exit 1
           fi
           V="$(node -p 'const p = process.argv[1].split("-")[0].split("."); p[2] = String(Number(p[2]) + 1); p.join(".")' "$CUR")"
@@ -52,7 +52,7 @@ jobs:
       - name: Drift guard
         run: |
           MASTER_V="$(node -p "require('./package.json').version")"
-          NPM_V="$(npm view billion-context version)"
+          NPM_V="$(npm view sigma version)"
           if [ "$MASTER_V" != "$NPM_V" ]; then
             echo "::error::master package.json ($MASTER_V) != npm latest ($NPM_V). Sync master with the last published release before one-click releasing."
             exit 1

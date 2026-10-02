@@ -11,7 +11,7 @@ import http from "node:http";
 import { once } from "node:events";
 
 process.env.NODE_ENV = "test";
-process.env.BILI_PERSIST = "0";
+process.env.SIGMA_PERSIST = "0";
 
 import { defaultConfig, type Config } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -179,8 +179,8 @@ async function closeRig(rig: Rig): Promise<void> {
 
 async function post(rig: Rig, convId: string, pluginMode: boolean, messages: unknown[]): Promise<void> {
     const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": convId };
-    if (pluginMode) headers["x-bili-plugin"] = "test-agent";
-    const res = await fetch(`http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/chat/completions`, {
+    if (pluginMode) headers["x-sigma-plugin"] = "test-agent";
+    const res = await fetch(`http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/chat/completions`, {
         method: "POST",
         headers,
         body: JSON.stringify({ model: MODEL, max_tokens: 64_000, messages }),

@@ -68,7 +68,7 @@ test("e2e: fallback-derived window is floored at 100k after output-headroom rese
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const headers = { "content-type": "application/json", "x-acp-session": "floor-sess" };
 
         // Turn 1: teaches the session its real context size (50k input tokens
@@ -165,7 +165,7 @@ test("e2e: per-route context declaration is operator-owned and never floored", a
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const headers = { "content-type": "application/json", "x-acp-session": "floor-sess-2" };
 
         const r1 = await fetch(url, {

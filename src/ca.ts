@@ -7,7 +7,7 @@ import { caDir } from "./paths.js";
 const ROOT_CERT_FILE = "root-ca.pem";
 const ROOT_KEY_FILE = "root-ca-key.pem";
 const COMBINED_CA_FILE = "combined-ca.pem";
-const ROOT_CN = "billion-context MITM Root CA";
+const ROOT_CN = "sigma MITM Root CA";
 
 /** First readable candidate wins per platform; Node's Mozilla root set is
  *  always merged in, which is ALSO the only root source on Windows (no
@@ -92,7 +92,7 @@ function generateRootCA(): { cert: string; key: string } {
     cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
     const attrs = [
         { name: "commonName", value: ROOT_CN },
-        { name: "organizationName", value: "billion-context" },
+        { name: "organizationName", value: "sigma" },
     ];
     cert.setSubject(attrs);
     cert.setIssuer(attrs);

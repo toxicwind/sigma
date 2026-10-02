@@ -13,7 +13,7 @@ import {
 } from "../src/codex-models.ts";
 
 // #321 PR-E1: codex carries its own window perception (bundled model table +
-// 272K unknown-model fallback) and auto-compacts at 90% of it. bili must cap
+// 272K unknown-model fallback) and auto-compacts at 90% of it. sigma must cap
 // a codex client's effective window at that perception, or codex's native
 // compaction fires first (the #292 misalignment).
 
@@ -62,11 +62,11 @@ test("isCodexClient: UA prefixes codex_cli_rs/ and codex_exec/", () => {
 test("codexAlignedWindow: min() semantics per acceptance (in-table / not-in-table / user override)", () => {
     const codex = { "user-agent": CODEX_UA };
     const other = { "user-agent": "node-fetch/3.1" };
-    // in-table: bili 400K (built-in table) → clamped to codex's 272K
+    // in-table: sigma 400K (built-in table) → clamped to codex's 272K
     assert.deepEqual(codexAlignedWindow(400_000, "gpt-5.5", codex), { limit: 272_000, clamped: true });
-    // not-in-table: bili 1M → clamped to the 272K fallback
+    // not-in-table: sigma 1M → clamped to the 272K fallback
     assert.deepEqual(codexAlignedWindow(1_000_000, "qwen3.8-27b", codex), { limit: 272_000, clamped: true });
-    // bili below perception: untouched (min keeps bili's)
+    // sigma below perception: untouched (min keeps sigma's)
     assert.deepEqual(codexAlignedWindow(200_000, "gpt-5.5", codex), { limit: 200_000, clamped: false });
     // equal: untouched
     assert.deepEqual(codexAlignedWindow(272_000, "gpt-5.5", codex), { limit: 272_000, clamped: false });

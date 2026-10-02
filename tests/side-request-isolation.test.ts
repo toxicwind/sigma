@@ -280,7 +280,7 @@ test("e2e: side request response still gets render-tag stripping (#460 contract)
     const CLOSE_MARK = `${LT}/acp${GT}`;
     const rig = await startRig();
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
         // Main request first so the session has a real view.
         const r1 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 1024, stream: true, messages: mainConversation(8) }) });
@@ -310,7 +310,7 @@ test("e2e: side request response still gets render-tag stripping (#460 contract)
 test("e2e: anthropic side request (title-gen) leaves main session kernel state untouched", async () => {
     const rig = await startRig();
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // Main request 1: a normal turn (large max_tokens) → kernel state mutates.
@@ -339,7 +339,7 @@ test("e2e: anthropic side request (title-gen) leaves main session kernel state u
         assert.ok(s2, "session still exists after the side request");
         assert.equal(JSON.stringify(s2.state), stateAfterMain1, "side request must NOT mutate kernel state (refs / survivedCount / nudge baseline)");
         assert.equal(JSON.stringify(s2.stats), statsAfterMain1, "side request must NOT mutate stats");
-        assert.equal(JSON.stringify(s2.lastMessages), snapshotAfterMain1, "side request must NOT clobber the message snapshot (bili export view)");
+        assert.equal(JSON.stringify(s2.lastMessages), snapshotAfterMain1, "side request must NOT clobber the message snapshot (sigma export view)");
         assert.equal(s2.stats.lastInputTokens, MAIN_INPUT_TOKENS, "side request's tiny usage must NOT overwrite the main nudge baseline");
         assert.equal(s2.stats.requests, requestsAfterMain1, "side request must NOT increment the main request counter");
 
@@ -360,7 +360,7 @@ test("e2e: anthropic side request (title-gen) leaves main session kernel state u
 test("e2e: starved tool-carrying main request re-enters pipeline at restored budget (#546)", async () => {
     const rig = await startRig();
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
         const tools = [{ name: "compress", description: "compress", input_schema: { type: "object", properties: {} } }];
 
@@ -402,7 +402,7 @@ test("e2e: starved tool-carrying main request re-enters pipeline at restored bud
 test("e2e: oversized side request is blocked locally (413), never reaches the upstream (#554)", async () => {
     const rig = await startRig({ modelContextLimit: 4_000, compressModelContextLimit: 4_000 });
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // ~40 × ~130 tokens ≈ 5k+ > 4_000 window → guaranteed upstream 400 if forwarded.
@@ -434,7 +434,7 @@ test("e2e: oversized side request is blocked locally (413), never reaches the up
 test("e2e: overflow 400 on a side request arms the stated window; next one is blocked locally (#554)", async () => {
     const rig = await startRig(); // 200_000 configured window
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // ~1200 × ~130 ≈ 155k tokens: below the 200k configured window (so the
@@ -469,7 +469,7 @@ test("e2e: overflow 400 on a side request arms the stated window; next one is bl
 test("e2e: healthy host baseline must NOT clamp an unrelated side request (#1110)", async () => {
     const rig = await startRig(); // declared window 200_000
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // Host conversation active and healthy: one normal main turn whose real
@@ -517,7 +517,7 @@ test("e2e: healthy host baseline must NOT clamp an unrelated side request (#1110
 test("e2e: real usage report RETIRES the overflow arm — the blocked side request forwards again (#1129)", async () => {
     const rig = await startRig(); // declared window 200_000
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // 1) ARM — same shape as the #554 arm test: ~155k payload fits the
@@ -566,12 +566,12 @@ test("e2e: the overflow arm survives a restart round-trip; usage after reload re
     // Restart shape: armed session flushed to disk, memory cleared, a FRESH
     // store instance over the same dir (process restart). The arm must still
     // block locally after reload, and a real usage report must still release it.
-    const dir = mkdtempSync(join(tmpdir(), "bili-side-arm-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-side-arm-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     let store2: SessionStore | null = null;
     const rig = await startRig({ store });
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
         const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
 
         // ARM: overflow 400 → arm at the stated 120k.

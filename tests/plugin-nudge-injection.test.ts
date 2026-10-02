@@ -88,7 +88,7 @@ async function forwardedTurn2Length(sessionId: string, extraHeaders: Record<stri
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const headers = { "content-type": "application/json", "x-acp-session": sessionId, ...extraHeaders };
 
         // Turn 1 teaches the session its real context size (50k via usage report).
@@ -126,6 +126,6 @@ test("#451 control: nudge injected in PROXY mode when armed", async () => {
 });
 
 test("#451: nudge ALSO injected in PLUGIN mode when armed (regression)", async () => {
-    const len = await forwardedTurn2Length("nudge-plugin", { "x-bili-plugin": "omp" });
+    const len = await forwardedTurn2Length("nudge-plugin", { "x-sigma-plugin": "omp" });
     assert.equal(len, 31, "plugin mode must append the nudge too — before the fix the !pluginMode gate suppressed it and this would be 30");
 });

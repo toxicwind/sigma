@@ -1,15 +1,15 @@
 // Unified wire-contract gate (#1304 item 3). Consolidates:
 //   - tests/kernel-pin-wire-schema.test.ts (#1302, kernel-export layer)
-//   - tests/issue1299-anthropic-top-level.test.ts (#1301, bili served-surface layer)
+//   - tests/issue1299-anthropic-top-level.test.ts (#1301, sigma served-surface layer)
 // into one module with four layers:
 //   A. kernel exports — every tool constant the pinned acp-kernel ships, per wire
-//   B. bili surfaces — everything bili itself builds/serves (BILI_* tools, synthesized
+//   B. sigma surfaces — everything sigma itself builds/serves (SIGMA_* tools, synthesized
 //      variants, retrieveToolsFor, IMAGE_FULL_TOOL_GOOGLE)
 //   C. plugin manifest — what handlePluginManifest advertises (default + opt-in configs)
 //   D. live forward matrix — scripted client request -> proxy -> validation-parity fake
 //      upstream, one lane per protocol (item 1 + item 4 phase (a)): the forwarded body
 //      must be ACCEPTED by the fake (it enforces the real upstream's strictest known
-//      validation) and must carry exactly the tools bili intends to serve.
+//      validation) and must carry exactly the tools sigma intends to serve.
 //
 // Rule provenance lives in WIRE_RULES (tests/wire-contract-fakes.ts). Institutional
 // rule (AGENTS.md "Wire-constraint ledger"): every new upstream rejection or documented
@@ -31,19 +31,19 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { handlePluginManifest } from "../src/plugin.ts";
 import {
-    BILI_ACP_TOOLS_ANTHROPIC,
-    BILI_ACP_TOOLS_OPENAI,
-    BILI_ACP_TOOLS_RESPONSES,
-    BILI_ACP_TOOLS_GOOGLE,
-    BILI_ACP_READONLY_TOOLS_RESPONSES,
-    BILI_SEARCH_CONTEXT_TOOL,
-    BILI_SEARCH_CONTEXT_TOOL_OPENAI,
-    BILI_SEARCH_CONTEXT_TOOL_RESPONSES,
-    BILI_SEARCH_CONTEXT_TOOL_GOOGLE,
-    BILI_DECOMPRESS_TOOL,
-    BILI_DECOMPRESS_TOOL_OPENAI,
-    BILI_DECOMPRESS_TOOL_RESPONSES,
-    BILI_DECOMPRESS_TOOL_GOOGLE,
+    SIGMA_ACP_TOOLS_ANTHROPIC,
+    SIGMA_ACP_TOOLS_OPENAI,
+    SIGMA_ACP_TOOLS_RESPONSES,
+    SIGMA_ACP_TOOLS_GOOGLE,
+    SIGMA_ACP_READONLY_TOOLS_RESPONSES,
+    SIGMA_SEARCH_CONTEXT_TOOL,
+    SIGMA_SEARCH_CONTEXT_TOOL_OPENAI,
+    SIGMA_SEARCH_CONTEXT_TOOL_RESPONSES,
+    SIGMA_SEARCH_CONTEXT_TOOL_GOOGLE,
+    SIGMA_DECOMPRESS_TOOL,
+    SIGMA_DECOMPRESS_TOOL_OPENAI,
+    SIGMA_DECOMPRESS_TOOL_RESPONSES,
+    SIGMA_DECOMPRESS_TOOL_GOOGLE,
     ABSORB_TOOL_RESPONSES,
     RULE_TOOL,
     RULE_TOOL_OPENAI,
@@ -158,56 +158,56 @@ test("wire-contract A: every kernel-exported tool passes its wire validator", ()
 });
 
 // ---------------------------------------------------------------------------
-// Layer B: bili surfaces (supersedes tests/issue1299-anthropic-top-level.test.ts #1301)
+// Layer B: sigma surfaces (supersedes tests/issue1299-anthropic-top-level.test.ts #1301)
 // ---------------------------------------------------------------------------
 
-const BILI_ARRAYS: Array<[string, Wire]> = [
-    ["BILI_ACP_TOOLS_ANTHROPIC", "anthropic"],
-    ["BILI_ACP_TOOLS_OPENAI", "openai-chat"],
-    ["BILI_ACP_TOOLS_RESPONSES", "responses"],
-    ["BILI_ACP_TOOLS_GOOGLE", "google"],
-    ["BILI_ACP_READONLY_TOOLS_RESPONSES", "responses"],
+const SIGMA_ARRAYS: Array<[string, Wire]> = [
+    ["SIGMA_ACP_TOOLS_ANTHROPIC", "anthropic"],
+    ["SIGMA_ACP_TOOLS_OPENAI", "openai-chat"],
+    ["SIGMA_ACP_TOOLS_RESPONSES", "responses"],
+    ["SIGMA_ACP_TOOLS_GOOGLE", "google"],
+    ["SIGMA_ACP_READONLY_TOOLS_RESPONSES", "responses"],
 ];
 
-const BILI_INDIVIDUALS: Array<[string, Wire]> = [
-    ["BILI_SEARCH_CONTEXT_TOOL", "anthropic"], ["BILI_SEARCH_CONTEXT_TOOL_OPENAI", "openai-chat"], ["BILI_SEARCH_CONTEXT_TOOL_RESPONSES", "responses"], ["BILI_SEARCH_CONTEXT_TOOL_GOOGLE", "google"],
-    ["BILI_DECOMPRESS_TOOL", "anthropic"], ["BILI_DECOMPRESS_TOOL_OPENAI", "openai-chat"], ["BILI_DECOMPRESS_TOOL_RESPONSES", "responses"], ["BILI_DECOMPRESS_TOOL_GOOGLE", "google"],
+const SIGMA_INDIVIDUALS: Array<[string, Wire]> = [
+    ["SIGMA_SEARCH_CONTEXT_TOOL", "anthropic"], ["SIGMA_SEARCH_CONTEXT_TOOL_OPENAI", "openai-chat"], ["SIGMA_SEARCH_CONTEXT_TOOL_RESPONSES", "responses"], ["SIGMA_SEARCH_CONTEXT_TOOL_GOOGLE", "google"],
+    ["SIGMA_DECOMPRESS_TOOL", "anthropic"], ["SIGMA_DECOMPRESS_TOOL_OPENAI", "openai-chat"], ["SIGMA_DECOMPRESS_TOOL_RESPONSES", "responses"], ["SIGMA_DECOMPRESS_TOOL_GOOGLE", "google"],
     ["ABSORB_TOOL_RESPONSES", "responses"],
     ["RULE_TOOL", "anthropic"], ["RULE_TOOL_OPENAI", "openai-chat"], ["RULE_TOOL_RESPONSES", "responses"], ["RULE_TOOL_GOOGLE", "google"],
     ["IMAGE_FULL_TOOL_GOOGLE", "google"],
 ];
 
-const BILI_CONSTANTS: Record<string, unknown> = {
-    BILI_ACP_TOOLS_ANTHROPIC, BILI_ACP_TOOLS_OPENAI, BILI_ACP_TOOLS_RESPONSES, BILI_ACP_TOOLS_GOOGLE, BILI_ACP_READONLY_TOOLS_RESPONSES,
-    BILI_SEARCH_CONTEXT_TOOL, BILI_SEARCH_CONTEXT_TOOL_OPENAI, BILI_SEARCH_CONTEXT_TOOL_RESPONSES, BILI_SEARCH_CONTEXT_TOOL_GOOGLE,
-    BILI_DECOMPRESS_TOOL, BILI_DECOMPRESS_TOOL_OPENAI, BILI_DECOMPRESS_TOOL_RESPONSES, BILI_DECOMPRESS_TOOL_GOOGLE,
+const SIGMA_CONSTANTS: Record<string, unknown> = {
+    SIGMA_ACP_TOOLS_ANTHROPIC, SIGMA_ACP_TOOLS_OPENAI, SIGMA_ACP_TOOLS_RESPONSES, SIGMA_ACP_TOOLS_GOOGLE, SIGMA_ACP_READONLY_TOOLS_RESPONSES,
+    SIGMA_SEARCH_CONTEXT_TOOL, SIGMA_SEARCH_CONTEXT_TOOL_OPENAI, SIGMA_SEARCH_CONTEXT_TOOL_RESPONSES, SIGMA_SEARCH_CONTEXT_TOOL_GOOGLE,
+    SIGMA_DECOMPRESS_TOOL, SIGMA_DECOMPRESS_TOOL_OPENAI, SIGMA_DECOMPRESS_TOOL_RESPONSES, SIGMA_DECOMPRESS_TOOL_GOOGLE,
     ABSORB_TOOL_RESPONSES, RULE_TOOL, RULE_TOOL_OPENAI, RULE_TOOL_RESPONSES, RULE_TOOL_GOOGLE, IMAGE_FULL_TOOL_GOOGLE,
     RETRIEVE_TOOLS: retrieveToolsFor("acp_retrieve"),
 };
 
-test("wire-contract B: every bili-built tool surface passes its wire validator", () => {
+test("wire-contract B: every sigma-built tool surface passes its wire validator", () => {
     const failures: string[] = [];
-    for (const [constName, wire] of BILI_ARRAYS) {
-        const arr = BILI_CONSTANTS[constName] as ToolShape[];
+    for (const [constName, wire] of SIGMA_ARRAYS) {
+        const arr = SIGMA_CONSTANTS[constName] as ToolShape[];
         for (const t of arr) {
             failures.push(...VALIDATORS[wire](syntheticBody(wire, t)).map((s) => `${constName}[${toolNameOf(wire, t) ?? "?"}]: ${s}`));
         }
     }
-    for (const [constName, wire] of BILI_INDIVIDUALS) {
-        const t = BILI_CONSTANTS[constName] as ToolShape;
+    for (const [constName, wire] of SIGMA_INDIVIDUALS) {
+        const t = SIGMA_CONSTANTS[constName] as ToolShape;
         failures.push(...VALIDATORS[wire](syntheticBody(wire, t)).map((s) => `${constName}: ${s}`));
     }
     // retrieveToolsFor keys are {anthropic, openai, responses, google} — map onto this module's Wire names.
-    const r = BILI_CONSTANTS.RETRIEVE_TOOLS as { anthropic: ToolShape; openai: ToolShape; responses: ToolShape; google: ToolShape };
+    const r = SIGMA_CONSTANTS.RETRIEVE_TOOLS as { anthropic: ToolShape; openai: ToolShape; responses: ToolShape; google: ToolShape };
     const retrieve: [Wire, ToolShape][] = [["anthropic", r.anthropic], ["openai-chat", r.openai], ["responses", r.responses], ["google", r.google]];
     for (const [wire, t] of retrieve) {
         failures.push(...VALIDATORS[wire](syntheticBody(wire, t)).map((s) => `retrieveToolsFor(acp_retrieve).${wire}: ${s}`));
     }
-    assert.equal(failures.length, 0, `bili serves wire-illegal tool schemas:\n${failures.join("\n")}`);
+    assert.equal(failures.length, 0, `sigma serves wire-illegal tool schemas:\n${failures.join("\n")}`);
 });
 
 test("wire-contract B: compress keeps every advertised call-form property", () => {
-    const compress = BILI_ACP_TOOLS_ANTHROPIC.find((t) => t.name === "compress") as ToolShape;
+    const compress = SIGMA_ACP_TOOLS_ANTHROPIC.find((t) => t.name === "compress") as ToolShape;
     assertCompressFormsKept(compress, "served");
 });
 
@@ -246,7 +246,7 @@ test("wire-contract C: default manifest serves only legal base tools", () => {
     const m = captureManifest(defaultConfig(100_000));
     assertManifestLegal(m, "default");
     const anthNames = new Set(m.tools.anthropic.map((t) => t.name));
-    for (const n of BILI_ACP_TOOLS_ANTHROPIC.map((t) => t.name)) assert.ok(anthNames.has(n), `default manifest: base tool ${n} present`);
+    for (const n of SIGMA_ACP_TOOLS_ANTHROPIC.map((t) => t.name)) assert.ok(anthNames.has(n), `default manifest: base tool ${n} present`);
     for (const optIn of ["absorb", "acp_retrieve"]) assert.ok(!anthNames.has(optIn), `default manifest: ${optIn} absent when disabled (#1192)`);
     assert.ok(!anthNames.has("acp_rule"), "default manifest: acp_rule absent — opt-in like absorb (#1192 discipline)");
     const offM = captureManifest({ ...defaultConfig(100_000), rules: { enabled: false } });
@@ -327,10 +327,10 @@ const LANES: Lane[] = [
 // #1399: acp_rule is part of the default injected surface on every wire, so
 // it joins the base expectation here (opt-in lanes below no longer add it).
 const BASE_EXPECTED: Record<Wire, string[]> = {
-    anthropic: BILI_ACP_TOOLS_ANTHROPIC.map((t) => t.name),
-    "openai-chat": BILI_ACP_TOOLS_OPENAI.map((t) => t.function.name),
-    responses: BILI_ACP_TOOLS_RESPONSES.map((t) => t.name),
-    google: BILI_ACP_TOOLS_GOOGLE.map((t) => t.name),
+    anthropic: SIGMA_ACP_TOOLS_ANTHROPIC.map((t) => t.name),
+    "openai-chat": SIGMA_ACP_TOOLS_OPENAI.map((t) => t.function.name),
+    responses: SIGMA_ACP_TOOLS_RESPONSES.map((t) => t.name),
+    google: SIGMA_ACP_TOOLS_GOOGLE.map((t) => t.name),
 };
 
 function extractForwardedNames(wire: Wire, body: unknown): string[] {
@@ -353,7 +353,7 @@ interface Rig {
     close(): Promise<void>;
 }
 
-// Opt-in features arm through bili's CompressSettings namespace (`opts.compress`),
+// Opt-in features arm through sigma's CompressSettings namespace (`opts.compress`),
 // resolved per request by resolveCompress + applyCompressSettings — not through
 // the raw kernelConfig (server.ts stamps effectiveCcr from compressCfg.ccr only).
 async function startRig(fakeUrl: string, model: string, compressOverrides: Record<string, unknown>): Promise<Rig> {
@@ -383,7 +383,7 @@ async function startRig(fakeUrl: string, model: string, compressOverrides: Recor
     await once(proxy, "listening");
     const port = (proxy.address() as { port: number }).port;
     return {
-        proxyUrl: `http://127.0.0.1:${port}/bili/${fakeUrl}`,
+        proxyUrl: `http://127.0.0.1:${port}/sigma/${fakeUrl}`,
         close: () => new Promise<void>((resolve, reject) => proxy.close((e) => (e ? reject(e) : resolve()))),
     };
 }
@@ -408,7 +408,7 @@ for (const lane of LANES) {
 
             const fwdNames = extractForwardedNames(lane.wire, fake.requests[0].body);
             const expected = [...BASE_EXPECTED[lane.wire], ...lane.clientToolNames].sort();
-            assert.deepEqual(fwdNames.sort(), expected, `${lane.wire}: forwarded tool set is exactly bili's intended surface (+ client tools)`);
+            assert.deepEqual(fwdNames.sort(), expected, `${lane.wire}: forwarded tool set is exactly sigma's intended surface (+ client tools)`);
         } finally {
             if (rig) await rig.close();
             await fake.close();

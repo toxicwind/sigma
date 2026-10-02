@@ -2,10 +2,10 @@
 /** Refresh src/codex-models-snapshot.json from openai/codex (main branch).
 
 The snapshot is the SLIM form of codex's bundled model table
-(codex-rs/models-manager/models.json) — only the fields bili consumes for
+(codex-rs/models-manager/models.json) — only the fields sigma consumes for
 budget alignment (#321 PR-E1): slug, contextWindow, maxContextWindow, and the
 optional autoCompactTokenLimit / effectiveContextWindowPercent. The full
-upstream file is ~424KB of tool/modality metadata bili never reads; the slim
+upstream file is ~424KB of tool/modality metadata sigma never reads; the slim
 form keeps the bundle small and the contract explicit.
 
 Run manually or before a release:

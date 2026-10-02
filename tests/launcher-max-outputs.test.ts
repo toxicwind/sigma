@@ -8,7 +8,7 @@ process.env.NODE_ENV = "test";
 
 // Set before the dynamic imports below: context-window.ts freezes
 // LAUNCHER_MODEL_MAX_OUTPUTS at module load (mirrors LAUNCHER_MODEL_WINDOWS).
-process.env.BILI_LAUNCHER_MODEL_MAX_OUTPUTS = JSON.stringify({
+process.env.SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS = JSON.stringify({
     "headroom-launch-model": 80_000,
     "headroom-rank-model": 10_000,
 });

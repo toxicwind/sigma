@@ -11,7 +11,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { listSessions } from "../src/session.ts";
 
-// #1339 track: claude-bridge (Claude Code behind the bili proxy) end-to-end
+// #1339 track: claude-bridge (Claude Code behind the sigma proxy) end-to-end
 // health on the anthropic wire. Three confirmations, per the tracking issue:
 //   1. compression takes effect on bridge/CC traffic: a compress tool_use
 //      round-trip actually removes the folded content from the next forwarded
@@ -22,7 +22,7 @@ import { listSessions } from "../src/session.ts";
 //   3. without the beta header the same traffic must still never hit a LOCAL
 //      refusal — the upstream arbitrates. (The never-compressed EMERGENCY
 //      differential at 131% of 200K is pinned by tests/anthropic-beta-window
-//      .test.ts on the same /bili/http lane; after a fold the kernel's
+//      .test.ts on the same /sigma/http lane; after a fold the kernel's
 //      decideNudge pressure gate stays silent BY DESIGN because no
 //      compressible content is pending — acp-kernel dist decideNudge,
 //      `bestPending >= minPressureBenefit`.)
@@ -111,7 +111,7 @@ async function startRig(): Promise<Rig> {
 }
 
 function url(rig: Rig): string {
-    return `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+    return `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
 }
 
 function round1Script(opts: { compress: boolean; usage?: { input_tokens: number } }): string[] {

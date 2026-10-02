@@ -187,21 +187,21 @@ test("viewFromParsed: envelope v3, legacy flat, corrupt input", () => {
 
 test("gcConfigFromEnv: disabled by default, opt-in only", async () => {
     await withEnv(
-        { BILI_SESSION_GC: undefined, BILI_SESSION_GC_MAX_AGE_DAYS: undefined, BILI_SESSION_GC_MAX_TOKENS: undefined, BILI_SESSION_GC_INTERVAL_MS: undefined },
+        { SIGMA_SESSION_GC: undefined, SIGMA_SESSION_GC_MAX_AGE_DAYS: undefined, SIGMA_SESSION_GC_MAX_TOKENS: undefined, SIGMA_SESSION_GC_INTERVAL_MS: undefined },
         async () => {
             const def = gcConfigFromEnv();
             assert.deepEqual(def, { enabled: false, maxAgeMs: 7 * DAY, maxTokens: 1_000_000, intervalMs: 3_600_000 });
             for (const on of ["1", "true", "ON"]) {
-                await withEnv({ BILI_SESSION_GC: on }, async () => {
+                await withEnv({ SIGMA_SESSION_GC: on }, async () => {
                     assert.equal(gcConfigFromEnv().enabled, true, `${on} enables`);
                 });
             }
             for (const off of ["0", "false", "off", "garbage"]) {
-                await withEnv({ BILI_SESSION_GC: off }, async () => {
+                await withEnv({ SIGMA_SESSION_GC: off }, async () => {
                     assert.equal(gcConfigFromEnv().enabled, false, `${off} does not enable`);
                 });
             }
-            await withEnv({ BILI_SESSION_GC_MAX_AGE_DAYS: "30", BILI_SESSION_GC_MAX_TOKENS: "abc", BILI_SESSION_GC_INTERVAL_MS: "60000" }, async () => {
+            await withEnv({ SIGMA_SESSION_GC_MAX_AGE_DAYS: "30", SIGMA_SESSION_GC_MAX_TOKENS: "abc", SIGMA_SESSION_GC_INTERVAL_MS: "60000" }, async () => {
                 const c = gcConfigFromEnv();
                 assert.equal(c.maxAgeMs, 30 * DAY);
                 assert.equal(c.maxTokens, 1_000_000, "invalid tokens falls back to default");
@@ -212,8 +212,8 @@ test("gcConfigFromEnv: disabled by default, opt-in only", async () => {
 });
 
 test("gcSessionFiles: deletes old small files, keeps recent/large/compressed/corrupt, ignores temps", async () => {
-    const dir = tmpDir("bili-gc-sweep-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-sweep-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const oldSavedAt = Date.now() - 10 * DAY;
         const fDel = writeFile(dir, "anthropic/host_del.json", JSON.stringify(envelope("gc-del", oldSavedAt, { metadata: { rawInputTokens: 5000 } })), 10);
@@ -245,26 +245,26 @@ test("gcSessionFiles: deletes old small files, keeps recent/large/compressed/cor
 });
 
 test("gcSessionFiles: disabled unless explicitly enabled (opt-in)", async () => {
-    const dir = tmpDir("bili-gc-off-");
+    const dir = tmpDir("sigma-gc-off-");
     const store = new SessionStore({ dir, debounceMs: 500 });
     const oldSavedAt = Date.now() - 10 * DAY;
     const fDel = writeFile(dir, "anthropic/host_off.json", JSON.stringify(envelope("gc-off", oldSavedAt, { metadata: { rawInputTokens: 5000 } })), 10);
-    await withEnv({ BILI_SESSION_GC: undefined }, async () => {
+    await withEnv({ SIGMA_SESSION_GC: undefined }, async () => {
         const res = await gcSessionFiles({ dir, store, now: Date.now() });
         assert.equal(res.removed, 0, "unset env → disabled by default");
         assert.ok(existsSync(fDel));
     });
-    await withEnv({ BILI_SESSION_GC: "off" }, async () => {
+    await withEnv({ SIGMA_SESSION_GC: "off" }, async () => {
         const res = await gcSessionFiles({ dir, store, now: Date.now() });
         assert.equal(res.removed, 0, "explicit off → disabled");
         assert.ok(existsSync(fDel));
     });
 });
 
-test("gcSessionFiles: decodes encrypted (BILIENC1) files before judging eligibility", async () => {
+test("gcSessionFiles: decodes encrypted (SIGMAENC1) files before judging eligibility", async () => {
     const keyHex = "ab".repeat(32);
-    await withEnv({ BILI_ENCRYPTION_KEY: keyHex, BILI_SESSION_GC: "1" }, async () => {
-        const dir = tmpDir("bili-gc-enc-");
+    await withEnv({ SIGMA_ENCRYPTION_KEY: keyHex, SIGMA_SESSION_GC: "1" }, async () => {
+        const dir = tmpDir("sigma-gc-enc-");
         const store = new SessionStore({ dir, debounceMs: 500 });
         const codec = createStorageCodec({ key: parseEncryptionKey(keyHex) })!;
         const oldSavedAt = Date.now() - 10 * DAY;
@@ -277,19 +277,19 @@ test("gcSessionFiles: decodes encrypted (BILIENC1) files before judging eligibil
 
 test("readRawFile: format-agnostic — plain JSON parses, codec frames decode, garbage is null (GC keeps)", async () => {
     const keyHex = "cd".repeat(32);
-    await withEnv({ BILI_ENCRYPTION_KEY: keyHex, BILI_SESSION_GC: "1" }, async () => {
-        const dir = tmpDir("bili-gc-raw-");
+    await withEnv({ SIGMA_ENCRYPTION_KEY: keyHex, SIGMA_SESSION_GC: "1" }, async () => {
+        const dir = tmpDir("sigma-gc-raw-");
         const store = new SessionStore({ dir, debounceMs: 500 });
         const codec = createStorageCodec({ key: parseEncryptionKey(keyHex) })!;
 
         const plain = writeFile(dir, "anthropic/host_plain.json", JSON.stringify(envelope("gc-raw-plain", 1, {})), 10);
         const framed = writeFile(dir, "anthropic/host_framed.json", codec.encode(JSON.stringify(envelope("gc-raw-framed", 1, {}))), 10);
-        const garbage = writeFile(dir, "anthropic/host_garbage.json", "BILIZSTD1\u0000not-really-zstd", 10);
+        const garbage = writeFile(dir, "anthropic/host_garbage.json", "SIGMAZSTD1\u0000not-really-zstd", 10);
 
         const a = await store.readRawFile(plain);
         assert.ok(a && typeof a === "object", "plain JSON reads without codec framing");
         const b = await store.readRawFile(framed);
-        assert.ok(b && typeof b === "object", "codec-framed file decodes via fallback (any future frame, not just BILIENC1)");
+        assert.ok(b && typeof b === "object", "codec-framed file decodes via fallback (any future frame, not just SIGMAENC1)");
         const c = await store.readRawFile(garbage);
         assert.equal(c, null, "unknown frame that the codec cannot decode → null, never a wrong parse");
 
@@ -303,8 +303,8 @@ test("readRawFile: format-agnostic — plain JSON parses, codec frames decode, g
 });
 
 test("gcSessionFiles: resident fresh sessions are kept; idle residents are dropped and deleted", async () => {
-    const dir = tmpDir("bili-gc-res-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-res-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         _setStoreForTest(store);
         const oldSavedAt = Date.now() - 10 * DAY;
@@ -324,8 +324,8 @@ test("gcSessionFiles: resident fresh sessions are kept; idle residents are dropp
 });
 
 test("gcSessionFiles: pending in-memory saves are not deleted before they land", async () => {
-    const dir = tmpDir("bili-gc-pend-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-pend-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 60_000 });
         _setStoreForTest(store);
         const oldSavedAt = Date.now() - 10 * DAY;
@@ -341,8 +341,8 @@ test("gcSessionFiles: pending in-memory saves are not deleted before they land",
 });
 
 test("gcSessionFiles: stale CCR session co-deletes its content-store companion (#1180)", async () => {
-    const dir = tmpDir("bili-gc-crs-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-crs-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const oldSavedAt = Date.now() - 10 * DAY;
         const fSess = writeFile(dir, "anthropic/host_crs.json", JSON.stringify(envelope("gc-crs", oldSavedAt, { metadata: { rawInputTokens: 5000 } })), 10);
@@ -356,8 +356,8 @@ test("gcSessionFiles: stale CCR session co-deletes its content-store companion (
 });
 
 test("gcSessionFiles: live session keeps its companion even when the companion is old (#1180)", async () => {
-    const dir = tmpDir("bili-gc-live-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-live-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const fSess = writeFile(dir, "anthropic/host_live.json", JSON.stringify(envelope("gc-live", Date.now() - DAY, { metadata: { rawInputTokens: 5000 } })), 1);
         // Companion last written 10 days ago (long idle tail) but still referenced.
@@ -371,8 +371,8 @@ test("gcSessionFiles: live session keeps its companion even when the companion i
 });
 
 test("gcSessionFiles: companion in another namespace than its session is still referenced (#1180)", async () => {
-    const dir = tmpDir("bili-gc-xns-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-xns-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         // Session re-homed to the namespaced layout (meta fill-once) while a
         // store copy from before the move sits in _unknown/, aged out.
@@ -388,8 +388,8 @@ test("gcSessionFiles: companion in another namespace than its session is still r
 });
 
 test("gcSessionFiles: stale duplicate keeps its companion while a namespaced twin still relies on it (#1180)", async () => {
-    const dir = tmpDir("bili-gc-twin-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-twin-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         // Meta fill-once migrated the session _unknown/ -> namespaced without
         // cleaning the old path; the store was never re-saved since the move
@@ -410,8 +410,8 @@ test("gcSessionFiles: stale duplicate keeps its companion while a namespaced twi
 });
 
 test("gcSessionFiles: stale duplicate's companion IS co-deleted once the twin owns its own store (#1180)", async () => {
-    const dir = tmpDir("bili-gc-twinown-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-twinown-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         // The store was re-saved after the namespace move: the namespaced copy
         // shadows the flat one (loadContentStore stops at the first existing
@@ -432,8 +432,8 @@ test("gcSessionFiles: stale duplicate's companion IS co-deleted once the twin ow
 });
 
 test("gcSessionFiles: both copies eligible → whole session incl. its lone store is swept (#1180)", async () => {
-    const dir = tmpDir("bili-gc-twogone-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-twogone-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         // Both copies aged out; the lone store sits next to the flat duplicate.
         // Whichever copy is processed first, the sweep ends with everything
@@ -453,8 +453,8 @@ test("gcSessionFiles: both copies eligible → whole session incl. its lone stor
 });
 
 test("gcSessionFiles: orphaned content stores are swept once old, fresh ones kept (#1180)", async () => {
-    const dir = tmpDir("bili-gc-orph-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-orph-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const fOld = contentStoreFile(dir, "anthropic/host_orph_old.content-store.json", 8000, 10);
         const fFresh = contentStoreFile(dir, "anthropic/host_orph_fresh.content-store.json", 8000, 1);
@@ -467,8 +467,8 @@ test("gcSessionFiles: orphaned content stores are swept once old, fresh ones kep
 });
 
 test("gcSessionFiles: tiny session with a huge store does not slip under the token gate (#1180)", async () => {
-    const dir = tmpDir("bili-gc-hugestore-");
-    await withEnv({ BILI_SESSION_GC: "1", BILI_SESSION_GC_MAX_TOKENS: "1000" }, async () => {
+    const dir = tmpDir("sigma-gc-hugestore-");
+    await withEnv({ SIGMA_SESSION_GC: "1", SIGMA_SESSION_GC_MAX_TOKENS: "1000" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const oldSavedAt = Date.now() - 10 * DAY;
         const fSmall = writeFile(dir, "anthropic/host_small.json", JSON.stringify(envelope("gc-small", oldSavedAt, { metadata: { rawInputTokens: 500 } })), 10);
@@ -484,8 +484,8 @@ test("gcSessionFiles: tiny session with a huge store does not slip under the tok
 });
 
 test("gcSessionFiles: unreadable companion next to an eligible session keeps both (#1180)", async () => {
-    const dir = tmpDir("bili-gc-badcmp-");
-    await withEnv({ BILI_SESSION_GC: "1" }, async () => {
+    const dir = tmpDir("sigma-gc-badcmp-");
+    await withEnv({ SIGMA_SESSION_GC: "1" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 500 });
         const oldSavedAt = Date.now() - 10 * DAY;
         const fSess = writeFile(dir, "anthropic/host_badcmp.json", JSON.stringify(envelope("gc-badcmp", oldSavedAt, { metadata: { rawInputTokens: 5000 } })), 10);
@@ -499,8 +499,8 @@ test("gcSessionFiles: unreadable companion next to an eligible session keeps bot
 });
 
 test("records rawInputTokens per turn and persists it (#1082)", async () => {
-    const dir = tmpDir("bili-gc-rec-");
-    await withEnv({ BILI_SESSIONS_DIR: dir, BILI_SESSION_GC: "0" }, async () => {
+    const dir = tmpDir("sigma-gc-rec-");
+    await withEnv({ SIGMA_SESSIONS_DIR: dir, SIGMA_SESSION_GC: "0" }, async () => {
         const store = new SessionStore({ dir, debounceMs: 10 });
         _setStoreForTest(store);
         setRegistryForTest({});
@@ -546,7 +546,7 @@ test("records rawInputTokens per turn and persists it (#1082)", async () => {
         const proxyPort = (proxy.address() as { port: number }).port;
         try {
             const big = "x".repeat(5000);
-            const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+            const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
                 method: "POST",
                 headers: { "content-type": "application/json", "x-acp-session": "gc-rec-integration" },
                 body: JSON.stringify({ model: "gpt-test", messages: [{ role: "system", content: "sys" }, { role: "user", content: big }] }),
@@ -563,7 +563,7 @@ test("records rawInputTokens per turn and persists it (#1082)", async () => {
             // must not look cheap to the sweep.
             const png = "iVBORw0KGgo=" + "A".repeat(4000);
             const imgBody = { model: "gpt-test", messages: [{ role: "user", content: [{ type: "text", text: "look" }, { type: "image_url", image_url: { url: "data:image/png;base64," + png } }] }] };
-            const resp2 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+            const resp2 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
                 method: "POST",
                 headers: { "content-type": "application/json", "x-acp-session": "gc-rec-integration" },
                 body: JSON.stringify(imgBody),

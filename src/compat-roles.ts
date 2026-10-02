@@ -40,7 +40,7 @@ export function resolveCompatRoles(
  *  matched, so the default path stays byte-identical.
  *
  *  Applied at the FINAL forward boundary on purpose: every emission site —
- *  client-sent items, bili's injected compress prompt, instructions hoisting,
+ *  client-sent items, sigma's injected compress prompt, instructions hoisting,
  *  compress-loop items — is visible there, and the kernel already normalizes
  *  developer→system internally (session state / block IDs / prefix-cache are
  *  computed from pre-wire core messages), so only outbound bytes change. */

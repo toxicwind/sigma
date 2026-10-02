@@ -1,17 +1,17 @@
-// #1086: content fallback for bili→bili chain detection. When a middlebox
-// strips bili's x-bili-hop header, the only remaining signal that an upstream
-// bili instance already compressed the payload is the ACP artifacts inside
+// #1086: content fallback for sigma→sigma chain detection. When a middlebox
+// strips sigma's x-sigma-hop header, the only remaining signal that an upstream
+// sigma instance already compressed the payload is the ACP artifacts inside
 // the body itself: render tags (\x3cacp …\x3emNNNNN\x3c/acp\x3e) and the ACP
-// tool names (acp_status / search_context) that bili's own plugins register.
+// tool names (acp_status / search_context) that sigma's own plugins register.
 //
-// v0.1.133 (#1079) seeded this fallback on shapes bili PRODUCES for its own
+// v0.1.133 (#1079) seeded this fallback on shapes sigma PRODUCES for its own
 // clients — the client re-sends render tags verbatim, and the tool names sit
 // in the tools array of every plugin-mode request even when never called —
 // so a single-instance setup judged EVERY turn as a chain and the compression
 // kernel stopped running permanently (#1086). Two corrections:
 //   1. Tool names only count when they appear in HISTORY tool-call items
 //      (an actual prior invocation), never from the tools declaration array
-//      alone — declarations are the normal shape of a bili-managed client.
+//      alone — declarations are the normal shape of a sigma-managed client.
 //   2. The DECISION (pass-through vs process) happens in server.ts AFTER
 //      session identity is resolved: when THIS instance holds processed
 //      compression state for the session, the artifacts are self-produced
@@ -36,12 +36,12 @@ export function artifactSeedHit(body: Buffer): boolean {
  *  the legacy whole-buffer tag check can fire). Returns null when neither
  *  family is present.
  *
- *  #1197: the tags family scans HISTORY message content only. bili's
+ *  #1197: the tags family scans HISTORY message content only. sigma's
  *  compression artifacts (render tags, the re-voiced acp_summary, plugin
  *  compress tool results) always live in history items — never in the
  *  system/developer/instructions section. Tag-shaped text there is
  *  client-authored context (AGENTS.md/CLAUDE.md/README quoting the wire
- *  format — the billion-context repo itself carries literal examples) and
+ *  format — the sigma repo itself carries literal examples) and
  *  is not chain evidence. */
 export function detectAcpArtifacts(body: Buffer, parsed: unknown): AcpArtifactKind | null {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -104,8 +104,8 @@ function collectHistoryText(item: unknown, out: string[]): void {
  *  {type:"tool_use",name}, Responses input[] {type:"function_call",name},
  *  Gemini contents[].parts[].functionCall.name. The top-level `tools`
  *  declaration array is deliberately NOT scanned — a declaration without a
- *  historical call is the normal shape of a bili-managed client, not
- *  evidence of another bili instance (#1086 group E). Prose mentioning the
+ *  historical call is the normal shape of a sigma-managed client, not
+ *  evidence of another sigma instance (#1086 group E). Prose mentioning the
  *  names is likewise not counted. */
 function historyToolCallNames(parsed: Record<string, unknown>): Set<string> {
     const names = new Set<string>();

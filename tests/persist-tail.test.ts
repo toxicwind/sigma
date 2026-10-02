@@ -9,12 +9,12 @@ import { renderHandoff } from "../src/export.ts";
 import { createInitialState, defaultCountTokens } from "acp-kernel";
 
 // readRecord() inspects raw on-disk session files directly (bypassing the
-// store codec), so pin the plain-JSON format: #1080 made BILIZSTD1 the default.
-process.env.BILI_PERSIST_ZSTD = "0";
+// store codec), so pin the plain-JSON format: #1080 made SIGMAZSTD1 the default.
+process.env.SIGMA_PERSIST_ZSTD = "0";
 
 // #401: the persisted record stores a BOUNDED FOLDED-VIEW snapshot —
 // prune() renders summaries in place of folded ranges, then the oldest
-// messages are dropped until the view fits BILI_PERSIST_TAIL_TOKENS. The raw
+// messages are dropped until the view fits SIGMA_PERSIST_TAIL_TOKENS. The raw
 // full history (63.2% of the 258MB corpus) is no longer duplicated on disk.
 
 function makeSession(id: string): Session {
@@ -46,7 +46,7 @@ function withBlock(s: Session): void {
 }
 
 function readRecord(dir: string): Record<string, unknown> {
-    const proto = readdirSync(dir).find((d) => d !== ".bili-migration-286.done");
+    const proto = readdirSync(dir).find((d) => d !== ".sigma-migration-286.done");
     assert.ok(proto, "no protocol dir written");
     const file = readdirSync(path.join(dir, proto!)).find((f) => f.endsWith(".json"));
     assert.ok(file, "no session file written");
@@ -55,20 +55,20 @@ function readRecord(dir: string): Record<string, unknown> {
 }
 
 async function withTailEnv<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
-    const prev = process.env.BILI_PERSIST_TAIL_TOKENS;
-    if (value === undefined) delete process.env.BILI_PERSIST_TAIL_TOKENS;
-    else process.env.BILI_PERSIST_TAIL_TOKENS = value;
+    const prev = process.env.SIGMA_PERSIST_TAIL_TOKENS;
+    if (value === undefined) delete process.env.SIGMA_PERSIST_TAIL_TOKENS;
+    else process.env.SIGMA_PERSIST_TAIL_TOKENS = value;
     try {
         return await fn();
     } finally {
-        if (prev === undefined) delete process.env.BILI_PERSIST_TAIL_TOKENS;
-        else process.env.BILI_PERSIST_TAIL_TOKENS = prev;
+        if (prev === undefined) delete process.env.SIGMA_PERSIST_TAIL_TOKENS;
+        else process.env.SIGMA_PERSIST_TAIL_TOKENS = prev;
     }
 }
 
 test("#401 persisted messages are a folded snapshot: covered originals dropped, summary + tail kept", async () => {
     await withTailEnv(undefined, async () => {
-        const dir = mkdtempSync(path.join(tmpdir(), "bili-tail-"));
+        const dir = mkdtempSync(path.join(tmpdir(), "sigma-tail-"));
         try {
             const s = makeSession("tail-folded");
             withBlock(s);
@@ -99,7 +99,7 @@ test("#401 persisted messages are a folded snapshot: covered originals dropped, 
 
 test("#401 budget truncation keeps the newest whole messages and at least one survivor", async () => {
     await withTailEnv("50", async () => {
-        const dir = mkdtempSync(path.join(tmpdir(), "bili-tail-"));
+        const dir = mkdtempSync(path.join(tmpdir(), "sigma-tail-"));
         try {
             const s = makeSession("tail-trunc");
             const filler = "x".repeat(100); // defaultCountTokens heuristic: ~25-35 tokens per 100 chars
@@ -126,9 +126,9 @@ test("#401 budget truncation keeps the newest whole messages and at least one su
     });
 });
 
-test("#401 BILI_PERSIST_TAIL_TOKENS=0 disables message persistence entirely (v2-style record)", async () => {
+test("#401 SIGMA_PERSIST_TAIL_TOKENS=0 disables message persistence entirely (v2-style record)", async () => {
     await withTailEnv("0", async () => {
-        const dir = mkdtempSync(path.join(tmpdir(), "bili-tail-"));
+        const dir = mkdtempSync(path.join(tmpdir(), "sigma-tail-"));
         try {
             const s = makeSession("tail-off");
             withBlock(s);
@@ -157,7 +157,7 @@ test("#401 BILI_PERSIST_TAIL_TOKENS=0 disables message persistence entirely (v2-
 
 test("#401 restore + export: folded snapshot renders as-is (--full recovers originals from blockContents)", async () => {
     await withTailEnv(undefined, async () => {
-        const dir = mkdtempSync(path.join(tmpdir(), "bili-tail-"));
+        const dir = mkdtempSync(path.join(tmpdir(), "sigma-tail-"));
         try {
             const s = makeSession("tail-roundtrip");
             withBlock(s);

@@ -125,7 +125,7 @@ test("e2e: model switch to a smaller window → preflight compresses before forw
         const headers = { "content-type": "application/json", "x-acp-session": "preflight-sess" };
 
         // --- Request 1: big model, upstream reports a 300k-token context ---
-        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-big", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -139,7 +139,7 @@ test("e2e: model switch to a smaller window → preflight compresses before forw
         assert.equal(calls.filter((c) => !c.stream).length, 0, "no summarization on the first request");
 
         // --- Request 2: switch to the 260k model with a long conversation ---
-        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
@@ -235,7 +235,7 @@ test("e2e: no preflight when the context fits the (small) model window", async (
 
     try {
         const headers = { "content-type": "application/json", "x-acp-session": "preflight-fits-sess" };
-        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-big", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -244,7 +244,7 @@ test("e2e: no preflight when the context fits the (small) model window", async (
         await r1.text();
 
         // 50k < 260k window → switching models must NOT trigger preflight.
-        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
@@ -322,7 +322,7 @@ test("e2e: fresh session (lastInputTokens=0) whose raw history overflows the win
         // resends its full raw history. The ~13k-token history overflows the
         // 12k window on the very first request — preflight must still fire
         // (payload-size trigger, not lastInputTokens).
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-fresh-sess" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
@@ -470,7 +470,7 @@ test("e2e: CJK stable session switch → preflight compresses (CJK-aware token a
         const headers = { "content-type": "application/json", "x-acp-session": "preflight-cjk-sess" };
 
         // --- Request 1: big model, upstream reports a 30k-token context ---
-        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-big", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "你好" }] }),
@@ -481,7 +481,7 @@ test("e2e: CJK stable session switch → preflight compresses (CJK-aware token a
         assert.equal(s1.stats.lastInputTokens, 30_000, "session context is 30k tokens");
 
         // --- Request 2: switch to the 20k-window model with the CJK history ---
-        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: cjkConversation() }),

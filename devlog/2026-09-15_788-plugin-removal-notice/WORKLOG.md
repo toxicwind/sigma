@@ -11,15 +11,15 @@
   nothing matched). The removal set itself is untouched — only the silence
   was fixed.
 - src/agent/pi.ts: the unconditional `/acp` no-proxy warning is now neutral
-  and agent-aware — `run via \`bili <agent>\` (or set a /bili/ baseURL) to
-  use proxy mode` plus a remove hint (`bili plugin remove <agent>`); the
-  hint mentions `billion-context-pi` for pi only. dsh-acp.ts keeps its own
+  and agent-aware — `run via \`sigma <agent>\` (or set a /sigma/ baseURL) to
+  use proxy mode` plus a remove hint (`sigma plugin remove <agent>`); the
+  hint mentions `sigma-pi` for pi only. dsh-acp.ts keeps its own
   separate message.
 - tests/plugin-agent.test.ts: fresh-install output asserts NO replaced line;
   first-remove asserts it names the dropped root; legacy-replacement fixture
   asserts all five dropped entries are named (and unrelated entries are not);
   `/acp` test asserts the dual-exit wording; new omp variant test asserts
-  agent-awareness and that the billion-context-pi hint is pi-only.
+  agent-awareness and that the sigma-pi hint is pi-only.
 - devlog entry (this folder).
 
 ## Verification
@@ -34,6 +34,6 @@
 ## Ceiling notes / deferred
 - The `isPiEntry()` match set (npm spec, node_modules paths, dev-checkout
   dir names) is unchanged by design: replacing every match is what keeps
-  exactly one bili plugin live. Only the reporting changed.
-- Launcher-side detection (`isBiliPiEntry`, launcher.ts) still excludes
-  billion-context-pi on purpose; #788 does not ask to change that.
+  exactly one sigma plugin live. Only the reporting changed.
+- Launcher-side detection (`isSigmaPiEntry`, launcher.ts) still excludes
+  sigma-pi on purpose; #788 does not ask to change that.

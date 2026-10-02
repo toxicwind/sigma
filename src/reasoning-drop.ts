@@ -1,8 +1,8 @@
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 
 /** [#651] Drop oversized reasoning (thinking) from closed-round `compress`
- *  tool calls at request time — the billion-context twin of
- *  billion-context-pi #336/#339/#348, aligned with opencode-acp #377.
+ *  tool calls at request time — the sigma twin of
+ *  sigma-pi #336/#339/#348, aligned with opencode-acp #377.
  *  `compress` tool messages are hard-exempt from compression (their tool
  *  results are the anchors that keep block summaries addressable), so the
  *  reasoning attached to those turns rides along EVERY forwarded request as
@@ -56,7 +56,7 @@ export function resolveReasoningDrop(cfg?: CompressReasoningConfig): Required<Co
  *     totals strictly more than `threshold` chars.
  *  Pure: never mutates the input; idempotent; fail-safe (any error returns
  *  the input unchanged). */
-export function dropCompressReasoning(messages: BiliMessage[], cfg?: CompressReasoningConfig): BiliMessage[] {
+export function dropCompressReasoning(messages: SigmaMessage[], cfg?: CompressReasoningConfig): SigmaMessage[] {
     const { drop, threshold } = resolveReasoningDrop(cfg);
     if (!drop || messages.length === 0) return messages;
     try {

@@ -26,7 +26,7 @@ type Warnings = string[];
 
 function withTempStore(name: string, fn: (store: SessionStore, dir: string, warnings: Warnings) => Promise<void> | void): Promise<void> {
     return test(name, async () => {
-        const dir = mkdtempSync(join(tmpdir(), "bili-rollback-"));
+        const dir = mkdtempSync(join(tmpdir(), "sigma-rollback-"));
         const warnings: Warnings = [];
         const store = new SessionStore({ dir, debounceMs: 5, enabled: true, log: (level, msg) => {
             if (level === "warn") warnings.push(msg);

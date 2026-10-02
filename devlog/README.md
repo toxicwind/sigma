@@ -1,6 +1,6 @@
 # devlog/
 
-Development iteration tracking for **billion-context**.
+Development iteration tracking for **sigma**.
 
 ## Purpose
 

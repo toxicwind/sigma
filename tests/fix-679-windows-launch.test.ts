@@ -180,7 +180,7 @@ test("runClient: exit code and signal mapping unchanged", async () => {
 // Real launches — only meaningful on Windows, skipped everywhere else.
 
 test("#679 real win32: spaced .cmd shim receives its spaced args intact", { skip: process.platform !== "win32" }, async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bili-679-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-679-"));
     try {
         const clientDir = path.join(root, "client dir");
         fs.mkdirSync(clientDir, { recursive: true });
@@ -198,7 +198,7 @@ test("#679 real win32: spaced .cmd shim receives its spaced args intact", { skip
 });
 
 test("#679 real win32: spaced .exe spawns directly with spaced argv", { skip: process.platform !== "win32" }, async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bili-679-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-679-"));
     try {
         const outDir = path.join(root, "out dir");
         fs.mkdirSync(outDir, { recursive: true });

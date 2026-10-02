@@ -11,7 +11,7 @@
  * We read it directly rather than counting lines: the kernel rate-limits these
  * logs (N = 1, 2, 4, 8, …), so a line count would under-count and see a fresh
  * "id" every line. The Defender/OneDrive wording lives here, not in the generic
- * kernel, because it is Windows/billion-context specific.
+ * kernel, because it is Windows/sigma specific.
  */
 import { log as loggerLog } from "./logger.js";
 

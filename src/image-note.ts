@@ -1,4 +1,4 @@
-// #781: images ride the wire in BiliMessage sidecars (rawAnthropicBlock /
+// #781: images ride the wire in SigmaMessage sidecars (rawAnthropicBlock /
 // rawOpenaiContent(Parts) / rawResponsesItem + imageBase64/imageMediaType),
 // invisible to CoreMessage.text — so preflight's renderRange dropped them from
 // summary input: openai image-only messages had empty text and were skipped
@@ -11,7 +11,7 @@
 // fails outright when the configured compress model has no vision support.
 
 import type { CoreMessage } from "acp-kernel";
-import { parseDataUrl, type BiliMessage } from "acp-kernel/wire";
+import { parseDataUrl, type SigmaMessage } from "acp-kernel/wire";
 import { decodeImageDims } from "./image-tokens.js";
 import { responsesToolImageParts } from "./responses-tool-output.js";
 
@@ -37,7 +37,7 @@ function refFromDataUrl(url: unknown): ImageRef | undefined {
 /** The images this core message carries, in wire order. Empty for plain-text
  *  messages (the common case — this is called per message per chunk). */
 export function messageImages(m: CoreMessage): ImageRef[] {
-    const mm = m as BiliMessage;
+    const mm = m as SigmaMessage;
     // Anthropic: each image block becomes its own core message; the same
     // sidecar field also carries structured tool_results, so gate on type.
     const ab = mm.rawAnthropicBlock;

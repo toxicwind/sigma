@@ -14,7 +14,7 @@ import {
     type DownsampleRecipe,
     type ImageFormat,
 } from "acp-kernel";
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 import { createHash } from "node:crypto";
 import type { CompressSettings } from "./config.js";
 import type { ResolvedImageBilling } from "./image-tokens.js";
@@ -24,7 +24,7 @@ import type { Session } from "./session.js";
 // Image pre-compression host side (#1095 / acp-kernel#353). The kernel owns
 // the pure decisions (routing, recipe, token estimation, image_full state
 // machine); this module executes them at the forward boundary: rewrite the
-// image bytes riding BiliMessage raw carriers BEFORE the wire rebuild, cache
+// image bytes riding SigmaMessage raw carriers BEFORE the wire rebuild, cache
 // originals in memory, and serve the image_full restore channel.
 //
 // Determinism is load-bearing: the downsampled bytes become the standing wire
@@ -136,7 +136,7 @@ interface ImageSlot {
     replace(b64: string, mediaType: string): void;
 }
 
-function anthropicSlots(m: BiliMessage): ImageSlot[] {
+function anthropicSlots(m: SigmaMessage): ImageSlot[] {
     const block = m.rawAnthropicBlock as Record<string, unknown> | undefined;
     if (!block || typeof block !== "object" || block.type !== "image") return [];
     const source = block.source as Record<string, unknown> | undefined;
@@ -151,7 +151,7 @@ function anthropicSlots(m: BiliMessage): ImageSlot[] {
     }];
 }
 
-function openaiSlots(m: BiliMessage): ImageSlot[] {
+function openaiSlots(m: SigmaMessage): ImageSlot[] {
     const out: ImageSlot[] = [];
     const pushPart = (part: unknown): void => {
         const p = part as Record<string, unknown> | undefined;
@@ -187,7 +187,7 @@ function openaiSlots(m: BiliMessage): ImageSlot[] {
     return out;
 }
 
-function responsesSlots(m: BiliMessage): ImageSlot[] {
+function responsesSlots(m: SigmaMessage): ImageSlot[] {
     const item = m.rawResponsesItem as Record<string, unknown> | undefined;
     if (!item || typeof item !== "object" || !Array.isArray(item.content)) return [];
     const out: ImageSlot[] = [];
@@ -209,7 +209,7 @@ function responsesSlots(m: BiliMessage): ImageSlot[] {
     return out;
 }
 
-function googleSlots(m: BiliMessage): ImageSlot[] {
+function googleSlots(m: SigmaMessage): ImageSlot[] {
     if (!Array.isArray(m.rawGoogleParts)) return [];
     const out: ImageSlot[] = [];
     for (const part of m.rawGoogleParts as unknown[]) {
@@ -231,7 +231,7 @@ function googleSlots(m: BiliMessage): ImageSlot[] {
 
 /** All image slots carried by one message, deduped by payload fingerprint
  *  (the mirror fields are bookkeeping, never slots). */
-function imageSlots(m: BiliMessage): ImageSlot[] {
+function imageSlots(m: SigmaMessage): ImageSlot[] {
     const seen = new Set<string>();
     const out: ImageSlot[] = [];
     for (const slot of [...anthropicSlots(m), ...openaiSlots(m), ...responsesSlots(m), ...googleSlots(m)]) {
@@ -246,7 +246,7 @@ function imageSlots(m: BiliMessage): ImageSlot[] {
 /** Keep the mirror bookkeeping fields in sync when the image they describe
  *  was rewritten (they hold the FIRST image of the message — compare before
  *  touching so a multi-image message shrunk elsewhere stays untouched). */
-function syncMirrors(m: BiliMessage, oldB64: string, newB64: string, newMediaType: string): void {
+function syncMirrors(m: SigmaMessage, oldB64: string, newB64: string, newMediaType: string): void {
     if (m.imageBase64 === oldB64) {
         m.imageBase64 = newB64;
         m.imageMediaType = newMediaType;
@@ -276,7 +276,7 @@ function invalidateForRef(session: Session, ref: string): void {
  *  unreferenced messages (ephemeral), never throws (per-slot catch →
  *  pass-through). Idempotent: recorded refs re-encode deterministically via
  *  the fingerprint cache. */
-export async function applyImageCompressionPass(session: Session, messages: BiliMessage[], opts: { config: Config; billing: ResolvedImageBilling; log?: LogFn }): Promise<void> {
+export async function applyImageCompressionPass(session: Session, messages: SigmaMessage[], opts: { config: Config; billing: ResolvedImageBilling; log?: LogFn }): Promise<void> {
     if (!imageCompressionEnabled(session)) return;
     const log: LogFn = opts.log ?? ((level, msg) => loggerLog(level, msg));
     let shrunkThisPass = 0;

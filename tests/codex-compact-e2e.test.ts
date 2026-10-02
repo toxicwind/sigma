@@ -13,9 +13,9 @@ import { listSessions, _resetSessionsForTest } from "../src/session.ts";
 import { buildTriggerForgeBody } from "../src/codex-compact.ts";
 
 // Issue #321 PR-E2: conditional interception + forgery of codex's native
-// compaction requests. When BILI_CODEX_COMPACT=intercept, the client is codex,
+// compaction requests. When SIGMA_CODEX_COMPACT=intercept, the client is codex,
 // and the ACP state is healthy (transform ok + steady-state < 90% + an active
-// block to hand off), bili forges a success response and never contacts
+// block to hand off), sigma forges a success response and never contacts
 // upstream — a deterministic handoff to the ACP state. Otherwise (kill-switch
 // off, ACP not keeping up, or nothing compressed yet) the request passes
 // through to upstream and native compaction backstops.
@@ -106,8 +106,8 @@ async function withHarness(opts: { mode?: string; firstTurnTokens: number; stric
     await once(upstream, "listening");
     const upstreamPort = upstream.address().port;
 
-    if (opts.mode === undefined) delete process.env.BILI_CODEX_COMPACT;
-    else process.env.BILI_CODEX_COMPACT = opts.mode;
+    if (opts.mode === undefined) delete process.env.SIGMA_CODEX_COMPACT;
+    else process.env.SIGMA_CODEX_COMPACT = opts.mode;
 
     _setStoreForTest(new SessionStore({ enabled: false }));
     _resetSessionsForTest();
@@ -130,7 +130,7 @@ async function withHarness(opts: { mode?: string; firstTurnTokens: number; stric
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1`;
     const h: Harness = { proxy, upstream, bodies, url: `${base}/responses`, compactUrl: `${base}/responses/compact` };
     try {
         await fn(h);
@@ -139,7 +139,7 @@ async function withHarness(opts: { mode?: string; firstTurnTokens: number; stric
         await once(proxy, "close");
         upstream.close();
         await once(upstream, "close");
-        delete process.env.BILI_CODEX_COMPACT;
+        delete process.env.SIGMA_CODEX_COMPACT;
     }
 }
 
@@ -174,7 +174,7 @@ async function setupCompressedSession(h: Harness): Promise<number> {
 }
 
 for (const mode of ["intercept", "pass"]) {
-    test(`native compact fallback (${mode}): echoed bili summary reaches a strict upstream without private compaction IDs`, async () => {
+    test(`native compact fallback (${mode}): echoed sigma summary reaches a strict upstream without private compaction IDs`, async () => {
         await withHarness({ mode, firstTurnTokens: 1000, strictCompactionIds: true }, async (h) => {
             const summary = "Keep approval requirements enabled and preserve the pending repair task.";
             const forged = JSON.parse(buildTriggerForgeBody(summary, { inputTokens: 20, outputTokens: 5, totalTokens: 25 }, false).body) as { output: unknown[] };
@@ -198,8 +198,8 @@ for (const mode of ["intercept", "pass"]) {
             assert.equal(h.bodies.length, 1, "native fallback makes exactly one upstream request");
             assert.deepEqual(JSON.parse(h.bodies[0]), {
                 ...original,
-                input: [...prefix, { type: "message", role: "user", content: [{ type: "input_text", text: `[bili] context summary after compaction:\n${summary}` }] }, native, trigger],
-            }, "only the bili item changes; summary, native blob, final trigger and request fields survive");
+                input: [...prefix, { type: "message", role: "user", content: [{ type: "input_text", text: `[sigma] context summary after compaction:\n${summary}` }] }, native, trigger],
+            }, "only the sigma item changes; summary, native blob, final trigger and request fields survive");
         });
     });
 }
@@ -222,8 +222,8 @@ test("e2e E2 (trigger form): intercept + healthy ACP → forged 2-frame SSE, ups
         const e1 = JSON.parse(frames[0]!.slice("data: ".length)) as { type: string; item: { type: string; id: string; encrypted_content: string } };
         assert.equal(e1.type, "response.output_item.done");
         assert.equal(e1.item.type, "compaction");
-        assert.ok(e1.item.id.startsWith("fc_bili_"), "bili compaction id prefix");
-        assert.ok(e1.item.encrypted_content.startsWith("bili:acp:"), "sentinel in blob");
+        assert.ok(e1.item.id.startsWith("fc_bili_"), "sigma compaction id prefix");
+        assert.ok(e1.item.encrypted_content.startsWith("sigma:acp:"), "sentinel in blob");
         const e2 = JSON.parse(frames[1]!.slice("data: ".length)) as { type: string; response: { id: string; usage: { total_tokens: number } } };
         assert.equal(e2.type, "response.completed");
         assert.ok(e2.response.id.startsWith("resp_bili_"), "forged response id");
@@ -232,7 +232,7 @@ test("e2e E2 (trigger form): intercept + healthy ACP → forged 2-frame SSE, ups
     });
 });
 
-test("e2e E2 (trigger form): kill-switch off (BILI_CODEX_COMPACT=pass) → forwarded to upstream", async () => {
+test("e2e E2 (trigger form): kill-switch off (SIGMA_CODEX_COMPACT=pass) → forwarded to upstream", async () => {
     await withHarness({ mode: "pass", firstTurnTokens: 1000 }, async (h) => {
         const afterSetup = await setupCompressedSession(h);
         const r2 = await fetch(h.url, {
@@ -312,9 +312,9 @@ test("e2e E2 (trigger form): post-forge turn — echo replaced by a history-born
         assert.ok(captured.some((t) => t.includes("MAIN-SUMMARY-SETUP")), "captured summary is the setup block's");
 
         const fwd = h.bodies[h.bodies.length - 1];
-        assert.ok(!fwd.includes("fc_bili_"), "echoed bili compaction item replaced before forwarding");
+        assert.ok(!fwd.includes("fc_bili_"), "echoed sigma compaction item replaced before forwarding");
         const fwdBody = JSON.parse(fwd) as { input: Array<{ type: string; role?: string; content?: unknown }> };
-        const handoff = fwdBody.input.find((i) => JSON.stringify(i).includes("[bili] context summary after compaction"));
+        const handoff = fwdBody.input.find((i) => JSON.stringify(i).includes("[sigma] context summary after compaction"));
         assert.ok(handoff, "summary handoff user message present in forwarded input");
         assert.ok(JSON.stringify(handoff).includes("MAIN-SUMMARY-SETUP"), "pre-compaction summary carried by the handoff");
         const dev = fwdBody.input.find((i) => i.type === "message" && i.role === "developer");
@@ -372,7 +372,7 @@ test("e2e E2 (trigger form): drop-only legacy marker echo still re-injects forge
         const fwd = h.bodies[h.bodies.length - 1];
         assert.ok(!fwd.includes("fc_bili_"), "legacy marker dropped before forwarding");
         const fwdBody = JSON.parse(fwd) as { input: Array<{ type?: string; role?: string }> };
-        const handoff = fwdBody.input.find((i) => JSON.stringify(i).includes("[bili] context summary after compaction"));
+        const handoff = fwdBody.input.find((i) => JSON.stringify(i).includes("[sigma] context summary after compaction"));
         assert.ok(!handoff, "no replacement handoff — nothing extractable from a blob-less legacy marker");
         const dev = fwdBody.input.find((i) => i.type === "message" && i.role === "developer");
         assert.ok(dev, "developer message present on the drop-only turn");

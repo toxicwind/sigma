@@ -27,7 +27,7 @@ import {
 // at once (#496 forward-once requires a sub-window baseline; #300 stale-baseline
 // fit requires payloadEstimate < limit) → a persistent 502 loop even though the
 // images bill only a few thousand tokens. Fix: per-provider `imageBilling`
-// ("pixels" | "bytes", env BILI_IMAGE_BILLING overrides both) charges by a
+// ("pixels" | "bytes", env SIGMA_IMAGE_BILLING overrides both) charges by a
 // dimension-based tile model instead of raw bytes; bytes stays the conservative
 // default so byte-counting relays keep #488/#496 protection intact.
 
@@ -182,12 +182,12 @@ test("#767 unit: parsed-body costs — pixels vs bytes, fallback, remote URLs, c
     assert.equal(imageTokensInParsedBody("responses", unknownFmt, "pixels"), PIXEL_IMAGE_FALLBACK_TOKENS);
     assert.equal(imageTokensInParsedBody("responses", unknownFmt, "bytes"), 1000);
 
-    process.env.BILI_IMAGE_TOKEN_CAP = "500";
+    process.env.SIGMA_IMAGE_TOKEN_CAP = "500";
     try {
         assert.equal(imageTokensInParsedBody("responses", body, "pixels"), 500, "cap clamps pixels mode too");
         assert.equal(imageTokensInParsedBody("responses", body, "bytes"), 500);
     } finally {
-        delete process.env.BILI_IMAGE_TOKEN_CAP;
+        delete process.env.SIGMA_IMAGE_TOKEN_CAP;
     }
 });
 
@@ -270,7 +270,7 @@ test("e2e #767: pixels billing recovers a stale-baseline session the bytes estim
     const { server: upstream, port: upstreamPort, stats } = await startMockUpstream();
     const { proxy, port: proxyPort } = await startProxy(upstreamPort, { imageBilling: "pixels" });
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, {
@@ -311,7 +311,7 @@ test("e2e #767 control: default (auto→bytes on unknown host) still fails fast 
     const { server: upstream, port: upstreamPort, stats } = await startMockUpstream();
     const { proxy, port: proxyPort } = await startProxy(upstreamPort);
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, {
@@ -345,7 +345,7 @@ test("e2e #767: learned-limit-only variant also closes forward-once (bytes mode)
     const { server: upstream, port: upstreamPort, stats } = await startMockUpstream();
     const { proxy, port: proxyPort } = await startProxy(upstreamPort);
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, {
@@ -378,11 +378,11 @@ test("e2e #767: learned-limit-only variant also closes forward-once (bytes mode)
     }
 });
 
-test("e2e #767: env BILI_IMAGE_BILLING beats per-provider route config", async () => {
+test("e2e #767: env SIGMA_IMAGE_BILLING beats per-provider route config", async () => {
     const { server: upstream, port: upstreamPort, stats } = await startMockUpstream();
     const { proxy, port: proxyPort } = await startProxy(upstreamPort, { imageBilling: "pixels" });
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, {
@@ -397,12 +397,12 @@ test("e2e #767: env BILI_IMAGE_BILLING beats per-provider route config", async (
         assert.ok(s);
         s!.stats.lastInputTokens = STALE_BASELINE;
 
-        process.env.BILI_IMAGE_BILLING = "bytes";
+        process.env.SIGMA_IMAGE_BILLING = "bytes";
         let r2: Response;
         try {
             r2 = await fetch(url, { method: "POST", headers, body: imageTurn("img-env-sess") });
         } finally {
-            delete process.env.BILI_IMAGE_BILLING;
+            delete process.env.SIGMA_IMAGE_BILLING;
         }
         assert.equal(r2.status, 502, "env override downgrades the pixels route back to conservative byte billing");
         const err2 = JSON.parse(await r2.text()) as { error?: { code?: string } };
@@ -421,7 +421,7 @@ test("e2e #767: per-route imageBilling applies under a path-qualified provider k
     const { server: upstream, port: upstreamPort, stats } = await startMockUpstream();
     const { proxy, port: proxyPort } = await startProxy(upstreamPort, { imageBilling: "pixels" }, `http://127.0.0.1:${upstreamPort}/v1`);
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, {

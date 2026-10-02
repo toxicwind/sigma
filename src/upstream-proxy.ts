@@ -23,7 +23,7 @@ export type ProxyFallbackOptions = {
     noProxy?: string;
     biliPort?: number;
     systemProxy?: WindowsSystemProxy;
-    globalSource?: "bili-env" | "web-manual" | "config" | "auto" | "direct";
+    globalSource?: "sigma-env" | "web-manual" | "config" | "auto" | "direct";
     /** True only when the user EXPLICITLY set proxy mode "direct". The default
      *  unset mode also parses as "direct" but means "no preference" — in that
      *  case an empty globalProxy must fall through to env proxy discovery. */
@@ -107,7 +107,7 @@ export function parseHttpProxy(proxy?: string, biliPort?: number): ParsedHttpPro
     const port = url.port ? Number.parseInt(url.port, 10) : defaultPort(url.protocol);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined;
     if (biliPort && hostIsLoopback(url.hostname) && port === biliPort) {
-        throw new Error(`upstream proxy would loop back into bili: ${redactProxyUrl(url.href)}`);
+        throw new Error(`upstream proxy would loop back into sigma: ${redactProxyUrl(url.href)}`);
     }
     return {
         url: url.href,
@@ -140,7 +140,7 @@ function warnUnsupportedScheme(source: string, value: string, scheme: string): v
     const key = `${source}\u0000${scheme}`;
     if (warnedUnsupportedSchemes.has(key)) return;
     warnedUnsupportedSchemes.add(key);
-    loggerLog("warn", `[upstream-proxy] ignoring ${source}=${redactProxyUrl(value)}: scheme "${scheme}" is not supported — only http:// and https:// proxy origins work. For Clash/mihomo, point bili at the same mixed port over http:// (e.g. http://127.0.0.1:7890).`);
+    loggerLog("warn", `[upstream-proxy] ignoring ${source}=${redactProxyUrl(value)}: scheme "${scheme}" is not supported — only http:// and https:// proxy origins work. For Clash/mihomo, point sigma at the same mixed port over http:// (e.g. http://127.0.0.1:7890).`);
 }
 
 export function validateHttpProxy(proxy: string | undefined, biliPort?: number): void {
@@ -325,7 +325,7 @@ export function resolveProxy(
 export const PROXY_KEEPALIVE_MAX_MS = 55_000;
 
 export function proxyKeepAliveMaxMs(): number {
-    const raw = Number(process.env.BILI_PROXY_KEEPALIVE_MAX_MS);
+    const raw = Number(process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS);
     return Number.isFinite(raw) && raw < 0 ? PROXY_KEEPALIVE_MAX_MS : raw === 0 ? 0 : Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : PROXY_KEEPALIVE_MAX_MS;
 }
 

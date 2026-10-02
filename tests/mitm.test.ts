@@ -19,7 +19,7 @@ const _discoverySavedEnv: Record<string, string | undefined> = {};
 let _discoveryTmpHome: string | undefined;
 
 test.before(() => {
-    _discoveryTmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-mitm-disc-"));
+    _discoveryTmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-mitm-disc-"));
     for (const k of ["HOME", "CODEX_HOME", "ZCODE_DATA_BASE_DIR", "PI_CODING_AGENT_DIR", "PI_HOME"]) {
         _discoverySavedEnv[k] = process.env[k];
     }
@@ -42,10 +42,10 @@ test.after(() => {
 });
 
 // Isolate the CA directory to a per-test tmp dir so we never touch the real
-// ~/.local/share/billion-context/ca. caDir() = dataDir()/ca =
-// XDG_DATA_HOME/billion-context/ca.
+// ~/.local/share/sigma/ca. caDir() = dataDir()/ca =
+// XDG_DATA_HOME/sigma/ca.
 async function withTmpCa<T>(fn: () => Promise<T> | T): Promise<T> {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-mitm-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-mitm-"));
     const prev = process.env.XDG_DATA_HOME;
     process.env.XDG_DATA_HOME = tmp;
     _resetForTest();
@@ -176,7 +176,7 @@ test("readMitmUpstream: reads the socket marker when set", () => {
     assert.equal(readMitmUpstream(fakeSocket), "https://open.bigmodel.cn");
 });
 
-test("readMitmUpstream: returns undefined when no marker (direct /bili/ request)", () => {
+test("readMitmUpstream: returns undefined when no marker (direct /sigma/ request)", () => {
     const fakeSocket = {} as unknown as import("node:net").Socket;
     assert.equal(readMitmUpstream(fakeSocket), undefined);
     assert.equal(readMitmUpstream(undefined), undefined);
@@ -246,7 +246,7 @@ await test("setupMitm e2e: idle tunnel after CONNECT is killed by the handshake 
         server.listen(0, "127.0.0.1");
         await once(server, "listening");
         const port = (server.address() as { port: number }).port;
-        process.env.BILI_MITM_HANDSHAKE_TIMEOUT_MS = "200";
+        process.env.SIGMA_MITM_HANDSHAKE_TIMEOUT_MS = "200";
         try {
             const { statusLine, socket } = await rawConnect(port, "127.0.0.1", "api.anthropic.com:443");
             assert.match(statusLine, /^HTTP\/1\.1 200/);
@@ -261,7 +261,7 @@ await test("setupMitm e2e: idle tunnel after CONNECT is killed by the handshake 
             clearTimeout(bail);
             assert.equal(socket.destroyed, true, "socket must be destroyed by the handshake timeout");
         } finally {
-            delete process.env.BILI_MITM_HANDSHAKE_TIMEOUT_MS;
+            delete process.env.SIGMA_MITM_HANDSHAKE_TIMEOUT_MS;
             server.close();
             server.closeAllConnections?.();
         }
@@ -369,14 +369,14 @@ test("recordBlindTunnel: counts per host and warns exactly once per host (#897)"
     const warnings = logs.filter((l) => l.includes("BLIND TUNNEL WARNING"));
     assert.equal(warnings.length, 2, `one warning per distinct host, got ${warnings.length}`);
     assert.match(warnings[0], /"mitm"\.domains/, "warning must name the config fix");
-    assert.match(warnings[0], /BILI_MITM_DOMAINS/, "warning must name the env alternative");
+    assert.match(warnings[0], /SIGMA_MITM_DOMAINS/, "warning must name the env alternative");
     assert.match(warnings[0], /__bili\/stats/, "warning must point at the stats endpoint for exact hosts");
     // #255 default: non-public hosts stay masked in the log even in warnings.
     assert.ok(!warnings.some((l) => l.includes("copilot.tencent.com")), "non-public host must not appear verbatim by default");
     assert.match(warnings[0], /<private-host>/, "masked placeholder expected by default");
 });
 
-test("recordBlindTunnel: BILI_LOG_MASK_HOSTS=0 (setMaskHostsEnabled(false)) shows real hosts (#897)", () => {
+test("recordBlindTunnel: SIGMA_LOG_MASK_HOSTS=0 (setMaskHostsEnabled(false)) shows real hosts (#897)", () => {
     _resetBlindTunnelStatsForTest();
     setMaskHostsEnabled(false);
     try {

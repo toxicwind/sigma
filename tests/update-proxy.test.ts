@@ -13,12 +13,12 @@ function integrityField(buf: Buffer, alg = "sha512"): string {
 }
 
 function baseOpts(): UpdateOptions {
-    return { packageName: "billion-context", currentVersion: "1.2.3", autoUpdate: true };
+    return { packageName: "sigma", currentVersion: "1.2.3", autoUpdate: true };
 }
 
 test("egressDispatcher: absent resolver or undefined result means direct", () => {
     const opts = baseOpts();
-    assert.equal(egressDispatcher(opts, "https://registry.npmjs.org/billion-context/latest"), undefined);
+    assert.equal(egressDispatcher(opts, "https://registry.npmjs.org/sigma/latest"), undefined);
     const none: UpdateOptions = { ...opts, resolveProxy: () => undefined };
     assert.equal(egressDispatcher(none, "https://cdn.example.com/x.tgz"), undefined);
 });
@@ -30,8 +30,8 @@ test("egressDispatcher: resolved proxy URL becomes the cached undici agent", () 
         resolveProxy: (u) => (u.includes("npmjs.org") ? proxyUrl : undefined),
     };
     // Same proxy URL ⇒ same cached ProxyAgent instance (identity, not equality).
-    assert.equal(egressDispatcher(opts, "https://registry.npmjs.org/billion-context/latest"), proxyDispatcher(proxyUrl));
-    assert.notEqual(egressDispatcher(opts, "https://registry.npmjs.org/billion-context/latest"), undefined);
+    assert.equal(egressDispatcher(opts, "https://registry.npmjs.org/sigma/latest"), proxyDispatcher(proxyUrl));
+    assert.notEqual(egressDispatcher(opts, "https://registry.npmjs.org/sigma/latest"), undefined);
     // A host the resolver maps to nothing goes direct.
     assert.equal(egressDispatcher(opts, "https://cdn.other.example/t.tgz"), undefined);
 });
@@ -67,11 +67,11 @@ function makeFixture(): Fixture {
     writeFileSync(
         path.join(installDir, "package.json"),
         JSON.stringify({
-            name: "billion-context",
+            name: "sigma",
             version: "1.2.3",
             type: "module",
             main: "dist/index.js",
-            bin: { bili: "./dist/index.js" },
+            bin: { sigma: "./dist/index.js" },
         }),
     );
     writeFileSync(path.join(installDir, "dist", "index.js"), "export const loaded = '1.2.3';\n");
@@ -82,11 +82,11 @@ function makeTarball(root: string): { tgz: Buffer; integrity: string } {
     const src = path.join(root, "pkg");
     mkdirSync(path.join(src, "package"), { recursive: true });
     writeFileSync(path.join(src, "package", "package.json"), JSON.stringify({
-        name: "billion-context",
+        name: "sigma",
         version: "2.0.0",
         type: "module",
         main: "dist/index.js",
-        bin: { bili: "./dist/index.js" },
+        bin: { sigma: "./dist/index.js" },
     }));
     mkdirSync(path.join(src, "package", "dist"), { recursive: true });
     writeFileSync(path.join(src, "package", "dist", "index.js"), "export const loaded = '2.0.0';\n");

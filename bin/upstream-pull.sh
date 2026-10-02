@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# upstream-pull.sh — pull upstream billion-context into this fork.
+# upstream-pull.sh — pull upstream sigma into this fork.
 #
 # Two things make this non-trivial, and this script exists because of them.
 #
@@ -32,7 +32,7 @@ say() { printf '\033[1m%s\033[0m\n' "$*"; }
 require_repo() {
 	git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repository"
 	git remote get-url "$UPSTREAM_REMOTE" >/dev/null 2>&1 \
-		|| die "no '$UPSTREAM_REMOTE' remote; add one with: git remote add $UPSTREAM_REMOTE https://github.com/ranxianglei/billion-context.git"
+		|| die "no '$UPSTREAM_REMOTE' remote; add one with: git remote add $UPSTREAM_REMOTE https://github.com/ranxianglei/sigma.git"
 }
 
 # weave must be the configured merge driver, or .gitattributes routes structured

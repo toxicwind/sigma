@@ -1,9 +1,9 @@
 # REQ: Logger survives log-file rotation (orphan inode)
 
-Issue #210: after `bili.log` is renamed to `bili.log.old` (internal 10MB
+Issue #210: after `sigma.log` is renamed to `sigma.log.old` (internal 10MB
 rotation, logrotate, or a manual rename), the logger's held `WriteStream`
 (`flags: "a"`) fd points at the renamed inode and every subsequent line
-silently lands in `.old` while the fresh `bili.log` sits at 0 bytes — until a
+silently lands in `.old` while the fresh `sigma.log` sits at 0 bytes — until a
 restart. No `error` event ever fires because the orphaned fd is still valid,
 so the old error/writable-based recovery never triggered.
 

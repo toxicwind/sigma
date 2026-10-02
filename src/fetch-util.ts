@@ -24,11 +24,11 @@ export function _liveUpstreamTimersForTest(): number {
 }
 
 /** Idle-timeout budget for upstream requests; overridable via
- *  BILI_UPSTREAM_TIMEOUT_MS (milliseconds). Read on each call so tests can
+ *  SIGMA_UPSTREAM_TIMEOUT_MS (milliseconds). Read on each call so tests can
  *  tune it live. Local-model deployments with very large contexts can need
  *  prefills longer than the 12-minute default before their first token. */
 export function upstreamTimeoutMs(): number {
-    const raw = Number(process.env.BILI_UPSTREAM_TIMEOUT_MS);
+    const raw = Number(process.env.SIGMA_UPSTREAM_TIMEOUT_MS);
     return Number.isInteger(raw) && raw > 0 ? raw : UPSTREAM_TIMEOUT_MS;
 }
 
@@ -140,7 +140,7 @@ export async function fetchWithTimeout(
             // undici's default (follow) downgrades POST→GET and drops the body
             // on 301/302/303, so a redirecting upstream (CDN/WAF) turns a valid
             // POST into a 405 at the redirect target. Pass the 3xx through to
-            // the client, which follows it with its own policy. Internal bili
+            // the client, which follows it with its own policy. Internal sigma
             // fetches that want to follow (registry, upstream test) opt in.
             redirect: opts.redirect ?? "manual",
         };
@@ -238,18 +238,18 @@ export function isTransientUpstreamError(status: number, body: string): boolean 
 /** Total requests per replay attempt (initial + retries). */
 export const REPLAY_MAX_ATTEMPTS = 3;
 
-/** Total requests per replay attempt; overridable via BILI_REPLAY_RETRY_MAX
+/** Total requests per replay attempt; overridable via SIGMA_REPLAY_RETRY_MAX
  *  (1 = legacy fail-fast behavior, no retry). Read on each call so tests can
  *  tune it live. */
 export function replayMaxAttempts(): number {
-    const raw = Number(process.env.BILI_REPLAY_RETRY_MAX);
+    const raw = Number(process.env.SIGMA_REPLAY_RETRY_MAX);
     return Number.isInteger(raw) && raw >= 1 ? raw : REPLAY_MAX_ATTEMPTS;
 }
 
-/** Base backoff delay in ms; overridable via BILI_REPLAY_RETRY_BASE_MS
+/** Base backoff delay in ms; overridable via SIGMA_REPLAY_RETRY_BASE_MS
  *  (0 disables the delay). Read on each call so tests can tune it live. */
 export function replayBaseDelayMs(): number {
-    const raw = Number(process.env.BILI_REPLAY_RETRY_BASE_MS);
+    const raw = Number(process.env.SIGMA_REPLAY_RETRY_BASE_MS);
     return Number.isFinite(raw) && raw >= 0 ? raw : 1500;
 }
 
@@ -260,7 +260,7 @@ export function replayBaseDelayMs(): number {
  *  transition gentle and the prefix cache alive. Unset (or out of range) =
  *  no steering (legacy behavior). Read on each call so tests can tune it live. */
 export function maxShrinkPerCompress(): number | undefined {
-    const raw = Number(process.env.BILI_MAX_SHRINK_PER_COMPRESS);
+    const raw = Number(process.env.SIGMA_MAX_SHRINK_PER_COMPRESS);
     return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : undefined;
 }
 

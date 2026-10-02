@@ -32,7 +32,7 @@ export function noteMitmTlsError(host: string, port: number, message: string, lo
     log(`mitm ${maskHostForLog(host)}:${port} TLS error: ${message}`);
     if (CERT_REJECT_RE.test(message) && !warnedCertRejected) {
         warnedCertRejected = true;
-        log(`mitm ${maskHostForLog(host)}:${port} client REJECTED the MITM certificate — it does not trust bili's root CA. Install it in the client's/system trust store, then restart the client. CA: ${rootCaPath()}`);
+        log(`mitm ${maskHostForLog(host)}:${port} client REJECTED the MITM certificate — it does not trust sigma's root CA. Install it in the client's/system trust store, then restart the client. CA: ${rootCaPath()}`);
     }
 }
 
@@ -59,7 +59,7 @@ export function recordBlindTunnel(host: string, log?: Logger): void {
     blindTunnelCounts.set(host, (blindTunnelCounts.get(host) ?? 0) + 1);
     if (!warnedBlindTunnels.has(host)) {
         warnedBlindTunnels.add(host);
-        log?.(`mitm ${maskHostForLog(host)} BLIND TUNNEL WARNING: this host is not in the MITM whitelist, so bili relays its TLS traffic opaquely and CANNOT see or compress this client's model requests. To compress it: add its domain to "mitm".domains in billion-context.json (or BILI_MITM_DOMAINS), restart bili, and make the client trust bili's root CA (${rootCaPath()}). Exact target hosts: GET /__bili/stats → blindTunnels (loopback only); set BILI_LOG_MASK_HOSTS=0 to show them in this log too.`);
+        log?.(`mitm ${maskHostForLog(host)} BLIND TUNNEL WARNING: this host is not in the MITM whitelist, so sigma relays its TLS traffic opaquely and CANNOT see or compress this client's model requests. To compress it: add its domain to "mitm".domains in sigma.json (or SIGMA_MITM_DOMAINS), restart sigma, and make the client trust sigma's root CA (${rootCaPath()}). Exact target hosts: GET /__bili/stats → blindTunnels (loopback only); set SIGMA_LOG_MASK_HOSTS=0 to show them in this log too.`);
     }
 }
 
@@ -84,7 +84,7 @@ export function _resetBlindTunnelStatsForTest(): void {
  *  Env-overridable so tests can exercise the timeout path quickly. */
 const MITM_HANDSHAKE_TIMEOUT_MS_DEFAULT = 10_000;
 function mitmHandshakeTimeoutMs(): number {
-    const v = Number.parseInt(process.env.BILI_MITM_HANDSHAKE_TIMEOUT_MS ?? "", 10);
+    const v = Number.parseInt(process.env.SIGMA_MITM_HANDSHAKE_TIMEOUT_MS ?? "", 10);
     return Number.isFinite(v) && v > 0 ? v : MITM_HANDSHAKE_TIMEOUT_MS_DEFAULT;
 }
 
@@ -289,7 +289,7 @@ function doMitm(
 }
 
 /** Read the MITM upstream marker from a request's underlying socket.
- *  Returns undefined for non-MITM (direct /bili/ or control) requests. */
+ *  Returns undefined for non-MITM (direct /sigma/ or control) requests. */
 export function readMitmUpstream(socket: net.Socket | tls.TLSSocket | undefined): string | undefined {
     if (!socket) return undefined;
     return (socket as unknown as Record<string, unknown>)[MITM_UPSTREAM_KEY] as string | undefined;

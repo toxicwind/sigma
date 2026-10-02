@@ -1,10 +1,10 @@
-# billion-context dsh bundle layer (#949).
-# Mounted automatically when the profile's package.json lists billion-context
-# in dsh.profile.bundles (`dsh plugin --profile <name> add billion-context`);
+# sigma dsh bundle layer (#949).
+# Mounted automatically when the profile's package.json lists sigma
+# in dsh.profile.bundles (`dsh plugin --profile <name> add sigma`);
 # the loader resolves `name` from the profile's node_modules.
 - insert:
-    - id: bili-native
-      name: billion-context/dsh
+    - id: sigma-native
+      name: sigma/dsh
 - id: compaction-basic
   config:
     auto: false

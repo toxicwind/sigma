@@ -1050,7 +1050,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                     noteSkip(`${skipKey}: preview rejected — ${verdict}`);
                     continue;
                 }
-                // Direct raw messages render host-side: #781 image notes live in BiliMessage
+                // Direct raw messages render host-side: #781 image notes live in SigmaMessage
                 // sidecars the kernel never sees. Consumed child blocks render through the
                 // kernel from the original state so they stay summaries.
                 const idxById = new Map(messages.map((m, i) => [m.id, i]));

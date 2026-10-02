@@ -9,7 +9,7 @@ import { CACHE_REPORT_CLOSE, CACHE_REPORT_OPEN, RULE_REPORT_CLOSE, RULE_REPORT_O
 // rather than a hand-typed copy that could drift.
 function realPanel(): string {
     return buildStatusPanel({
-        version: "billion-context@0.1.64",
+        version: "sigma@0.1.64",
         tokenCount: 100000,
         systemPromptTokens: 0,
         state: createInitialState(),

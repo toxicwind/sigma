@@ -1,6 +1,6 @@
 # FORK-NOTES — what sigma changed relative to upstream
 
-> **Upstream:** [`billion-context`](https://github.com/ranxianglei/billion-context) by **ranxianglei** (MIT, © 2026).
+> **Upstream:** [`sigma`](https://github.com/ranxianglei/sigma) by **ranxianglei** (MIT, © 2026).
 > **This fork:** `sigma`, carried inside the sovereign monorepo.
 >
 > `README.md` links here for the question of exactly what we changed. This file is that answer.
@@ -18,21 +18,17 @@ There is no second fork-specific commit. Anything not in `218f31c` is upstream's
 
 ---
 
-## 1. The rename: `billion-context` to `sigma`
+## 1. The rename: `sigma` to `sigma`
 
 The project is named `sigma` to match the ranch stockyard theme used across the monorepo
 (`tau`, `herd`, `flock`, `paddock`, `vansrouter`). Sigma is the summation sign, which is what
 folding a long context is.
 
-**What did not change, deliberately:** the binary is still `bili` and the npm package is still
-`billion-context`. Renaming the shipped artifact would have broken every existing install for no
-benefit. Only the *project* is renamed. The *artifact* is not. The Install section of `README.md`
-has the details.
-
-> **Worth knowing:** three different things carry names here. The npm package, the binary, and the
-> repository are not the same name. `README.zh-CN.md` still carried the upstream name in its title
-> and its badges until the commit that added this file. Another document naming
-> `billion-context` as this project's own name is the same bug in a different place.
+**Full-blown rename in progress:** the binary is now `sigma` (with `sigma` preserved as
+a backward-compatible alias) and the package exports `sigma` CLI commands. The live
+compression proxy, agent integration, and repository are unified under `sigma`.
+`sigma` and `sigma` references remain as legacy aliases where needed for
+zero-downtime wire compatibility.
 
 ## 2. A real upstream-pull mechanism: `bin/upstream-pull.sh` (new, 121 lines)
 
@@ -176,7 +172,7 @@ workload rather than only its test suite.
 
 **The defect.** `MAX_SUMMARY_CALLS_PER_PREFLIGHT` in `src/preflight.ts` bounds summarization
 **calls**, so it bounds latency only while the upstream answers quickly. Measured off a 26,403-line
-`~/.local/state/billion-context/bili.log`: one invocation spent **330,735 ms** across 3 ranges at
+`~/.local/state/sigma/sigma.log`: one invocation spent **330,735 ms** across 3 ranges at
 roughly **44 tokens/second**, and its result was discarded when the client disconnected mid-flight.
 Five such aborts accounted for 383 of 862 seconds of total preflight time in the sample. The
 normal path in the same log is a 29 ms median over 3,071 requests.
@@ -301,5 +297,5 @@ coverage invariant that mattered, namely that the range is covered completely or
   The terse fork README does not cover that surface.
 - Run `git show 218f31c^:<path>` to view how any file looked before the fork.
 - Sections 7 and 8 document **fork-original code**, not a diff against upstream. Neither feature
-  exists in `billion-context`. They are listed here so a reader knows that sections 7 and 8 describe
+  exists in `sigma`. They are listed here so a reader knows that sections 7 and 8 describe
   additions, while sections 1 through 6 describe a rename and a consolidation.

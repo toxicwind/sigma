@@ -194,14 +194,14 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => void | Prom
 test("object export: .id/.setup for V2 and .server for V1 >= 1.18.29", () => {
     assert.equal(typeof biliOpencodePlugin, "object");
     assert.ok(biliOpencodePlugin !== null);
-    assert.equal(biliOpencodePlugin.id, "billion-context-opencode");
+    assert.equal(biliOpencodePlugin.id, "sigma-opencode");
     assert.equal(typeof biliOpencodePlugin.setup, "function");
     assert.equal(typeof biliOpencodePlugin.server, "function");
 });
 
-test("v2 setup: registers the bundled bili tools synchronously with exact schema parity", async () => {
+test("v2 setup: registers the bundled sigma tools synchronously with exact schema parity", async () => {
     const fake = makeFakeCtx();
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, async () => {
         const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
         try {
             assert.deepEqual(fake.addedTools.map((t) => t.name), EXPECTED_TOOLS);
@@ -219,7 +219,7 @@ test("v2 setup: registers the bundled bili tools synchronously with exact schema
 
 test("v2 setup: inert without proxy detection (tools present but no headers, no forwarding)", async () => {
     const fake = makeFakeCtx();
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, async () => {
         const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
         try {
             const res = await fake.fireModelRequest({ sessionID: "s1", baseURL: "http://upstream.example/v1" });
@@ -239,17 +239,17 @@ test("v2 setup: inert-safe when the host exposes none of the V2 seams", async ()
     cleanup();
 });
 
-test("v2 setup: kill switch stays inert even with /bili/ URL + proxy env", async () => {
+test("v2 setup: kill switch stays inert even with /sigma/ URL + proxy env", async () => {
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: "0" }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: "0" }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
-                const res = await fake.fireModelRequest({ sessionID: "s1", baseURL: `${proxy.origin}/bili/http://upstream.example/v1` });
+                const res = await fake.fireModelRequest({ sessionID: "s1", baseURL: `${proxy.origin}/sigma/http://upstream.example/v1` });
                 assert.deepEqual(res.headers, {});
                 const out = await fake.addedTools.find((t) => t.name === "compress")!.execute({ content: [] }, { sessionID: "s1" });
-                assert.match(out.content, /disabled \(BILLION_CONTEXT_PLUGIN=0\)/);
+                assert.match(out.content, /disabled \(SIGMA_PLUGIN=0\)/);
                 assert.equal(proxy.toolCalls.length, 0);
             } finally {
                 cleanup();
@@ -260,27 +260,27 @@ test("v2 setup: kill switch stays inert even with /bili/ URL + proxy env", async
     }
 });
 
-test("v2 setup: activates from /bili/ baseURL on round 1, stamps headers, forwards tools", async () => {
+test("v2 setup: activates from /sigma/ baseURL on round 1, stamps headers, forwards tools", async () => {
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const r1 = await fake.fireModelRequest({
                     sessionID: "ses_v2_1",
-                    baseURL: `${proxy.origin}/bili/http://upstream.example/v1`,
+                    baseURL: `${proxy.origin}/sigma/http://upstream.example/v1`,
                     model: { providerID: "qwen", id: "m1" },
                 });
-                assert.equal(r1.headers["x-bili-plugin"], "opencode");
-                assert.equal(r1.headers["x-bili-plugin-conversation"], "ses_v2_1");
+                assert.equal(r1.headers["x-sigma-plugin"], "opencode");
+                assert.equal(r1.headers["x-sigma-plugin-conversation"], "ses_v2_1");
                 // window header needs the async catalog fetch — lands from round 2
                 const r2 = await fake.fireModelRequest({
                     sessionID: "ses_v2_1",
-                    baseURL: `${proxy.origin}/bili/http://upstream.example/v1`,
+                    baseURL: `${proxy.origin}/sigma/http://upstream.example/v1`,
                     model: { providerID: "qwen", id: "m1" },
                 });
-                await until(() => r2.headers["x-bili-plugin-context-window"] === "262144");
+                await until(() => r2.headers["x-sigma-plugin-context-window"] === "262144");
 
                 const out = await fake.addedTools.find((t) => t.name === "compress")!.execute({ content: [] }, { sessionID: "ses_v2_1" });
                 assert.match(out.content, /boom-compress/);
@@ -305,16 +305,16 @@ test("v2 setup: activates from /bili/ baseURL on round 1, stamps headers, forwar
     }
 });
 
-test("v2 setup: env-based activation without /bili/ URL", async () => {
+test("v2 setup: env-based activation without /sigma/ URL", async () => {
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const res = await fake.fireModelRequest({ sessionID: "s2", baseURL: "http://real-upstream.example/v1" });
-                assert.equal(res.headers["x-bili-plugin"], "opencode");
-                assert.equal(res.headers["x-bili-plugin-conversation"], "s2");
+                assert.equal(res.headers["x-sigma-plugin"], "opencode");
+                assert.equal(res.headers["x-sigma-plugin-conversation"], "s2");
             } finally {
                 cleanup();
             }
@@ -328,7 +328,7 @@ test("v2 setup: session.compaction.ended reports boundary to proxy archive", asy
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 await fake.fireModelRequest({ sessionID: "s3", baseURL: "http://u.example/v1", headers: {} });
@@ -349,7 +349,7 @@ test("v2 setup: cleanup aborts event subscription and disposes registrations", a
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             await fake.fireModelRequest({ sessionID: "s4", baseURL: "http://u.example/v1", headers: {} });
             cleanup();
@@ -365,7 +365,7 @@ test("v2 setup: /acp command registered and renders proxy status panel via synth
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const acp = fake.addedCommands.find((c) => c.name === "acp");
@@ -389,7 +389,7 @@ test("v2 setup: /acp command registered and renders proxy status panel via synth
 
 test("v2 setup: /acp reports no proxy detected via synthetic when no proxy", async () => {
     const fake = makeFakeCtx();
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, async () => {
         const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
         try {
             const acp = fake.addedCommands.find((c) => c.name === "acp")!;
@@ -408,13 +408,13 @@ test("v2 setup: first /acp before any model request shows the idle notice (proxy
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const acp = fake.addedCommands.find((c) => c.name === "acp")!;
                 await acp.execute({ sessionID: "ses_acp_idle" });
                 await until(() => fake.syntheticCalls.length === 1);
-                assert.match(fake.syntheticCalls[0].description!, /billion-context@9\.9\.9-test \u2014 proxy connected, no ACP session yet/);
+                assert.match(fake.syntheticCalls[0].description!, /sigma@9\.9\.9-test \u2014 proxy connected, no ACP session yet/);
                 assert.match(fake.syntheticCalls[0].text, /not an instruction/);
                 assert.equal(fake.syntheticCalls[0].resume, false);
             } finally {
@@ -431,7 +431,7 @@ test("v2 setup: /acp truncates long panels to the TUI notice cap", async () => {
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const acp = fake.addedCommands.find((c) => c.name === "acp")!;
@@ -457,13 +457,13 @@ test("v2 /acp: host omits sessionID → warn once, render nothing (never an empt
     try {
         for (const plugin of ["0", undefined]) {
             const f = makeFakeCtx();
-            await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: plugin }, async () => {
+            await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: plugin }, async () => {
                 const cleanup = await biliOpencodePlugin.setup(f.ctx as never);
                 try {
                     const acp = f.addedCommands.find((c) => c.name === "acp")!;
                     await acp.execute({});
                     await new Promise((r) => setTimeout(r, 20));
-                    assert.equal(f.syntheticCalls.length, 0, `no synthetic for missing sessionID (BILLION_CONTEXT_PLUGIN=${String(plugin)})`);
+                    assert.equal(f.syntheticCalls.length, 0, `no synthetic for missing sessionID (SIGMA_PLUGIN=${String(plugin)})`);
                 } finally {
                     cleanup();
                 }
@@ -477,7 +477,7 @@ test("v2 /acp: host omits sessionID → warn once, render nothing (never an empt
 
 test("v2 /acp: disabled + valid session still renders the 'disabled' notice", async () => {
     const fake = makeFakeCtx();
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: "0" }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: "0" }, async () => {
         const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
         try {
             const acp = fake.addedCommands.find((c) => c.name === "acp")!;
@@ -495,7 +495,7 @@ test("v2 setup: /acp-cache registered and renders the cache report via synthetic
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const cache = fake.addedCommands.find((c) => c.name === "acp-cache");
@@ -520,7 +520,7 @@ test("v2 /acp-cache: full flag maps to detail=full; long reports truncate at the
     const proxy = await startFakeProxyV2();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const cache = fake.addedCommands.find((c) => c.name === "acp-cache")!;
@@ -550,7 +550,7 @@ test("v2 /acp-cache: missing sessionID warns and renders nothing (#1146)", async
     const origWarn = console.warn;
     console.warn = (msg?: unknown) => { warns.push(String(msg)); };
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: proxy.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const cache = fake.addedCommands.find((c) => c.name === "acp-cache")!;
@@ -570,8 +570,8 @@ test("v2 /acp-cache: missing sessionID warns and renders nothing (#1146)", async
 
 test("v2 /acp-cache: disabled plugin and no-proxy diagnostics render via synthetic (#1146)", async () => {
     for (const env of [
-        { BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: "0" },
-        { BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: undefined, SIGMA_PLUGIN: "0" },
+        { SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined },
     ] as Array<Record<string, string | undefined>>) {
         const fake = makeFakeCtx();
         await withEnv(env, async () => {
@@ -580,7 +580,7 @@ test("v2 /acp-cache: disabled plugin and no-proxy diagnostics render via synthet
                 const cache = fake.addedCommands.find((c) => c.name === "acp-cache")!;
                 await cache.execute({ sessionID: "s_diag" });
                 await until(() => fake.syntheticCalls.length === 1);
-                if (env.BILLION_CONTEXT_PLUGIN === "0") assert.match(fake.syntheticCalls[0].description!, /disabled/);
+                if (env.SIGMA_PLUGIN === "0") assert.match(fake.syntheticCalls[0].description!, /disabled/);
                 else assert.match(fake.syntheticCalls[0].description!, /no proxy detected/);
             } finally {
                 cleanup();
@@ -604,7 +604,7 @@ test("v2 /acp: surfaces status.error when the proxy returns no panel", async () 
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 const acp = fake.addedCommands.find((c) => c.name === "acp")!;
@@ -634,7 +634,7 @@ test("v2 /acp: a throwing command editor degrades to no-/acp without killing set
     const origWarn = console.warn;
     console.warn = (msg?: unknown) => { warns.push(String(msg)); };
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await biliOpencodePlugin.setup(fake.ctx as never);
             try {
                 assert.ok(typeof cleanup === "function", "setup resolved despite the command editor throwing");
@@ -714,13 +714,13 @@ test("#1362: V2 child session links its parent via session.created + first reque
     const reg = await startRegisterProxy();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await createOpencodeV2Setup({})(fake.ctx as never);
             try {
                 fake.pushEvent({ type: "session.created", data: { sessionID: "ses_c", parentID: "ses_p" } });
                 await new Promise((r) => setTimeout(r, 20));
                 const r1 = await fake.fireModelRequest({ sessionID: "ses_c", baseURL: "http://upstream.example/v1" });
-                assert.equal(r1.headers["x-bili-plugin-conversation"], "ses_c");
+                assert.equal(r1.headers["x-sigma-plugin-conversation"], "ses_c");
                 await until(() => reg.registers.length >= 1);
                 assert.deepEqual(reg.registers[0], { conversationId: "ses_c", agent: "opencode", identity: true, parentConversationId: "ses_p" });
                 await fake.fireModelRequest({ sessionID: "ses_c", baseURL: "http://upstream.example/v1" });
@@ -739,7 +739,7 @@ test("#1362: V2 root sessions (no parentID) send no register", async () => {
     const reg = await startRegisterProxy();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await createOpencodeV2Setup({})(fake.ctx as never);
             try {
                 fake.pushEvent({ type: "session.created", data: { sessionID: "ses_root" } });
@@ -761,7 +761,7 @@ test("#1362: V2 self-parent is filtered at ingest", async () => {
     const reg = await startRegisterProxy();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await createOpencodeV2Setup({})(fake.ctx as never);
             try {
                 fake.pushEvent({ type: "session.created", data: { sessionID: "ses_s", parentID: "ses_s" } });
@@ -783,7 +783,7 @@ test("#1362: V2 parent announced after the child's first request links late", as
     const reg = await startRegisterProxy();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await createOpencodeV2Setup({})(fake.ctx as never);
             try {
                 await fake.fireModelRequest({ sessionID: "ses_l", baseURL: "http://upstream.example/v1" });
@@ -807,7 +807,7 @@ test("#1362: failed V2 derive register retries after the cooldown window", async
     const reg = await startRegisterProxy(1);
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: undefined }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: undefined }, async () => {
             const cleanup = await createOpencodeV2Setup({ derivedRetryMs: 60 })(fake.ctx as never);
             try {
                 fake.pushEvent({ type: "session.created", data: { sessionID: "ses_f", parentID: "ses_fp" } });
@@ -833,13 +833,13 @@ test("#1362: V2 kill switch suppresses derivation reporting too", async () => {
     const reg = await startRegisterProxy();
     const fake = makeFakeCtx();
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: reg.origin, BILLION_CONTEXT_PLUGIN: "0" }, async () => {
+        await withEnv({ SIGMA_PROXY: reg.origin, SIGMA_PLUGIN: "0" }, async () => {
             const cleanup = await createOpencodeV2Setup({})(fake.ctx as never);
             try {
                 fake.pushEvent({ type: "session.created", data: { sessionID: "ses_k", parentID: "ses_kp" } });
                 await new Promise((r) => setTimeout(r, 20));
                 const r1 = await fake.fireModelRequest({ sessionID: "ses_k", baseURL: "http://upstream.example/v1" });
-                assert.equal(r1.headers["x-bili-plugin-conversation"], undefined, "no stamping under kill switch");
+                assert.equal(r1.headers["x-sigma-plugin-conversation"], undefined, "no stamping under kill switch");
                 await new Promise((r) => setTimeout(r, 80));
                 assert.deepEqual(reg.registers, []);
             } finally {

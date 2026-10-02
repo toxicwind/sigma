@@ -7,13 +7,13 @@ Source: issue #735 (transferred from ranxianglei/opencode-acp#395).
 OpenCode 2.0 ships a new plugin API (`@opencode/plugin`, `Plugin.define({ id,
 setup })`). The official migration guide states V1 plugins do not run under V2,
 so `opencode-acp` (V1, npm latest 1.18.0) is unusable on OpenCode 2.0. Per the
-decision in opencode-acp#395, V2 support lands in billion-context instead of
+decision in opencode-acp#395, V2 support lands in sigma instead of
 porting the standalone V1 implementation (which would perpetuate a second fork
 of the kernel logic):
 
-1. **Pure proxy mode** — provider baseURL pointed at `/bili/`. Wire-level,
+1. **Pure proxy mode** — provider baseURL pointed at `/sigma/`. Wire-level,
    independent of the host plugin API version; needs live verification on 2.0.
-2. **New OpenCode V2 launcher mode** — counterpart of `bili pi` / `bili
+2. **New OpenCode V2 launcher mode** — counterpart of `sigma pi` / `sigma
    codex`: acp-kernel + thin host glue providing in-host native tools.
 
 ## Scope

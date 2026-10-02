@@ -4,8 +4,8 @@ Model: qwen3.8-27b (vllm)
 
 ## Request
 
-https://github.com/ranxianglei/billion-context/issues/240 — user sets
-`host: 0.0.0.0` and wants to connect to bili from a *remote* machine (like a
+https://github.com/ranxianglei/sigma/issues/240 — user sets
+`host: 0.0.0.0` and wants to connect to sigma from a *remote* machine (like a
 headroom proxy server). Investigation found the HTTP side already worked;
 the blocker was the loopback-only CONNECT gate in the MITM proxy (#77).
 
@@ -13,7 +13,7 @@ the blocker was the loopback-only CONNECT gate in the MITM proxy (#77).
 
 `src/mitm.ts` setupMitm rejected every CONNECT whose client socket was
 non-loopback — a hard 403 regardless of bind. With `--host 0.0.0.0` the HTTP
-endpoints (`/bili/`, health) were already reachable remotely (verified live);
+endpoints (`/sigma/`, health) were already reachable remotely (verified live);
 only CONNECT (MITM mode) refused.
 
 ## Fix

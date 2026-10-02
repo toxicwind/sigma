@@ -1,7 +1,7 @@
-// #1002: `bili plugin install/remove opencode` must be lossless on foreign
+// #1002: `sigma plugin install/remove opencode` must be lossless on foreign
 // plugin entries. Covers: object-form entries ({package, options}) and
 // map-form `plugins` survive install AND remove verbatim; "plugin present"
-// re-runs never rewrite the file; the .bili-bak backup reflects the state
+// re-runs never rewrite the file; the .sigma-bak backup reflects the state
 // before the LATEST write, not the first one ever.
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -28,7 +28,7 @@ async function withEnv(vars: Record<string, string | undefined>, fn: () => Promi
 }
 
 function isolatedHome(): { home: string; cfgDir: string; env: Record<string, string | undefined> } {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc1002-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc1002-"));
     const cfgDir = path.join(home, ".config/opencode");
     return {
         home,
@@ -40,8 +40,8 @@ function isolatedHome(): { home: string; cfgDir: string; env: Record<string, str
             XDG_STATE_HOME: path.join(home, ".state"),
             XDG_CACHE_HOME: path.join(home, ".cache"),
             OPENCODE_CONFIG: undefined,
-            BILI_CLIENT_BIN: undefined,
-            BILI_MCP_PROXY: "http://127.0.0.1:8787",
+            SIGMA_CLIENT_BIN: undefined,
+            SIGMA_MCP_PROXY: "http://127.0.0.1:8787",
         },
     };
 }
@@ -60,7 +60,7 @@ test("install and remove preserve foreign object entries in the plugins array (#
             const msg = pluginInstall("opencode");
             assert.match(msg, /installed -> /);
             const after = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-            assert.deepEqual(after[ocKey], [OBJ_A, "foreign-str", OBJ_B, path.join(cfgDir, "plugins", "billion-context")]);
+            assert.deepEqual(after[ocKey], [OBJ_A, "foreign-str", OBJ_B, path.join(cfgDir, "plugins", "sigma")]);
 
             // "plugin present" re-run: byte-identical file
             const bytes = fs.readFileSync(file, "utf8");
@@ -105,10 +105,10 @@ test("map-form plugins survive install and remove with their options (#1002)", a
     fs.mkdirSync(cfgDir, { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ [ocKey]: { "@org/x": { options: { z: 1 } }, "plain-y": true } }, null, 2));
     try {
-        await withEnv({ ...env, BILI_CLIENT_BIN: undefined }, async () => {
+        await withEnv({ ...env, SIGMA_CLIENT_BIN: undefined }, async () => {
             const msg = pluginInstall("opencode");
             assert.match(msg, /installed -> /);
-            const shim = path.join(cfgDir, "plugins", "billion-context");
+            const shim = path.join(cfgDir, "plugins", "sigma");
             const after = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
             assert.deepEqual(after[ocKey], { "@org/x": { options: { z: 1 } }, "plain-y": true, [shim]: true });
             assert.ok(!Array.isArray(after[ocKey]), "map form preserved");
@@ -122,7 +122,7 @@ test("map-form plugins survive install and remove with their options (#1002)", a
     }
 });
 
-test(".bili-bak reflects the state before the LATEST write, not the first ever (#1002)", async () => {
+test(".sigma-bak reflects the state before the LATEST write, not the first ever (#1002)", async () => {
     const { home, cfgDir, env } = isolatedHome();
     const file = path.join(cfgDir, "opencode.json");
     fs.mkdirSync(cfgDir, { recursive: true });
@@ -130,14 +130,14 @@ test(".bili-bak reflects the state before the LATEST write, not the first ever (
     try {
         await withEnv(env, async () => {
             pluginInstall("opencode");
-            assert.match(fs.readFileSync(`${file}.bili-bak`, "utf8"), /pre-install/);
+            assert.match(fs.readFileSync(`${file}.sigma-bak`, "utf8"), /pre-install/);
 
-            // user edit lands on disk, then bili writes again — the backup
+            // user edit lands on disk, then sigma writes again — the backup
             // must advance to the state right before that second write
             const userEdited = JSON.stringify({ marker: "user-edit", extra: 1 }, null, 2) + "\n";
             fs.writeFileSync(file, userEdited);
             pluginInstall("opencode");
-            assert.equal(fs.readFileSync(`${file}.bili-bak`, "utf8"), userEdited, "backup refreshed to latest pre-write state");
+            assert.equal(fs.readFileSync(`${file}.sigma-bak`, "utf8"), userEdited, "backup refreshed to latest pre-write state");
         });
     } finally {
         fs.rmSync(home, { recursive: true, force: true });

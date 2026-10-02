@@ -26,7 +26,7 @@ function close(server: http.Server): Promise<void> {
 }
 
 test("health + stats expose blindTunnels counts with real hosts (#897)", async () => {
-    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bili-blind-stats-"));
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-blind-stats-"));
     const prevXdg = process.env.XDG_STATE_HOME;
     const prevData = process.env.XDG_DATA_HOME;
     process.env.XDG_STATE_HOME = tmpRoot;

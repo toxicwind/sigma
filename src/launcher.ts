@@ -1,27 +1,27 @@
 /**
- * `bili <client>` launcher — brings up the proxy on an independent port and
+ * `sigma <client>` launcher — brings up the proxy on an independent port and
  * points a coding agent at it, auto-proxying BOTH schemes without editing the
  * client's config files:
  *   - HTTPS upstreams → cert MITM (HTTPS_PROXY + the proxy's MITM CA, with the
  *     discovered hosts whitelisted for TLS interception).
- *   - HTTP upstreams → `/bili/` baseURL rewrite (cert MITM can't intercept
+ *   - HTTP upstreams → `/sigma/` baseURL rewrite (cert MITM can't intercept
  *     plaintext), applied via the client's own mechanism: codex `-c key=value`,
- *     claude `ANTHROPIC_BASE_URL` env, pi via `registerProvider` in the bili
- *     extension (#535 — manifest passed through BILI_PROVIDER_REWRITES).
+ *     claude `ANTHROPIC_BASE_URL` env, pi via `registerProvider` in the sigma
+ *     extension (#535 — manifest passed through SIGMA_PROVIDER_REWRITES).
  *
- *   bili pi     [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS
- *   bili codex  [-- client args...]   HTTPS_PROXY + SSL_CERT_FILE
- *   bili claude [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS
- *   bili kimi   [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS (cert-MITM)
- *   bili aider  [-- client args...]   HTTPS_PROXY + SSL_CERT_FILE/REQUESTS_CA_BUNDLE (cert-MITM)
- *   bili test pi                      non-polluting pi smoke test
+ *   sigma pi     [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS
+ *   sigma codex  [-- client args...]   HTTPS_PROXY + SSL_CERT_FILE
+ *   sigma claude [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS
+ *   sigma kimi   [-- client args...]   HTTPS_PROXY + NODE_EXTRA_CA_CERTS (cert-MITM)
+ *   sigma aider  [-- client args...]   HTTPS_PROXY + SSL_CERT_FILE/REQUESTS_CA_BUNDLE (cert-MITM)
+ *   sigma test pi                      non-polluting pi smoke test
  *
  * The real upstream hosts are DISCOVERED by reading (never editing) the
  * client's own config: pi's `~/.pi/agent/models.json` providers, Codex's
  * `~/.codex/config.toml`, Claude's hardcoded api.anthropic.com. HTTPS hosts are
  * whitelisted for MITM so the proxy TLS-terminates exactly them and
- * blind-tunnels the rest; HTTP hosts are routed through the `/bili/` rewrite.
- * Compression rides the existing MITM + `/bili/` pipelines.
+ * blind-tunnels the rest; HTTP hosts are routed through the `/sigma/` rewrite.
+ * Compression rides the existing MITM + `/sigma/` pipelines.
  *
  * Lifecycle: a proxy already listening on the requested port is REUSED
  * (not owned). Otherwise a detached proxy child is spawned on that port (or a
@@ -48,11 +48,11 @@ import {
     type ProxyInstanceFile,
     type ProxyStartingMarker,
 } from "./instance.js";
-import { selfPackageRoot, isBiliPiEntry, ompPluginLoadedFrom, dshNativeInstalled, claudeNativeInstalled } from "./plugin-install.js";
+import { selfPackageRoot, isSigmaPiEntry, ompPluginLoadedFrom, dshNativeInstalled, claudeNativeInstalled } from "./plugin-install.js";
 
 /** Absolute path of a file inside our dist/, resolved via the package root
  * (import.meta.url-based) so it survives global-installed symlink bins
- * (~/.local/bin/bili → .../node_modules/billion-context) — process.argv[1]
+ * (~/.local/bin/sigma → .../node_modules/sigma) — process.argv[1]
  * stays at the symlink and would break path.resolve(dirname(argv[1]), ...). */
 function selfDistFile(name: string): string {
     return path.join(selfPackageRoot(), "dist", name);
@@ -182,12 +182,12 @@ export interface LaunchOptions {
     parentPid?: number;
     /** Per-model context windows read from the client's own config (pi
      *  models.json / omp models.yml / …). Handed to the spawned proxy via
-     *  BILI_LAUNCHER_MODEL_WINDOWS so the nudge denominator matches the
+     *  SIGMA_LAUNCHER_MODEL_WINDOWS so the nudge denominator matches the
      *  client's real window instead of the built-in table guess. */
     modelWindows?: Record<string, number>;
     /** Per-model configured max output (#971), same sources as
      *  modelWindows. Handed to the spawned proxy via
-     *  BILI_LAUNCHER_MODEL_MAX_OUTPUTS for the output-headroom reservation. */
+     *  SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS for the output-headroom reservation. */
     modelMaxOutputs?: Record<string, number>;
     /** Pin opts.port: an EADDRINUSE at bind fails loud (child exits 1)
      * instead of the launcher default of port-hopping +1 (#964 — the claude
@@ -195,9 +195,9 @@ export interface LaunchOptions {
      * that silently landed on port+1 would strand every model request). */
     strictPort?: boolean;
     /** #1225: which client/lane this launch belongs to. Recorded by the
-     *  spawned child (BILI_LAUNCHER_LANE) and compared on attach: two
+     *  spawned child (SIGMA_LAUNCHER_LANE) and compared on attach: two
      *  DIFFERENT declared lanes never share an instance, while an undeclared
-     *  side (manual `bili start` daemon, pre-#1225 instance) stays a
+     *  side (manual `sigma start` daemon, pre-#1225 instance) stays a
      *  wildcard. Without this, pi and codex with identical config shape
      *  silently shared one proxy and cross-wrote each other's state. */
     lane?: string;
@@ -211,7 +211,7 @@ export interface ProxyHandle {
     attached?: boolean;
     /** #1322: attach succeeded but the proxy REFUSED the session-watcher
      *  registration (409 — it has no session-lifecycle watchdog, i.e. it was
-     *  started without BILI_PARENT_PID, e.g. manually on a stable port). The
+     *  started without SIGMA_PARENT_PID, e.g. manually on a stable port). The
      *  proxy will outlive every session and ignore config edits until killed;
      *  host-native bootstraps must surface this instead of staying silent. */
     refusedWatcher?: boolean;
@@ -221,7 +221,7 @@ export interface LauncherDeps {
     fetchImpl?: (url: string) => Promise<{ ok: boolean }>;
     fetchHealthInfo?: (origin: string) => Promise<HealthInfo | undefined>;
     /** #1335: resolves the attach-gate escape hatch. Default reads env
-     *  BILI_NATIVE_ATTACH_EXTERNAL > config `native.attachExternal` > false. */
+     *  SIGMA_NATIVE_ATTACH_EXTERNAL > config `native.attachExternal` > false. */
     resolveAttachExternal?: () => boolean;
     readInstanceFile?: () => ProxyInstanceFile | { origin: string } | undefined;
     spawnImpl?: SpawnFn;
@@ -256,7 +256,7 @@ export function baseClientName(client: ClientName): BaseClientName {
     return client === "pi-test" ? "pi" : client;
 }
 
-/** `pi-test` injects `--no-extensions` so the billion-context-pi client extension doesn't double-compress alongside the proxy. */
+/** `pi-test` injects `--no-extensions` so the sigma-pi client extension doesn't double-compress alongside the proxy. */
 export function piTestArgs(client: ClientName, clientArgs: string[]): string[] {
     return client === "pi-test" ? ["--no-extensions", ...clientArgs] : clientArgs;
 }
@@ -271,20 +271,20 @@ export function healthUrl(origin: string): string {
 
 export function wrapUpstream(origin: string, upstream: string): string {
     const u = upstream.replace(/\/+$/, "");
-    const prefix = origin + "/bili/";
+    const prefix = origin + "/sigma/";
     if (u.startsWith(prefix)) return u;
     return prefix + u;
 }
 
-/** Inverse of wrapUpstream: recover the real upstream from a `<…>/bili/<real>` URL. */
+/** Inverse of wrapUpstream: recover the real upstream from a `<…>/sigma/<real>` URL. */
 export function unwrapUpstream(url: string): string {
-    const idx = url.indexOf("/bili/");
-    return idx >= 0 ? url.slice(idx + "/bili/".length) : url;
+    const idx = url.indexOf("/sigma/");
+    return idx >= 0 ? url.slice(idx + "/sigma/".length) : url;
 }
 
 /** Loopback destinations (localhost / ::1 / 127.x). dsh's fetch stack bypasses
  *  proxy envs for these unconditionally (LOOPBACK_NO_PROXY), so they are the
- *  only upstreams that need the /bili/ URL rewrite (#535 phase 4). */
+ *  only upstreams that need the /sigma/ URL rewrite (#535 phase 4). */
 export function isLoopbackHost(host: string): boolean {
     const h = host.toLowerCase();
     if (h === "localhost" || h === "::1" || h === "[::1]") return true;
@@ -311,12 +311,12 @@ export interface DiscoveredRoutes {
 
 export function resolveCaCertPath(env: NodeJS.ProcessEnv): string {
     const base = env.XDG_DATA_HOME || path.join(os.homedir(), ".local/share");
-    return path.join(base, "billion-context", "ca", "root-ca.pem");
+    return path.join(base, "sigma", "ca", "root-ca.pem");
 }
 
 export function resolveCombinedCaPath(env: NodeJS.ProcessEnv): string {
     const base = env.XDG_DATA_HOME || path.join(os.homedir(), ".local/share");
-    return path.join(base, "billion-context", "ca", "combined-ca.pem");
+    return path.join(base, "sigma", "ca", "combined-ca.pem");
 }
 
 export function extractDomains(upstreams: string[]): string[] {
@@ -361,7 +361,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
                 httpsSeen.add(host.toLowerCase());
                 httpsDomains.push(host);
             }
-            // Wrapped HTTPS (/bili/<https>): rewrite client base_url to the RAW
+            // Wrapped HTTPS (/sigma/<https>): rewrite client base_url to the RAW
             // https upstream so HTTPS_PROXY routes it through the cert MITM.
             if (raw !== unwrapUpstream(raw) && !httpsRewriteKeys.has(key)) {
                 httpsRewriteKeys.add(key);
@@ -378,7 +378,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
     if (client === "claude") {
         // Claude Code's undici fetch ignores HTTPS_PROXY, so cert MITM cannot
         // intercept it. Route every upstream — raw HTTP, raw HTTPS, or already
-        // wrapped at a previous proxy origin — through the /bili/ URL form via
+        // wrapped at a previous proxy origin — through the /sigma/ URL form via
         // ANTHROPIC_BASE_URL instead (claude honors that env var natively).
         const raw = nonEmpty(config.claude?.anthropicBaseUrl) ? config.claude!.anthropicBaseUrl! : "https://api.anthropic.com";
         const real = unwrapUpstream(raw);
@@ -395,9 +395,9 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
     } else if (client === "codebuddy") {
         // codebuddy (Tencent CodeBuddy Code CLI) honors CODEBUDDY_BASE_URL
         // natively; its ModelProvider is the OpenAI SDK, so model traffic is
-        // OpenAI chat completions (POST <base>/chat/completions) — bili routes
+        // OpenAI chat completions (POST <base>/chat/completions) — sigma routes
         // it through the openai adapter by path. Every upstream is routed
-        // through the /bili/ URL form. The CN platform default endpoint is the
+        // through the /sigma/ URL form. The CN platform default endpoint is the
         // verified fallback; the international build defaults to
         // https://www.codebuddy.ai/v2 (product.json), so other deployments
         // must set CODEBUDDY_BASE_URL in settings.json or the shell.
@@ -476,7 +476,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         // "the bypass is not optional"), so only non-loopback upstreams can
         // ride the proxy: https → cert MITM (host whitelisted below), plain
         // http → absolute-form forward-proxy requests (httpEnvRoutes).
-        // Loopback destinations (http OR https) still need the /bili/ URL
+        // Loopback destinations (http OR https) still need the /sigma/ URL
         // rewrite in settings.yaml — the documented file exception. The
         // built-in deepseek-official route is captured via $DEEPSEEK_BASE_URL
         // in runLaunch.
@@ -512,7 +512,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         // the v0.42.0 binary), so only non-loopback upstreams can ride the
         // proxy: https → cert MITM (host whitelisted below), plain http →
         // absolute-form forward-proxy requests (httpEnvRoutes). Loopback
-        // destinations need a manual /bili/ prefix in config.toml — inventory
+        // destinations need a manual /sigma/ prefix in config.toml — inventory
         // only here, feeding the banner. Endpoints the user already wrapped
         // (raw !== real) are skipped so they don't trigger the warning.
         const kimiSeen = new Set<string>();
@@ -561,7 +561,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         // #1050: MiniMax Code honors standard proxy envs for all outbound
         // traffic EXCEPT an unconditional loopback NO_PROXY bypass (verified
         // against @minimax-ai/code 0.4.12, packages/tui/src/cli/network-proxy.ts),
-        // same shape as kimi above. Loopback upstreams need a manual /bili/
+        // same shape as kimi above. Loopback upstreams need a manual /sigma/
         // prefix in config.yaml — inventory only, feeding the banner.
         const mcodeSeen = new Set<string>();
         let anon = 0;
@@ -604,7 +604,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         }
     } else if (client === "qoder") {
         // #653: qoder's model endpoint scheme is hardcoded https with no
-        // base-URL override env, so /bili/ rewrites cannot reach it — cert
+        // base-URL override env, so /sigma/ rewrites cannot reach it — cert
         // MITM is the only route (qoder honors HTTPS_PROXY +
         // NODE_EXTRA_CA_CERTS). Whitelist is the binary's static host map
         // (prod + regional + CN gateway); an explicit QODER_MODEL_SERVER_HOST
@@ -621,7 +621,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         // #655: Trae CLI is a closed Go binary (no base-URL override) that
         // honors HTTPS_PROXY; the model API host is TRAE_CLI_API_HOST or the
         // default enterprise gateway. Whitelist the host(s) for cert-MITM so
-        // the proxy can compress the model traffic. No /bili/ rewrite (the
+        // the proxy can compress the model traffic. No /sigma/ rewrite (the
         // scheme is hardcoded https).
         const hosts = nonEmpty(config.trae?.modelApiHost)
             ? [config.trae!.modelApiHost!]
@@ -651,7 +651,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         // #1047: gemini-cli's @google/genai client switches to GATEWAY mode
         // whenever GOOGLE_GEMINI_BASE_URL is set and sends model traffic
         // DIRECTLY to that URL (its model-call fetch ignores proxy envs), so
-        // the /bili/ URL form is the only route. The SDK appends
+        // the /sigma/ URL form is the only route. The SDK appends
         // `<apiVersion>/models/…` itself (default v1beta), so wrap the bare
         // host origin — no /v1beta suffix. A user-exported base URL is a
         // relay: wrap IT instead of the stock endpoint (claude semantics).
@@ -669,7 +669,7 @@ export function discoverRoutes(client: ClientName, config: ClientConfig): Discov
         }
     } else if (client === "iflow") {
         // #1047: iFlow CLI honors IFLOW_BASE_URL natively; its stock endpoint
-        // is apis.iflow.cn/v1 (OpenAI wire — bili routes it by path). Same
+        // is apis.iflow.cn/v1 (OpenAI wire — sigma routes it by path). Same
         // relay-wrap semantics as gemini.
         const raw = nonEmpty(config.iflow?.baseUrl) ? config.iflow!.baseUrl! : "https://apis.iflow.cn/v1";
         const real = unwrapUpstream(raw);
@@ -808,10 +808,10 @@ export function buildPiEnv(
     mitmHosts: string[] = [],
 ): NodeJS.ProcessEnv {
     // #535: provider URL rewrites ride env, not a generated models.json —
-    // the bili extension (agent/pi.js) consumes this manifest at load and
+    // the sigma extension (agent/pi.js) consumes this manifest at load and
     // overrides each provider's baseUrl via registerProvider before any
     // model traffic. https upstreams whose models.json baseUrl was already
-    // hand-wrapped to `<origin>/bili/https://...` (README Option 2) ALSO
+    // hand-wrapped to `<origin>/sigma/https://...` (README Option 2) ALSO
     // need an entry — with the RAW https value, which repoints them off the
     // stale embedded origin onto the cert-MITM path (HTTPS_PROXY + CA).
     const manifest: Record<string, string> = {};
@@ -827,24 +827,24 @@ export function buildPiEnv(
         ...baseEnv,
         HTTPS_PROXY: origin,
         NODE_EXTRA_CA_CERTS: caPath,
-        BILLION_CONTEXT_PROXY: origin,
-        ...(Object.keys(manifest).length > 0 ? { BILI_PROVIDER_REWRITES: JSON.stringify(manifest) } : {}),
+        SIGMA_PROXY: origin,
+        ...(Object.keys(manifest).length > 0 ? { SIGMA_PROVIDER_REWRITES: JSON.stringify(manifest) } : {}),
         // #1403: the extension stamps prompt_cache_key only for destinations on
-        // this list (or /bili/-wrapped URLs) — exactly the hosts the proxy will
+        // this list (or /sigma/-wrapped URLs) — exactly the hosts the proxy will
         // MITM-decrypt and strip it from. Blind-tunnel destinations must NOT be
         // stamped or strict-schema upstreams 400 the foreign field.
-        ...(mitmHosts.length > 0 ? { BILI_MITM_HOSTS: mitmHosts.join(",") } : {}),
+        ...(mitmHosts.length > 0 ? { SIGMA_MITM_HOSTS: mitmHosts.join(",") } : {}),
     };
 }
 
 export function buildCodexEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, BILLION_CONTEXT_PROXY: origin };
+    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, SIGMA_PROXY: origin };
 }
 
 export function buildTraeEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     // #655: trae is a Go binary like codex — the CA rides SSL_CERT_FILE (the
     // combined bundle, since it replaces Go's system trust store).
-    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, BILLION_CONTEXT_PROXY: origin };
+    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, SIGMA_PROXY: origin };
 }
 
 export function buildJcodeEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -854,7 +854,7 @@ export function buildJcodeEnv(origin: string, caPath: string, baseEnv: NodeJS.Pr
         ...baseEnv,
         HTTPS_PROXY: origin,
         SSL_CERT_FILE: caPath,
-        BILLION_CONTEXT_PROXY: origin,
+        SIGMA_PROXY: origin,
         NO_PROXY: "localhost,127.0.0.1,::1",
         no_proxy: "localhost,127.0.0.1,::1",
     };
@@ -874,7 +874,7 @@ export function buildAiderEnv(origin: string, caBundle: string, baseEnv: NodeJS.
         ...(routeHttp ? { HTTP_PROXY: origin } : {}),
         SSL_CERT_FILE: caBundle,
         REQUESTS_CA_BUNDLE: caBundle,
-        BILLION_CONTEXT_PROXY: origin,
+        SIGMA_PROXY: origin,
         NO_PROXY: "localhost,127.0.0.1,::1",
         no_proxy: "localhost,127.0.0.1,::1",
     };
@@ -883,12 +883,12 @@ export function buildAiderEnv(origin: string, caBundle: string, baseEnv: NodeJS.
 export function buildCopilotEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     // #1049: copilot is a Go binary like codex/trae — the CA rides SSL_CERT_FILE
     // (the combined bundle, since it replaces Go's system trust store).
-    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, BILLION_CONTEXT_PROXY: origin };
+    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, SIGMA_PROXY: origin };
 }
 
 export function buildAmpEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     // #1049: amp is a Go binary like copilot — same cert-MITM contract.
-    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, BILLION_CONTEXT_PROXY: origin };
+    return { ...baseEnv, HTTPS_PROXY: origin, SSL_CERT_FILE: caPath, SIGMA_PROXY: origin };
 }
 
 export function buildCodexArgs(
@@ -910,7 +910,7 @@ export function buildCodexArgs(
 
 /**
  * PR-D (#321): budget alignment for launcher-spawned agents. Resolves the
- * context window bili will use as its compression denominator for `model` —
+ * context window sigma will use as its compression denominator for `model` —
  * the same chain the proxy applies, minus the per-request-only sources
  * (anthropic-beta header, plugin report, launcher window):
  *   per-route per-model config declaration → built-in CONTEXT_LIMIT_TABLE
@@ -939,16 +939,16 @@ export async function resolveLauncherWindow(
 
 /**
  * PR-D (#321): codex's auto-compact budget is keyed off the window CODEX
- * believes the model has (its bundled model table — bili has no say in it),
- * while bili's ACP compression is keyed off bili's own window resolution.
- * Two uncoordinated budgets (#292): when bili's window exceeds codex's
- * perception, codex's ledger (server-reported usage, which bili sees) crosses
+ * believes the model has (its bundled model table — sigma has no say in it),
+ * while sigma's ACP compression is keyed off sigma's own window resolution.
+ * Two uncoordinated budgets (#292): when sigma's window exceeds codex's
+ * perception, codex's ledger (server-reported usage, which sigma sees) crosses
  * codex's ~90% threshold first and fires its native compaction ahead of ACP.
  *
  * Injecting `-c model_context_window=<W> -c model_auto_compact_token_limit=<W>`
- * (W = bili's effective window) makes codex's auto-compact threshold 90%×W —
+ * (W = sigma's effective window) makes codex's auto-compact threshold 90%×W —
  * ACP (≈55%×W) always fires first, and codex's LOCAL compaction (benign for
- * bili: same-session truncation the kernel deactivates by message id) only
+ * sigma: same-session truncation the kernel deactivates by message id) only
  * backstops when ACP fails, before codex's 95% hard cap. codex clamps both
  * values to its own max_context_window, so an over-generous W degrades to
  * codex's own perception instead of overshooting.
@@ -956,9 +956,9 @@ export async function resolveLauncherWindow(
  * Returns [] (no injection) when:
  *  - no model is configured (nothing to resolve a window for),
  *  - the user already set `model_context_window` in codex's config.toml
- *    (bili's proxy uses exactly that value as its launcher window — the
+ *    (sigma's proxy uses exactly that value as its launcher window — the
  *    budget is already aligned by the user's own declaration),
- *  - bili resolves no window for the model (no authoritative value to inject).
+ *  - sigma resolves no window for the model (no authoritative value to inject).
  * A user-set `model_auto_compact_token_limit` is honored (not overridden).
  */
 /** The base URL codex will actually call: the selected provider's
@@ -987,14 +987,14 @@ export async function resolveCodexBudgetArgs(opts: {
 /**
  * PR-D (#321): claude-code's auto-compact window is a single env knob —
  * `CLAUDE_CODE_AUTO_COMPACT_WINDOW` outranks settings and is clamped DOWN to
- * the model window claude itself perceives (never up), so injecting bili's
- * window is always safe: it tightens claude's threshold to bili's budget when
- * bili's window is smaller, and is a no-op when it is larger.
+ * the model window claude itself perceives (never up), so injecting sigma's
+ * window is always safe: it tightens claude's threshold to sigma's budget when
+ * sigma's window is smaller, and is a no-op when it is larger.
  *
  * Returns {} (no injection) when: no model resolvable, the user already set
  * an explicit auto-compact window (settings `autoCompactWindow` or
  * `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`, or a shell-exported env var), or
- * bili resolves no window for the model.
+ * sigma resolves no window for the model.
  */
 export async function resolveClaudeBudgetEnv(opts: {
     model: string | undefined;
@@ -1017,7 +1017,7 @@ export function buildClaudeEnv(
     httpsRewrites: HttpRewrite[],
     baseEnv: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, BILLION_CONTEXT_PROXY: origin };
+    const env: NodeJS.ProcessEnv = { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, SIGMA_PROXY: origin };
     const r = httpRewrites.find((rw) => rw.key === "ANTHROPIC_BASE_URL");
     if (r) env.ANTHROPIC_BASE_URL = wrapUpstream(origin, r.realUpstream);
     const hr = httpsRewrites.find((rw) => rw.key === "ANTHROPIC_BASE_URL");
@@ -1027,10 +1027,10 @@ export function buildClaudeEnv(
 
 /** codebuddy budget alignment (#321 pattern, mirrors resolveClaudeBudgetEnv):
  *  inject CODEBUDDY_AUTO_COMPACT_WINDOW so codebuddy's native auto-compact
- *  threshold matches bili's compress budget. Returns {} (no injection) when:
+ *  threshold matches sigma's compress budget. Returns {} (no injection) when:
  *  no model resolvable, the user already set an explicit auto-compact window
  *  (settings `autoCompactWindow` or a shell-exported
- *  CODEBUDDY_AUTO_COMPACT_WINDOW), or bili resolves no window for the model. */
+ *  CODEBUDDY_AUTO_COMPACT_WINDOW), or sigma resolves no window for the model. */
 export async function resolveCodebuddyBudgetEnv(opts: {
     model: string | undefined;
     userAutoCompactWindow: number | undefined;
@@ -1052,7 +1052,7 @@ export function buildCodebuddyEnv(
     httpsRewrites: HttpRewrite[],
     baseEnv: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, BILLION_CONTEXT_PROXY: origin };
+    const env: NodeJS.ProcessEnv = { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, SIGMA_PROXY: origin };
     const r = httpRewrites.find((rw) => rw.key === "CODEBUDDY_BASE_URL");
     if (r) env.CODEBUDDY_BASE_URL = wrapUpstream(origin, r.realUpstream);
     const hr = httpsRewrites.find((rw) => rw.key === "CODEBUDDY_BASE_URL");
@@ -1066,7 +1066,7 @@ export function buildCodebuddyEnv(
  *  ADDITIVE (unlike codex's SSL_CERT_FILE), so the plain root CA suffices.
  *  No base-URL rewrite of any kind. */
 export function buildQoderEnv(origin: string, caPath: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    return { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, BILLION_CONTEXT_PROXY: origin };
+    return { ...baseEnv, HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: caPath, SIGMA_PROXY: origin };
 }
 
 export function buildGeminiEnv(
@@ -1078,7 +1078,7 @@ export function buildGeminiEnv(
 ): NodeJS.ProcessEnv {
     // No proxy/CA env: model traffic goes straight to the loopback proxy via
     // GOOGLE_GEMINI_BASE_URL (GATEWAY mode), never through HTTPS_PROXY.
-    const env: NodeJS.ProcessEnv = { ...baseEnv, BILLION_CONTEXT_PROXY: origin };
+    const env: NodeJS.ProcessEnv = { ...baseEnv, SIGMA_PROXY: origin };
     const r = httpRewrites.find((rw) => rw.key === "GOOGLE_GEMINI_BASE_URL");
     if (r) env.GOOGLE_GEMINI_BASE_URL = wrapUpstream(origin, r.realUpstream);
     const hr = httpsRewrites.find((rw) => rw.key === "GOOGLE_GEMINI_BASE_URL");
@@ -1095,7 +1095,7 @@ export function buildIflowEnv(
 ): NodeJS.ProcessEnv {
     // iFlow accepts case variants of the base-URL env; set both documented
     // forms so whichever the client reads first wins.
-    const env: NodeJS.ProcessEnv = { ...baseEnv, BILLION_CONTEXT_PROXY: origin };
+    const env: NodeJS.ProcessEnv = { ...baseEnv, SIGMA_PROXY: origin };
     const r = httpRewrites.find((rw) => rw.key === "IFLOW_BASE_URL");
     if (r) {
         env.IFLOW_BASE_URL = wrapUpstream(origin, r.realUpstream);
@@ -1116,7 +1116,7 @@ export function buildQwenEnv(origin: string, caPath: string, baseEnv: NodeJS.Pro
         ...baseEnv,
         HTTPS_PROXY: origin,
         NODE_EXTRA_CA_CERTS: caPath,
-        BILLION_CONTEXT_PROXY: origin,
+        SIGMA_PROXY: origin,
         NO_PROXY: "localhost,127.0.0.1,::1",
         no_proxy: "localhost,127.0.0.1,::1",
     };
@@ -1125,13 +1125,13 @@ export function buildQwenEnv(origin: string, caPath: string, baseEnv: NodeJS.Pro
 /**
  * #653: qoder's auto-compact window is a single env knob —
  * `QODER_AUTOCOMPACT_WINDOW` (`QODERCN_` prefix on the CN site) caps the
- * effective context window (`min(modelWindow, env)`), so injecting bili's
+ * effective context window (`min(modelWindow, env)`), so injecting sigma's
  * window is always safe (same #321 pattern as claude).
  *
  * Returns {} (no injection) when: no model resolvable, the user already set
- * an explicit auto-compact window (shell-exported env var), or bili resolves
+ * an explicit auto-compact window (shell-exported env var), or sigma resolves
  * no window for the model. qoder's model catalog is server-driven, so its
- * model names are usually absent from bili's configured limits and the
+ * model names are usually absent from sigma's configured limits and the
  * models.dev registry — the common outcome is no injection, with the user's
  * own `QODER_AUTOCOMPACT_WINDOW` as the fallback (issue #653 open question 3).
  */
@@ -1152,15 +1152,15 @@ export async function resolveQoderBudgetEnv(opts: {
 // --- Launcher plugin mode (#162): inject the MCP shell + session hooks as
 // spawn-time flags, never touching host config files on disk. ---
 
-/** Direct-URL mode: the host talks to the proxy via the /bili/ prefix (no
- *  MITM/CA). OPT-IN via BILI_LAUNCHER_DIRECT=1 — the default keeps the
- *  transparent-proxy (MITM) route so existing `bili claude` / `bili codex`
+/** Direct-URL mode: the host talks to the proxy via the /sigma/ prefix (no
+ *  MITM/CA). OPT-IN via SIGMA_LAUNCHER_DIRECT=1 — the default keeps the
+ *  transparent-proxy (MITM) route so existing `sigma claude` / `sigma codex`
  *  setups behave exactly as before: OAuth-subscription traffic and custom
  *  relay endpoints (ANTHROPIC_BASE_URL / codex provider config) keep working.
  *  Direct mode changes what the host points at, so it must be a deliberate
  *  choice, not a silent upgrade. */
 export function launcherDirectUrl(env: NodeJS.ProcessEnv): boolean {
-    return env.BILI_LAUNCHER_DIRECT === "1";
+    return env.SIGMA_LAUNCHER_DIRECT === "1";
 }
 
 /** True when the host points at self-hosted inference: loopback, RFC1918,
@@ -1207,8 +1207,8 @@ function isPrivateIPv4(host: string): boolean {
 
 /** Plugin-in-launcher MCP injection is ON by default for claude/codex
  *  (zero-config, mirroring the pi/omp/opencode auto-injection): the launcher
- *  injects a single `bili` MCP server so the host gets native tools instead
- *  of wire-injected ones. `BILI_LAUNCHER_PLUGIN=0` is the kill switch back to
+ *  injects a single `sigma` MCP server so the host gets native tools instead
+ *  of wire-injected ones. `SIGMA_LAUNCHER_PLUGIN=0` is the kill switch back to
  *  pure wire mode — for hosts older than the verified builds (claude 2.1.227,
  *  codex 0.147.0) that have not been tested against `--mcp-config` /
  *  `-c mcp_servers.*`. pi/omp/opencode/hermes/dsh are always excluded — they
@@ -1219,7 +1219,7 @@ function isPrivateIPv4(host: string): boolean {
  *  parse it — the injected tools become silently invisible and the model
  *  fumbles for them. When the codex upstream is a local/private endpoint and
  *  the user has not chosen explicitly, wire mode (flat tools every server
- *  understands) is the sane default. `BILI_LAUNCHER_PLUGIN=1` forces plugin
+ *  understands) is the sane default. `SIGMA_LAUNCHER_PLUGIN=1` forces plugin
  *  mode regardless of the upstream.
  *
  *  codebuddy is always excluded too: its `--mcp-config` compatibility is not
@@ -1232,24 +1232,24 @@ function isPrivateIPv4(host: string): boolean {
   *  surfaces, v1 runs pure wire mode (#1049). */
 export function launcherInjectMcp(env: NodeJS.ProcessEnv, base: string, codexUpstream?: string): boolean {
     if (base === "pi" || base === "omp" || base === "opencode" || base === "hermes" || base === "dsh" || base === "codebuddy" || base === "qoder" || base === "trae" || base === "jcode" || base === "kimi" || base === "gemini" || base === "iflow" || base === "qwen" || base === "mcode" || base === "aider" || base === "copilot" || base === "amp" || base === "goose") return false;
-    if (env.BILI_LAUNCHER_PLUGIN === "0") return false;
-    if (base === "codex" && env.BILI_LAUNCHER_PLUGIN === undefined && codexUpstream !== undefined && isPrivateUpstreamHost(codexUpstream)) {
+    if (env.SIGMA_LAUNCHER_PLUGIN === "0") return false;
+    if (base === "codex" && env.SIGMA_LAUNCHER_PLUGIN === undefined && codexUpstream !== undefined && isPrivateUpstreamHost(codexUpstream)) {
         return false;
     }
     return true;
 }
 
-/** Ephemeral MCP config for --mcp-config / -c mcp_servers.bili.*: a single
- *  "bili" stdio server running dist/mcp.js. Args are kept flat so codex's
+/** Ephemeral MCP config for --mcp-config / -c mcp_servers.sigma.*: a single
+ *  "sigma" stdio server running dist/mcp.js. Args are kept flat so codex's
  *  TOML value parser stays happy. */
-export function buildMcpConfig(origin: string): { mcpServers: { bili: { command: string; args: string[]; env: Record<string, string> } } } {
+export function buildMcpConfig(origin: string): { mcpServers: { sigma: { command: string; args: string[]; env: Record<string, string> } } } {
     const script = selfDistFile("mcp.js");
     return {
         mcpServers: {
-            bili: {
+            sigma: {
                 command: process.execPath,
                 args: [script],
-                env: { BILI_MCP_PROXY: origin },
+                env: { SIGMA_MCP_PROXY: origin },
             },
         },
     };
@@ -1262,7 +1262,7 @@ export function buildMcpConfig(origin: string): { mcpServers: { bili: { command:
  *  itself, verified 2.1.227). */
 export function buildClaudePluginEnv(origin: string, directUrl: boolean, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (!directUrl) return baseEnv;
-    const upstream = baseEnv.BILI_CLAUDE_UPSTREAM?.trim() || "https://api.anthropic.com";
+    const upstream = baseEnv.SIGMA_CLAUDE_UPSTREAM?.trim() || "https://api.anthropic.com";
     return { ...baseEnv, ANTHROPIC_BASE_URL: wrapUpstream(origin, upstream) };
 }
 
@@ -1277,14 +1277,14 @@ export function buildClaudePluginEnv(origin: string, directUrl: boolean, baseEnv
 export function buildClaudeSettingsArg(platform: NodeJS.Platform, override: string): { clientArgs: string[]; tmpFile?: string } {
     const payload = JSON.stringify({ env: { ANTHROPIC_BASE_URL: override } });
     if (platform !== "win32") return { clientArgs: ["--settings", payload] };
-    const tmpFile = path.join(os.tmpdir(), `bili-claude-settings-${Date.now()}.json`);
+    const tmpFile = path.join(os.tmpdir(), `sigma-claude-settings-${Date.now()}.json`);
     fs.writeFileSync(tmpFile, payload);
     return { clientArgs: ["--settings", tmpFile], tmpFile };
 }
 
-/** Codex: -c inline overrides for the bili MCP server only.
+/** Codex: -c inline overrides for the sigma MCP server only.
  *
- *  `conversationId` is a per-spawn UUID injected as BILI_CONVERSATION_ID:
+ *  `conversationId` is a per-spawn UUID injected as SIGMA_CONVERSATION_ID:
  *  codex passes no session id to MCP children (verified codex-cli 0.147.0),
  *  so the MCP shell uses this to self-register headlessly; the first model
  *  request that creates a NEW session consumes the registration and binds
@@ -1296,24 +1296,24 @@ export function buildCodexMcpArgs(origin: string, conversationId: string): strin
     const script = selfDistFile("mcp.js");
     return [
         "-c",
-        `mcp_servers.bili.command=${JSON.stringify(process.execPath)}`,
+        `mcp_servers.sigma.command=${JSON.stringify(process.execPath)}`,
         "-c",
-        `mcp_servers.bili.args=${JSON.stringify([script])}`,
+        `mcp_servers.sigma.args=${JSON.stringify([script])}`,
         "-c",
-        `mcp_servers.bili.env.BILI_MCP_PROXY=${JSON.stringify(origin)}`,
+        `mcp_servers.sigma.env.SIGMA_MCP_PROXY=${JSON.stringify(origin)}`,
         "-c",
-        `mcp_servers.bili.env.BILI_CONVERSATION_ID=${JSON.stringify(conversationId)}`,
+        `mcp_servers.sigma.env.SIGMA_CONVERSATION_ID=${JSON.stringify(conversationId)}`,
     ];
 }
 
-/** #681: how the bili MCP server reaches the spawned codex. On POSIX the
- *  inline `-c mcp_servers.bili.*` values are safe (no shell re-parses argv),
+/** #681: how the sigma MCP server reaches the spawned codex. On POSIX the
+ *  inline `-c mcp_servers.sigma.*` values are safe (no shell re-parses argv),
  *  so buildCodexMcpArgs stands. On Windows every codex launch rides a .cmd
  *  shim through cmd.exe, and a `-c` value embedding an absolute path carries
  *  both quotes and spaces — cmd.exe strips the TOML-required quotes (it has no
  *  literal-quote escape), leaving malformed TOML. There the definition is
- *  delivered via a file instead: a persistent <CODEX_HOME>-bili overlay whose
- *  merged config.toml holds [mcp_servers.bili], pointed at by CODEX_HOME.
+ *  delivered via a file instead: a persistent <CODEX_HOME>-sigma overlay whose
+ *  merged config.toml holds [mcp_servers.sigma], pointed at by CODEX_HOME.
  *  When the overlay cannot be built the injection degrades to nothing (wire
  *  mode still compresses server-side) with a warning. */
 export function prepareCodexMcpInjection(opts: {
@@ -1330,7 +1330,7 @@ export function prepareCodexMcpInjection(opts: {
         return {
             clientArgs: [],
             envPatch: {},
-            warning: "could not prepare the codex MCP overlay (<CODEX_HOME>-bili) — launching without native bili MCP tools; wire-injected compression is still active.",
+            warning: "could not prepare the codex MCP overlay (<CODEX_HOME>-sigma) — launching without native sigma MCP tools; wire-injected compression is still active.",
         };
     }
     return { clientArgs: [], envPatch: { CODEX_HOME: overlay } };
@@ -1339,7 +1339,7 @@ export function prepareCodexMcpInjection(opts: {
 /**
  * Shared persistent-overlay machinery for the remaining home-dir launcher
  * (dsh; pi/omp/hermes went file-free in #535 — env routing + extension, no
- * overlay). The overlay (`<realHome>-bili`) symlinks every real-home entry
+ * overlay). The overlay (`<realHome>-sigma`) symlinks every real-home entry
  * except the launcher-generated file (settings.yaml), which is rewritten in
  * place atomically.
  *
@@ -1355,13 +1355,13 @@ export function prepareCodexMcpInjection(opts: {
  * Refresh semantics on every launch: stale `.file.pid.tmp` drafts are dropped;
  * dead or mis-targeted symlinks are re-pointed; real files/dirs that shadow a
  * real-home entry are merged into the real home (recursively; mtime-newer-wins
- * for files, losers preserved as `<name>.bili-conflict`) and only removed from
+ * for files, losers preserved as `<name>.sigma-conflict`) and only removed from
  * the overlay when the merge fully succeeded; entries the real home lacks are
- * kept as-is. A `.bili-launch.pid` marker warns when two launches share the
+ * kept as-is. A `.sigma-launch.pid` marker warns when two launches share the
  * overlay (each launch rewrites the generated file with its own proxy origin).
  */
 function overlayLockPath(overlay: string): string {
-    return path.join(overlay, ".bili-launch.pid");
+    return path.join(overlay, ".sigma-launch.pid");
 }
 
 function livePidHoldsOverlay(overlay: string): number | undefined {
@@ -1454,17 +1454,17 @@ function sqliteSetMembers(base: string): string[] {
     return [base, `${base}-wal`, `${base}-shm`, `${base}-journal`];
 }
 
-/** A `<name>.bili-conflict` target that does not already exist, so a retry
+/** A `<name>.sigma-conflict` target that does not already exist, so a retry
  *  round never silently overwrites a previous round's preserved loser (#381
  *  review): renameSync clobbers an existing target, so append `.1`, `.2`, …
  *  until the name is free. */
 function freeConflictName(dst: string): string {
-    let candidate = `${dst}.bili-conflict`;
+    let candidate = `${dst}.sigma-conflict`;
     let n = 1;
     while (n < 100000) {
         try {
             fs.lstatSync(candidate);
-            candidate = `${dst}.bili-conflict.${n}`;
+            candidate = `${dst}.sigma-conflict.${n}`;
             n += 1;
         } catch {
             return candidate;
@@ -1479,7 +1479,7 @@ function freeConflictName(dst: string): string {
  *  set must come from a single side: per-member mtime adjudication could splice
  *  a newer main db with a newer WAL from the other side and corrupt the
  *  database. The winner's members become the real home's active set; every
- *  losing member is preserved as `<name>.bili-conflict` (never overwritten). A
+ *  losing member is preserved as `<name>.sigma-conflict` (never overwritten). A
  *  set with no main db on either side (orphan sidecars) is stale residue and is
  *  preserved wholesale as conflicts, never moved in as an active db. If any
  *  rename fails (real db open/locked on Windows) the moved ones roll back and
@@ -1562,7 +1562,7 @@ function refreshOverlayHome(realHome: string, overlay: string, generatedFile: st
     const holder = livePidHoldsOverlay(overlay);
     if (holder !== undefined) {
         console.error(
-            `bili: another bili launch (pid ${holder}) is using ${overlay} — concurrent launches share this overlay and the last one's proxy port wins in the generated config.`,
+            `sigma: another sigma launch (pid ${holder}) is using ${overlay} — concurrent launches share this overlay and the last one's proxy port wins in the generated config.`,
         );
     }
     try {
@@ -1640,7 +1640,7 @@ function refreshOverlayHome(realHome: string, overlay: string, generatedFile: st
                         fs.rmSync(overlayPath, { recursive: true, force: true });
                     } catch {}
                 } else {
-                    console.error(`bili: could not merge ${overlayPath} into ${realHome} — kept in place, resolve manually.`);
+                    console.error(`sigma: could not merge ${overlayPath} into ${realHome} — kept in place, resolve manually.`);
                 }
             }
         }
@@ -1648,7 +1648,7 @@ function refreshOverlayHome(realHome: string, overlay: string, generatedFile: st
             if (keepSidecars) continue;
             if (!mergeSqliteSet(overlay, realHome, base)) {
                 console.error(
-                    `bili: could not merge the SQLite set ${base} / ${base}-wal / ${base}-shm into ${realHome} ` +
+                    `sigma: could not merge the SQLite set ${base} / ${base}-wal / ${base}-shm into ${realHome} ` +
                         `(the real db is likely open/locked) — kept in the overlay, retry on the next launch.`,
                 );
             }
@@ -1680,15 +1680,15 @@ function refreshOverlayHome(realHome: string, overlay: string, generatedFile: st
         }
         if (total > 0 && accessible === 0) {
             console.error(
-                `bili: overlay ${overlay} is HOLLOW — none of ${total} real-home entries is reachable ` +
+                `sigma: overlay ${overlay} is HOLLOW — none of ${total} real-home entries is reachable ` +
                     `(on Windows, symlink creation is denied without Developer Mode and the junction/hardlink/copy fallbacks also failed). ` +
-                    `The client will start from its real home without the bili config rewrite.`,
+                    `The client will start from its real home without the sigma config rewrite.`,
             );
             return false;
         }
         if (linkFailures.length > 0) {
             console.error(
-                `bili: overlay ${overlay} — could not link ${linkFailures.length} entr${linkFailures.length === 1 ? "y" : "ies"}: ${linkFailures.join(", ")}. ` +
+                `sigma: overlay ${overlay} — could not link ${linkFailures.length} entr${linkFailures.length === 1 ? "y" : "ies"}: ${linkFailures.join(", ")}. ` +
                     `The client may miss those (on Windows, enable Developer Mode for full symlink support).`,
             );
         }
@@ -1782,7 +1782,7 @@ function mergeOverlayEntry(src: string, dst: string, excludedNames?: ReadonlySet
     }
 }
 
-/** True when the real pi settings.json already loads a bili plugin entry —
+/** True when the real pi settings.json already loads a sigma plugin entry —
  *  in that case the launcher must NOT add `-e dist/agent/pi.js` on top (pi
  *  keeps both loaded and same-name tools/commands clash). */
 export function piPluginInstalled(piHome: string): boolean {
@@ -1791,7 +1791,7 @@ export function piPluginInstalled(piHome: string): boolean {
     try {
         const parsed = JSON.parse(fs.readFileSync(path.join(piHome, "settings.json"), "utf8")) as { packages?: unknown };
         const list = Array.isArray(parsed.packages) ? parsed.packages.map(String) : [];
-        return list.some((p) => isBiliPiEntry(p, root) && piEntryLoadable(p));
+        return list.some((p) => isSigmaPiEntry(p, root) && piEntryLoadable(p));
     } catch {
         return false;
     }
@@ -1826,7 +1826,7 @@ function writeOverlayFileAtomic(overlay: string, fileName: string, contents: str
  * dead-proxy-URL unpacker below.
  */
 function atomicWriteTextFile(filePath: string, contents: string): void {
-    const draft = `${filePath}.${process.pid}.bili-tmp`;
+    const draft = `${filePath}.${process.pid}.sigma-tmp`;
     try {
         fs.writeFileSync(draft, contents);
         fs.renameSync(draft, filePath);
@@ -1834,7 +1834,7 @@ function atomicWriteTextFile(filePath: string, contents: string): void {
         try {
             fs.rmSync(draft, { force: true });
         } catch {}
-        throw new Error(`bili: could not write ${filePath}`);
+        throw new Error(`sigma: could not write ${filePath}`);
     }
 }
 
@@ -1852,7 +1852,7 @@ export function liveProxyPorts(): Set<number> {
 }
 
 /** #410: repair a real config that had proxy-prefixed URLs baked in. The
- *  original upstream is embedded in the /bili/ path, so dead-origin wraps
+ *  original upstream is embedded in the /sigma/ path, so dead-origin wraps
  *  unpack mechanically; a LIVE origin is left alone (the user may have
  *  pointed the config at a running proxy deliberately). */
 export function unpackDeadProxyUrlsInFile(filePath: string, livePorts: Set<number>): number {
@@ -1862,7 +1862,7 @@ export function unpackDeadProxyUrlsInFile(filePath: string, livePorts: Set<numbe
     } catch {
         return 0;
     }
-    const re = /https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\/bili\/(https?:\/\/\S+)/g;
+    const re = /https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\/sigma\/(https?:\/\/\S+)/g;
     let changed = 0;
     const out = txt.replace(re, (full, portStr: string, raw: string) => {
         if (livePorts.has(Number(portStr))) return full;
@@ -1880,10 +1880,10 @@ export function unpackDeadProxyUrlsInFile(filePath: string, livePorts: Set<numbe
 
 /** dsh loopback exception (#535 phase 4): dsh's fetch stack bypasses proxy
  *  envs for loopback targets unconditionally, so ONLY loopback upstreams need
- *  the /bili/ URL rewrite. A persistent `<dshHome>-bili` overlay (every
+ *  the /sigma/ URL rewrite. A persistent `<dshHome>-sigma` overlay (every
  *  ~/.dsh sibling symlinked so credentials/profiles/sessions stay shared)
  *  holds a rewritten copy of settings.yaml; matching baseURL/baseUrl/base_url
- *  values are rewrapped as origin + "/bili/" + raw upstream. The real ~/.dsh
+ *  values are rewrapped as origin + "/sigma/" + raw upstream. The real ~/.dsh
  *  is never touched. Returns the overlay dir (undefined when the settings
  *  file is unreadable or nothing is rewritable). */
 export function prepareDshHome(
@@ -1913,7 +1913,7 @@ export function prepareDshHome(
         changed = true;
     }
     if (!changed) return undefined;
-    const overlay = `${dshHome}-bili`;
+    const overlay = `${dshHome}-sigma`;
     if (!refreshOverlayHome(dshHome, overlay, "settings.yaml")) return undefined;
     writeOverlayFileAtomic(overlay, "settings.yaml", lines.join(eol));
     return overlay;
@@ -1926,7 +1926,7 @@ export interface GooseOverlay {
     snapshot: Map<string, string>;
 }
 
-/** #1049: synthetic GOOSE_PATH_ROOT for `bili goose`. The overlay's config/ is
+/** #1049: synthetic GOOSE_PATH_ROOT for `sigma goose`. The overlay's config/ is
  *  GENERATED every launch (fresh copy of the real config dir with the matched
  *  custom_providers base_urls re-pointed at the proxy); data/, state/, .agents/
  *  are SYMLINKS to the real dirs so sessions, auth and agents keep working. It
@@ -1939,7 +1939,7 @@ export interface GooseOverlay {
 export function prepareGooseHome(env: NodeJS.ProcessEnv, origin: string, rewrites: HttpRewrite[]): GooseOverlay | undefined {
     if (rewrites.length === 0) return undefined;
     const dirs = resolveGooseDirs(env);
-    const root = nonEmpty(env.GOOSE_PATH_ROOT) ? `${env.GOOSE_PATH_ROOT!}-bili` : `${dirs.configDir}-bili`;
+    const root = nonEmpty(env.GOOSE_PATH_ROOT) ? `${env.GOOSE_PATH_ROOT!}-sigma` : `${dirs.configDir}-sigma`;
     try {
         fs.mkdirSync(root, { recursive: true });
     } catch {
@@ -2045,7 +2045,7 @@ export function prepareGooseHome(env: NodeJS.ProcessEnv, origin: string, rewrite
 /** #1049: merge-back for the goose overlay — user edits made inside the
  *  generated config tree (new provider files, active_provider switches, ...)
  *  land in the REAL config dir so the next plain `goose` run sees them. Files
- *  bili patched itself never round-trip (their wrapped URLs would leak into
+ *  sigma patched itself never round-trip (their wrapped URLs would leak into
  *  the real config); deletions are not propagated. */
 export function finalizeGooseHome(overlay: GooseOverlay): void {
     const cfg = path.join(overlay.root, "config");
@@ -2088,11 +2088,11 @@ export function finalizeGooseHome(overlay: GooseOverlay): void {
     walk(cfg);
 }
 
-/** Strip any existing [mcp_servers.bili] block from codex config text so the
+/** Strip any existing [mcp_servers.sigma] block from codex config text so the
  *  launcher can append a fresh one without duplicating the table. Table
  *  boundaries follow plugin-install.ts `codexRemove`. */
-function stripCodexBiliBlock(text: string): string {
-    const m = /^[ \t]*\[mcp_servers\.bili\][ \t]*$/m.exec(text);
+function stripCodexSigmaBlock(text: string): string {
+    const m = /^[ \t]*\[mcp_servers\.sigma\][ \t]*$/m.exec(text);
     if (m === null) return text;
     const start = m.index;
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
@@ -2103,28 +2103,28 @@ function stripCodexBiliBlock(text: string): string {
     return (text.slice(0, lineStart).replace(/\n+$/, "\n") + text.slice(end)).replace(/^\n+/, "");
 }
 
-/** Real config.toml text with the launcher's [mcp_servers.bili] merged in: a
- *  pre-existing block (e.g. from `bili plugin install codex`) is replaced by
+/** Real config.toml text with the launcher's [mcp_servers.sigma] merged in: a
+ *  pre-existing block (e.g. from `sigma plugin install codex`) is replaced by
  *  the current launch's command/args/env — adding the per-spawn
- *  BILI_CONVERSATION_ID the persistent install lacks. Values are
+ *  SIGMA_CONVERSATION_ID the persistent install lacks. Values are
  *  JSON.stringify'd exactly like plugin-install.ts `codexBlock`, which yields
  *  valid TOML basic strings (both escape backslashes as \\). */
-function mergeCodexBiliBlock(text: string, origin: string, conversationId: string): string {
+function mergeCodexSigmaBlock(text: string, origin: string, conversationId: string): string {
     const script = selfDistFile("mcp.js");
     const block =
-        "\n[mcp_servers.bili]\n" +
+        "\n[mcp_servers.sigma]\n" +
         `command = ${JSON.stringify(process.execPath)}\n` +
         `args = [${JSON.stringify(script)}]\n` +
-        `env = { BILI_MCP_PROXY = ${JSON.stringify(origin)}, BILI_CONVERSATION_ID = ${JSON.stringify(conversationId)} }\n`;
-    const base = stripCodexBiliBlock(text);
+        `env = { SIGMA_MCP_PROXY = ${JSON.stringify(origin)}, SIGMA_CONVERSATION_ID = ${JSON.stringify(conversationId)} }\n`;
+    const base = stripCodexSigmaBlock(text);
     return base + (base.endsWith("\n") || base.length === 0 ? "" : "\n") + block;
 }
 
-/** #681: persistent <CODEX_HOME>-bili overlay carrying the bili MCP server in
+/** #681: persistent <CODEX_HOME>-sigma overlay carrying the sigma MCP server in
  *  config.toml instead of inline `-c` args (which cmd.exe cannot transmit when
  *  they embed a spaced/quoted Windows path). Every real-home entry except
  *  config.toml is shared (auth.json, sessions, model settings survive); the
- *  generated config.toml is the real contents plus [mcp_servers.bili]. Returns
+ *  generated config.toml is the real contents plus [mcp_servers.sigma]. Returns
  *  the overlay dir to point CODEX_HOME at, or undefined when it cannot be
  *  built (caller then skips native MCP injection). */
 export function prepareCodexHome(codexHome: string, origin: string, conversationId: string): string | undefined {
@@ -2132,25 +2132,25 @@ export function prepareCodexHome(codexHome: string, origin: string, conversation
     try {
         txt = fs.readFileSync(path.join(codexHome, "config.toml"), "utf8");
     } catch {}
-    const overlay = `${codexHome}-bili`;
+    const overlay = `${codexHome}-sigma`;
     if (!refreshOverlayHome(codexHome, overlay, "config.toml")) return undefined;
-    writeOverlayFileAtomic(overlay, "config.toml", mergeCodexBiliBlock(txt, origin, conversationId));
+    writeOverlayFileAtomic(overlay, "config.toml", mergeCodexSigmaBlock(txt, origin, conversationId));
     return overlay;
 }
 
 /** #941: the launcher's --patch overlay now carries the FULL native plugin
  *  (tools + session-bound /acp + fetch intercept), not just the /acp panel —
  *  plus the compaction-basic auto:false override so dsh's native
- *  auto-compaction stands down for the bili proxy (a patch replaces the
+ *  auto-compaction stands down for the sigma proxy (a patch replaces the
  *  target row's whole config, and dsh-base ships compaction-basic with no
  *  config, so {auto:false} is complete). Lives in the persistent
- *  `<dshHome>-bili` dir, INDEPENDENT of the settings.yaml rewrite — the
+ *  `<dshHome>-sigma` dir, INDEPENDENT of the settings.yaml rewrite — the
  *  plugin is injected even when the user has no custom providers (pure
  *  built-in deepseek route). Returns the patch file path (undefined when it
  *  could not be written — dsh then just boots without the plugin). */
 export function writeDshAcpPatch(dshHome: string): string | undefined {
     const pluginUrl = pathToFileURL(selfDistFile("agent/dsh-native.js")).href;
-    const dir = `${dshHome}-bili`;
+    const dir = `${dshHome}-sigma`;
     try {
         fs.mkdirSync(dir, { recursive: true });
     } catch {
@@ -2158,10 +2158,10 @@ export function writeDshAcpPatch(dshHome: string): string | undefined {
     }
     writeOverlayFileAtomic(
         dir,
-        ".bili-acp.patch.yml",
-        `- insert:\n    - id: bili-native\n      name: ${pluginUrl}\n- id: compaction-basic\n  config:\n    auto: false\n`,
+        ".sigma-acp.patch.yml",
+        `- insert:\n    - id: sigma-native\n      name: ${pluginUrl}\n- id: compaction-basic\n  config:\n    auto: false\n`,
     );
-    const file = path.join(dir, ".bili-acp.patch.yml");
+    const file = path.join(dir, ".sigma-acp.patch.yml");
     try {
         return fs.existsSync(file) ? file : undefined;
     } catch {
@@ -2206,7 +2206,7 @@ export function opencodeMajorVersion(command: string): number {
 /**
  * opencode counterpart of preparePiHttpRewrite: write a full copy of the user's
  * (JSONC-tolerant, merged) config with the discovered providers' baseURL
- * rewritten (HTTP → /bili/ wrap, wrapped-HTTPS → raw https for cert MITM) into
+ * rewritten (HTTP → /sigma/ wrap, wrapped-HTTPS → raw https for cert MITM) into
  * a temp dir, and point OPENCODE_CONFIG at it. The real config files are never
  * touched. Relative local plugin specs (./x, ../x) are re-anchored to absolute
  * paths before the copy is written — opencode resolves them against the
@@ -2214,7 +2214,7 @@ export function opencodeMajorVersion(command: string): number {
  * (OpenCode 2.x), the plugin rides as a temp directory whose index.js
  * re-exports pluginPath — 2.x rejects bare file paths in `plugin`. Also strips
  * opencode-acp entries (#920; see below), recording the first stripped spec in
- * env["BILI_OPENCODE_ACP_SPEC"]. Returns the temp config FILE path (undefined
+ * env["SIGMA_OPENCODE_ACP_SPEC"]. Returns the temp config FILE path (undefined
  * when there is nothing to do).
  */
 export function prepareOpencodeHttpRewrite(
@@ -2246,7 +2246,7 @@ export function prepareOpencodeHttpRewrite(
         rewrite(httpRewrites, true);
         rewrite(httpsRewrites, false);
     }
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-opencode-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-opencode-"));
     let pluginEntry = pluginPath;
     if (pluginPath && pluginDirMode) {
         const wrapDir = path.join(tmp, "plugin");
@@ -2271,7 +2271,7 @@ export function prepareOpencodeHttpRewrite(
         auto: false,
     };
     // #920: strip opencode-acp entries from the clone — the host must not load
-    // it armed (its config hook globally self-disables on /bili/ baseURLs and
+    // it armed (its config hook globally self-disables on /sigma/ baseURLs and
     // eagerly adopts every session). The thin plugin imports the same package
     // as a library instead and gates its hooks on legacy sessions. The first
     // stripped spec is handed to the child via env so the bridge imports the
@@ -2289,7 +2289,7 @@ export function prepareOpencodeHttpRewrite(
             })
             .map((entry) => absolutizePluginEntry(baseDir, entry));
     }
-    if (strippedAcpSpec) env["BILI_OPENCODE_ACP_SPEC"] = strippedAcpSpec;
+    if (strippedAcpSpec) env["SIGMA_OPENCODE_ACP_SPEC"] = strippedAcpSpec;
     const tmpFile = path.join(tmp, "opencode.json");
     fs.writeFileSync(tmpFile, JSON.stringify(root));
     return tmpFile;
@@ -2337,7 +2337,7 @@ export function opencodeEffectiveCwd(clientArgs: readonly string[]): string {
     return process.cwd();
 }
 
-function isBiliRouted(baseURL: string, httpsDomains: ReadonlySet<string>): boolean {
+function isSigmaRouted(baseURL: string, httpsDomains: ReadonlySet<string>): boolean {
     if (unwrapUpstream(baseURL) !== baseURL) return true;
     let url: URL;
     try {
@@ -2358,14 +2358,14 @@ export function opencodeProjectBypassWarnings(
     const httpsDomains = new Set(routes.httpsDomains.map((d) => d.toLowerCase()));
     const rewrittenKeys = new Set([...routes.httpRewrites, ...routes.httpsRewrites].map((r) => r.key));
     for (const [name, view] of Object.entries(layer.providers)) {
-        if (!view.baseURL || isBiliRouted(view.baseURL, httpsDomains)) continue;
+        if (!view.baseURL || isSigmaRouted(view.baseURL, httpsDomains)) continue;
         if (rewrittenKeys.has(name)) {
             warnings.push(
-                `bili: ${view.file} redefines provider "${name}" in opencode's project layer, which outranks the launcher's rewritten $OPENCODE_CONFIG — "${name}" traffic will NOT go through the proxy (no compression). Move the provider to your global opencode config to restore compression.`,
+                `sigma: ${view.file} redefines provider "${name}" in opencode's project layer, which outranks the launcher's rewritten $OPENCODE_CONFIG — "${name}" traffic will NOT go through the proxy (no compression). Move the provider to your global opencode config to restore compression.`,
             );
         } else {
             warnings.push(
-                `bili: provider "${name}" is defined only in opencode's project layer (${view.file}) — the launcher never sees it, so no rewrite was applied and "${name}" traffic will NOT go through the proxy (no compression). Move it to your global opencode config to enable compression.`,
+                `sigma: provider "${name}" is defined only in opencode's project layer (${view.file}) — the launcher never sees it, so no rewrite was applied and "${name}" traffic will NOT go through the proxy (no compression). Move it to your global opencode config to enable compression.`,
             );
         }
     }
@@ -2454,12 +2454,12 @@ export async function registerWatcherDefault(origin: string, pid: number): Promi
         // silence stays at this layer, the handle carries the flag instead.
         if (!res.ok) {
             if (res.status === 409) return "refused";
-            console.error(`bili: watcher registration returned HTTP ${res.status} — the shared proxy may exit when its first owner does`);
+            console.error(`sigma: watcher registration returned HTTP ${res.status} — the shared proxy may exit when its first owner does`);
             return "failed";
         }
         return "ok";
     } catch (err) {
-        console.error(`bili: watcher registration failed — the shared proxy may exit when its first owner does (${err instanceof Error ? err.message : String(err)})`);
+        console.error(`sigma: watcher registration failed — the shared proxy may exit when its first owner does (${err instanceof Error ? err.message : String(err)})`);
         return "failed";
     }
 }
@@ -2519,7 +2519,7 @@ async function probeLiveInstances(
 
 /** #1335: the attach gate — a listener may be attached to only when its
  *  health reports an ARMED session-lifecycle watchdog, or the user explicitly
- *  opted in via native.attachExternal / BILI_NATIVE_ATTACH_EXTERNAL. A missing
+ *  opted in via native.attachExternal / SIGMA_NATIVE_ATTACH_EXTERNAL. A missing
  *  watchdog field (pre-#1330 build) is unverifiable and refused by default:
  *  those are exactly the stale manually-started daemons behind #1322, and
  *  riding them pins every session to possibly-old code that outlives it. */
@@ -2530,9 +2530,9 @@ export function attachGateAllows(health: HealthInfo, attachExternal: boolean): b
 
 function gateRefusalMessage(inst: ProxyInstanceFile, health: HealthInfo): string {
     const reason = health.watchdog && health.watchdog.armed === false
-        ? "it reports NO session-lifecycle watchdog (started without BILI_PARENT_PID, e.g. manual `bili start`)"
-        : "it does not report watchdog state (older bili build) — its lifecycle is unverifiable";
-    return `bili: refusing to attach to ${inst.origin} (pid ${inst.pid}) — ${reason}. It would outlive this session and ignore config edits until killed (#1322/#1335). Starting a session-owned proxy instead; set native.attachExternal=true or BILI_NATIVE_ATTACH_EXTERNAL=1 to attach anyway.`;
+        ? "it reports NO session-lifecycle watchdog (started without SIGMA_PARENT_PID, e.g. manual `sigma start`)"
+        : "it does not report watchdog state (older sigma build) — its lifecycle is unverifiable";
+    return `sigma: refusing to attach to ${inst.origin} (pid ${inst.pid}) — ${reason}. It would outlive this session and ignore config edits until killed (#1322/#1335). Starting a session-owned proxy instead; set native.attachExternal=true or SIGMA_NATIVE_ATTACH_EXTERNAL=1 to attach anyway.`;
 }
 
 /** #1232: choose the attach target among healthy candidates. Must be
@@ -2658,7 +2658,7 @@ export function stripInheritedProxy(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /** #1012: capture the user's proxy vars BEFORE stripping, so the launcher can
- *  forward them to the proxy child under dedicated BILI_INHERITED_* names.
+ *  forward them to the proxy child under dedicated SIGMA_INHERITED_* names.
  *  The child itself runs with a clean env (e1c6c92: shell proxies must not
  *  hijack model egress), but its AUXILIARY egress (MITM blind tunnels for
  *  client-side MCP/web traffic) needs the user's proxy to reach hosts the
@@ -2667,10 +2667,10 @@ export function stripInheritedProxy(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export function captureInheritedProxyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const captured: NodeJS.ProcessEnv = {};
     const pairs: Array<[string, string | undefined, string | undefined]> = [
-        ["BILI_INHERITED_HTTP_PROXY", env.HTTP_PROXY, env.http_proxy],
-        ["BILI_INHERITED_HTTPS_PROXY", env.HTTPS_PROXY, env.https_proxy],
-        ["BILI_INHERITED_ALL_PROXY", env.ALL_PROXY, env.all_proxy],
-        ["BILI_INHERITED_NO_PROXY", env.NO_PROXY, env.no_proxy],
+        ["SIGMA_INHERITED_HTTP_PROXY", env.HTTP_PROXY, env.http_proxy],
+        ["SIGMA_INHERITED_HTTPS_PROXY", env.HTTPS_PROXY, env.https_proxy],
+        ["SIGMA_INHERITED_ALL_PROXY", env.ALL_PROXY, env.all_proxy],
+        ["SIGMA_INHERITED_NO_PROXY", env.NO_PROXY, env.no_proxy],
     ];
     for (const [name, upper, lower] of pairs) {
         const value = (upper ?? lower ?? "").trim();
@@ -2690,7 +2690,7 @@ function proxyStartArgs(opts: LaunchOptions): string[] {
  *  Node CLI, process.execPath is correct; inside a host process (the opencode
  *  or pi native binary) it is the HOST executable — spawning it with a .js
  *  argv passes the script to the wrong program. A live Node always wins, then
- *  an explicit BILLION_CONTEXT_NODE override, then a PATH search, then #1429:
+ *  an explicit SIGMA_NODE override, then a PATH search, then #1429:
  *  well-known install locations a GUI/Electron host's minimal PATH (launchd on
  *  macOS, the Windows GUI session) omits, then — as a last resort under an
  *  Electron host — the host's own binary run as Node via ELECTRON_RUN_AS_NODE=1
@@ -2705,7 +2705,7 @@ export function resolveNodeRuntime(
 ): string {
     const base = path.basename(execPath).toLowerCase();
     if (base === "node" || base === "node.exe") return execPath;
-    const override = typeof env.BILLION_CONTEXT_NODE === "string" ? env.BILLION_CONTEXT_NODE.trim() : "";
+    const override = typeof env.SIGMA_NODE === "string" ? env.SIGMA_NODE.trim() : "";
     if (override.length > 0 && existsImpl(override)) return override;
     // join with the SIMULATED platform's separators: a posix-style PATH on
     // win32 (and vice versa) must not be normalized through the host's
@@ -2748,7 +2748,7 @@ export function resolveNodeRuntime(
     // node exists anywhere above; ensureProxyRunning forces that var so the
     // child actually runs Node instead of relaunching the desktop app.
     if (electronVersion && electronVersion.length > 0) return execPath;
-    throw new Error("bili: cannot find a Node runtime to spawn the proxy (this process is not Node) — set BILLION_CONTEXT_NODE");
+    throw new Error("sigma: cannot find a Node runtime to spawn the proxy (this process is not Node) — set SIGMA_NODE");
 }
 
 export async function ensureProxyRunning(
@@ -2764,13 +2764,13 @@ export async function ensureProxyRunning(
     const registerWatcher = deps.registerWatcher ?? registerWatcherDefault;
     // #1335: attach-gate escape hatch, resolved once per bring-up (env > file >
     // false). One knob for every lane — explicit user-directed attaches (kimi/dsh
-    // BILLION_CONTEXT_ATTACH / preset BILLION_CONTEXT_PROXY) never pass through
+    // SIGMA_ATTACH / preset SIGMA_PROXY) never pass through
     // this discovery path at all, so they are exempt by construction.
     const attachExternal = (deps.resolveAttachExternal ?? resolveNativeAttachExternal)();
     // Refusal log dedup: pickAttachable runs again on every starter-poll tick,
     // so each refused origin is announced exactly once per bring-up.
     const refusedLog = new Set<string>();
-    // Same expression as the spawn path's BILI_PARENT_PID: one owner-pid
+    // Same expression as the spawn path's SIGMA_PARENT_PID: one owner-pid
     // semantic for spawned AND attached proxies (#1190).
     const watchPid = opts.parentPid ?? process.pid;
     // #1190: every ATTACH registers our owner pid with the shared proxy's
@@ -2779,10 +2779,10 @@ export async function ensureProxyRunning(
     // second session attaches must not beat the registration to the grace
     // window.
     const attachTo = async (inst: ProxyInstanceFile): Promise<ProxyHandle> => {
-        console.error(`bili: attaching to running proxy at ${inst.origin} (pid ${inst.pid})`);
+        console.error(`sigma: attaching to running proxy at ${inst.origin} (pid ${inst.pid})`);
         const reg = await registerWatcher(inst.origin, watchPid);
         // #1322: a refusal means the shared proxy has NO session-lifecycle
-        // watchdog (started without BILI_PARENT_PID, e.g. manually on a stable
+        // watchdog (started without SIGMA_PARENT_PID, e.g. manually on a stable
         // port) — it will outlive every session; host-native bootstraps must
         // say so instead of silently serving a voided lifecycle contract.
         const handle: ProxyHandle = { origin: inst.origin, port: inst.port, attached: true };
@@ -2815,9 +2815,9 @@ export async function ensureProxyRunning(
         const squatter = probed.find((c) => c.inst.port === opts.port && instanceCompatible(c.inst, opts, codeFingerprint));
         if (squatter) {
             throw new Error(
-                `bili: port ${opts.port} is held by a lifecycle-less bili proxy at ${squatter.inst.origin} (pid ${squatter.inst.pid}) — ` +
+                `sigma: port ${opts.port} is held by a lifecycle-less sigma proxy at ${squatter.inst.origin} (pid ${squatter.inst.pid}) — ` +
                     `the #1335 attach gate refuses it by default and this launch pins the port, so no session-owned proxy can bind it either. ` +
-                    `Kill that process (kill ${squatter.inst.pid}) or set native.attachExternal=true / BILI_NATIVE_ATTACH_EXTERNAL=1 to attach to it anyway.`,
+                    `Kill that process (kill ${squatter.inst.pid}) or set native.attachExternal=true / SIGMA_NATIVE_ATTACH_EXTERNAL=1 to attach to it anyway.`,
             );
         }
     }
@@ -2828,7 +2828,7 @@ export async function ensureProxyRunning(
     // a second writer over the same sessions dir. In-process dedup is separate
     // (singleFlight, #706); this is the cross-process half.
     const waitForOtherStarter = async (): Promise<ProxyHandle | undefined> => {
-        console.error("bili: another bili launch is bringing up a proxy — waiting for it instead of spawning a second");
+        console.error("sigma: another sigma launch is bringing up a proxy — waiting for it instead of spawning a second");
         const waited = await waitForStarterInstance(readInstance, fetchHealthInfo, now, sleepImpl, opts, codeFingerprint, attachExternal, refusedLog);
         if (waited) {
             return attachTo(waited);
@@ -2858,11 +2858,11 @@ export async function ensureProxyRunning(
     const launchToken = randomUUID();
     // #446: with no explicit --port the launcher binds an OS-assigned
     // ephemeral port — its private proxy never squats on 8787, so clients
-    // pointed there only ever reach an explicitly-started `bili start`.
+    // pointed there only ever reach an explicitly-started `sigma start`.
     // The child's EADDRINUSE retry covers the pick/spawn race.
     const port = opts.port > 0 ? opts.port : await pickEphemeralPort(opts.host);
-    if (!script) throw new Error("bili: cannot resolve launcher script path");
-    const logPath = path.join(os.tmpdir(), `bili-proxy-${port}.log`);
+    if (!script) throw new Error("sigma: cannot resolve launcher script path");
+    const logPath = path.join(os.tmpdir(), `sigma-proxy-${port}.log`);
     const logFd = fs.openSync(logPath, "a");
     // #707: publish the starting marker BEFORE spawning so concurrent launches
     // wait for this bring-up instead of double-spawning. The O_EXCL claim is
@@ -2912,19 +2912,19 @@ export async function ensureProxyRunning(
                         // same binary run as Node — force it so the child runs Node instead
                         // of relaunching the desktop app. Harmless to a real node (ignored).
                         ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
-                        BILI_LAUNCH_TOKEN: launchToken,
-                        BILI_PARENT_PID: String(opts.parentPid ?? process.pid),
-                        ...(opts.lane ? { BILI_LAUNCHER_LANE: opts.lane } : {}),
+                        SIGMA_LAUNCH_TOKEN: launchToken,
+                        SIGMA_PARENT_PID: String(opts.parentPid ?? process.pid),
+                        ...(opts.lane ? { SIGMA_LAUNCHER_LANE: opts.lane } : {}),
                         ...(opts.mitmDomains && opts.mitmDomains.length
-                            ? { BILI_MITM_DOMAINS: opts.mitmDomains.join(",") }
+                            ? { SIGMA_MITM_DOMAINS: opts.mitmDomains.join(",") }
                             : {}),
                         ...(opts.modelWindows && Object.keys(opts.modelWindows).length > 0
-                            ? { BILI_LAUNCHER_MODEL_WINDOWS: JSON.stringify(opts.modelWindows) }
+                            ? { SIGMA_LAUNCHER_MODEL_WINDOWS: JSON.stringify(opts.modelWindows) }
                             : {}),
                         ...(opts.modelMaxOutputs && Object.keys(opts.modelMaxOutputs).length > 0
-                            ? { BILI_LAUNCHER_MODEL_MAX_OUTPUTS: JSON.stringify(opts.modelMaxOutputs) }
+                            ? { SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS: JSON.stringify(opts.modelMaxOutputs) }
                             : {}),
-                        ...(opts.strictPort ? { BILI_STRICT_PORT: "1" } : {}),
+                        ...(opts.strictPort ? { SIGMA_STRICT_PORT: "1" } : {}),
                     },
                 },
             );
@@ -2978,15 +2978,15 @@ export async function ensureProxyRunning(
         }
         if (childError !== undefined) {
             const detail = childError instanceof Error ? childError.message : String(childError);
-            throw new Error(`bili: proxy spawn failed (${detail}) (log: ${logPath})`);
+            throw new Error(`sigma: proxy spawn failed (${detail}) (log: ${logPath})`);
         }
         if (childExit) {
             const detail = childExit.code !== null
                 ? `code ${childExit.code}`
                 : childExit.signal ? `signal ${childExit.signal}` : "unknown reason";
-            throw new Error(`bili: proxy child exited before becoming healthy (${detail}) (log: ${logPath})`);
+            throw new Error(`sigma: proxy child exited before becoming healthy (${detail}) (log: ${logPath})`);
         }
-        throw new Error(`bili: proxy did not become healthy within ${SPAWN_WAIT_MS}ms (log: ${logPath})`);
+        throw new Error(`sigma: proxy did not become healthy within ${SPAWN_WAIT_MS}ms (log: ${logPath})`);
     } finally {
         if (claimed) clearStartingMarker(launchToken);
     }
@@ -2998,7 +2998,7 @@ export function stopProxy(handle: ProxyHandle): void {
     if (!child || child.pid === undefined) return;
     if (process.platform === "win32") {
         // #414: child.kill() on win32 is TerminateProcess — zero flush.
-        // Launcher children watch BILI_PARENT_PID and run the graceful path
+        // Launcher children watch SIGMA_PARENT_PID and run the graceful path
         // themselves once this process exits (≤2s later).
         return;
     }
@@ -3107,7 +3107,7 @@ export function resolveClientCommand(
     client: ClientName,
     env: NodeJS.ProcessEnv,
 ): { command: string; prefixArgs: string[] } {
-    const binOverride = env.BILI_CLIENT_BIN?.trim();
+    const binOverride = env.SIGMA_CLIENT_BIN?.trim();
     if (binOverride) {
         const resolved = resolveOnPath(binOverride, env);
         return { command: resolved ?? binOverride, prefixArgs: [] };
@@ -3177,7 +3177,7 @@ function parsePort(raw: string | undefined): number {
     if (!raw || !raw.trim()) return 0;
     const port = parseInt(raw, 10);
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
-        console.error(`bili: invalid --port "${raw}"`);
+        console.error(`sigma: invalid --port "${raw}"`);
         process.exit(2);
     }
     return port;
@@ -3203,13 +3203,13 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             const scan = scanClientPlugins(base, { env: discoveryEnv, cwd: process.cwd() });
             for (const f of scan.findings) {
                 if (isDesignAbsorbed(f, base)) {
-                    console.error(`bili: note: opencode-acp present (${f.entry}, ${f.source}) — kept by design for legacy-session absorption (#920); new sessions route through bili only.`);
+                    console.error(`sigma: note: opencode-acp present (${f.entry}, ${f.source}) — kept by design for legacy-session absorption (#920); new sessions route through sigma only.`);
                     continue;
                 }
                 const risk = f.match === "known"
-                    ? "It is bili's sibling compressor — two compressors on one conversation will double-compress and corrupt message refs."
+                    ? "It is sigma's sibling compressor — two compressors on one conversation will double-compress and corrupt message refs."
                     : "Its name matches compression keywords — IF it also compresses context, the two compressors will double-compress and corrupt message refs.";
-                console.error(`bili: WARNING: co-resident compression plugin on ${base}: ${f.entry} (${f.source}). ${risk} (#1206) — disable the other plugin, or don't route this client through bili.`);
+                console.error(`sigma: WARNING: co-resident compression plugin on ${base}: ${f.entry} (${f.source}). ${risk} (#1206) — disable the other plugin, or don't route this client through sigma.`);
             }
         } catch {
             // The scan is diagnostic only — never block client startup on it.
@@ -3229,8 +3229,8 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
     }
     const aiderDeclared = base === "aider" && ((config.aider?.baseUrls ?? []).length > 0 || (params.mitmDomains ?? []).length > 0);
     // #535: pi's REAL home — resolvePiHome honors a possibly-stale inherited
-    // PI_CODING_AGENT_DIR (e.g. launching `bili pi` from inside a shell that
-    // a legacy bili overlay launch exported it into); the new file-free
+    // PI_CODING_AGENT_DIR (e.g. launching `sigma pi` from inside a shell that
+    // a legacy sigma overlay launch exported it into); the new file-free
     // design must never let that redirect pi at an old overlay dir.
     const piRealHome = resolvePiHome({ ...process.env, PI_CODING_AGENT_DIR: undefined });
     // #535 phase 3: omp's REAL home, resolved with the same stale-inheritance
@@ -3243,9 +3243,9 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         const extAvailable = (piExt !== undefined && fs.existsSync(piExt)) || piPluginInstalled(piRealHome);
         if (!extAvailable) {
             throw new Error(
-                "bili: pi needs provider URL rewrites but the bili extension cannot load " +
+                "sigma: pi needs provider URL rewrites but the sigma extension cannot load " +
                     "(dist/agent/pi.js missing and the plugin is not installed in ~/.pi/agent/settings.json) — " +
-                    "reinstall billion-context or run `bili plugin install pi`",
+                    "reinstall sigma or run `sigma plugin install pi`",
             );
         }
     }
@@ -3254,39 +3254,39 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         const extAvailable = (ompExt !== undefined && fs.existsSync(ompExt)) || ompPluginLoadedFrom(ompRealHome);
         if (!extAvailable) {
             throw new Error(
-                "bili: omp needs provider URL rewrites but the bili extension cannot load " +
+                "sigma: omp needs provider URL rewrites but the sigma extension cannot load " +
                     "(dist/agent/omp.js missing and the plugin is not installed in ~/.omp/agent/config.yml) — " +
-                    "reinstall billion-context or run `bili plugin install omp`",
+                    "reinstall sigma or run `sigma plugin install omp`",
             );
         }
     }
-    // bili's own route graph (same sources the spawned proxy child reads —
+    // sigma's own route graph (same sources the spawned proxy child reads —
     // used to resolve the budget-alignment window, #321).
     const biliRoutes = loadRoutes(process.env);
     const domains = dedupeInOrder([...routes.httpsDomains, ...(params.mitmDomains ?? [])]);
     // #1403: mirror the proxy's EXACT MITM whitelist (built-in defaults ∪
-    // config-file/BILI_MITM_DOMAINS tier as the spawned child will see it ∪
+    // config-file/SIGMA_MITM_DOMAINS tier as the spawned child will see it ∪
     // launcher-discovered domains ∪ dynamic client-config discovery) so the
     // pi/omp extension stamps prompt_cache_key only for destinations the proxy
     // will decrypt and strip it from. Blind-tunnel destinations get no stamp —
     // strict-schema upstreams 400 the foreign top-level field otherwise.
     const childMitmEnv: NodeJS.ProcessEnv =
         domains.length > 0
-            ? { BILI_MITM_DOMAINS: domains.join(",") }
-            : { BILI_MITM_DOMAINS: process.env.BILI_MITM_DOMAINS };
+            ? { SIGMA_MITM_DOMAINS: domains.join(",") }
+            : { SIGMA_MITM_DOMAINS: process.env.SIGMA_MITM_DOMAINS };
     const extMitmHosts = base === "pi" || base === "omp"
         ? dedupeInOrder([...DEFAULT_MITM_DOMAINS, ...resolveMitmDomains(childMitmEnv), ...domains, ...discoverMitmDomains(discoveryEnv)])
         : [];
     const handle = await ensureProxyRunning({ host, port, passthrough, debug, lane: base, mitmDomains: domains, modelWindows: collectModelWindows(config, base), modelMaxOutputs: collectModelMaxOutputs(config, base) }, deps);
     console.error(
-        `bili: started proxy at ${handle.origin} (MITM domains: ${domains.length ? domains.join(", ") : "defaults"})` +
-            ((base !== "kimi" && base !== "mcode" && base !== "aider" && routes.httpRewrites.length > 0) ? ` (HTTP /bili/ rewrites: ${routes.httpRewrites.length})` : "") +
+        `sigma: started proxy at ${handle.origin} (MITM domains: ${domains.length ? domains.join(", ") : "defaults"})` +
+            ((base !== "kimi" && base !== "mcode" && base !== "aider" && routes.httpRewrites.length > 0) ? ` (HTTP /sigma/ rewrites: ${routes.httpRewrites.length})` : "") +
             (routes.httpsRewrites.length > 0 ? ` (HTTPS cert rewrites: ${routes.httpsRewrites.length})` : "") +
             (routes.httpEnvRoutes.length > 0 ? ` (HTTP proxy-env routes: ${routes.httpEnvRoutes.length})` : "") +
             (params.client === "pi-test" ? " (no extensions)" : ""),
     );
     if (handle.logPath) {
-        console.error(`bili: proxy log: ${handle.logPath}`);
+        console.error(`sigma: proxy log: ${handle.logPath}`);
     }
 
     const ca = resolveCaCertPath(process.env);
@@ -3300,27 +3300,27 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
     if (directUrl) {
         if (base === "codex") {
             console.error(
-                "bili: direct-URL mode — codex's LLM traffic does NOT go through the proxy, so compression is not applied (only the bili MCP tool calls do). For full compression use the default MITM mode (unset BILI_LAUNCHER_DIRECT).",
+                "sigma: direct-URL mode — codex's LLM traffic does NOT go through the proxy, so compression is not applied (only the sigma MCP tool calls do). For full compression use the default MITM mode (unset SIGMA_LAUNCHER_DIRECT).",
             );
         } else if (base === "claude") {
             console.error(
-                "bili: direct-URL mode — claude's ANTHROPIC_BASE_URL is overridden to the proxy; a pre-configured relay is bypassed unless BILI_CLAUDE_UPSTREAM=<relay> is set. OAuth-subscription traffic requires the default MITM mode.",
+                "sigma: direct-URL mode — claude's ANTHROPIC_BASE_URL is overridden to the proxy; a pre-configured relay is bypassed unless SIGMA_CLAUDE_UPSTREAM=<relay> is set. OAuth-subscription traffic requires the default MITM mode.",
             );
         } else if (base === "qoder") {
             console.error(
-                "bili: BILI_LAUNCHER_DIRECT has no effect for qoder — its model endpoint scheme is hardcoded https with no base-URL override env, so qoder always runs in cert-MITM mode.",
+                "sigma: SIGMA_LAUNCHER_DIRECT has no effect for qoder — its model endpoint scheme is hardcoded https with no base-URL override env, so qoder always runs in cert-MITM mode.",
             );
         }
     }
     const codexUpstream = base === "codex" ? codexUpstreamUrl(config.codex) : undefined;
     const injectMcp = launcherInjectMcp(process.env, base, codexUpstream);
     if (injectMcp) {
-        console.error(`bili: injecting native bili MCP tools for ${base} (disable with BILI_LAUNCHER_PLUGIN=0).`);
+        console.error(`sigma: injecting native sigma MCP tools for ${base} (disable with SIGMA_LAUNCHER_PLUGIN=0).`);
     } else if (base === "claude" || base === "codex") {
-        if (process.env.BILI_LAUNCHER_PLUGIN === "0") {
-            console.error("bili: native MCP tools disabled (BILI_LAUNCHER_PLUGIN=0) — running in pure wire mode.");
+        if (process.env.SIGMA_LAUNCHER_PLUGIN === "0") {
+            console.error("sigma: native MCP tools disabled (SIGMA_LAUNCHER_PLUGIN=0) — running in pure wire mode.");
         } else {
-            console.error(`bili: codex upstream ${codexUpstream} is local/private — self-hosted models cannot see codex namespace MCP tools; using wire-injected flat tools instead (force MCP with BILI_LAUNCHER_PLUGIN=1).`);
+            console.error(`sigma: codex upstream ${codexUpstream} is local/private — self-hosted models cannot see codex namespace MCP tools; using wire-injected flat tools instead (force MCP with SIGMA_LAUNCHER_PLUGIN=1).`);
         }
     }
     const origin = handle.origin;
@@ -3362,16 +3362,16 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         }
     } else if (base === "opencode") {
         // opencode: HTTPS upstreams ride cert-MITM (HTTPS_PROXY + CA); plaintext
-        // HTTP upstreams get a /bili/-rewritten copy of opencode.json via
+        // HTTP upstreams get a /sigma/-rewritten copy of opencode.json via
         // OPENCODE_CONFIG (real config untouched). #920: the temp-config clone
         // strips any opencode-acp entry — the thin plugin imports that package
         // as a library instead (legacy sessions keep working in-process), and
-        // loading it armed would re-arm its global /bili/ self-disable.
-        // BILLION_CONTEXT_PROXY activates the thin plugin itself. Base env is
+        // loading it armed would re-arm its global /sigma/ self-disable.
+        // SIGMA_PROXY activates the thin plugin itself. Base env is
         // stripped like hermes/dsh/kimi/qoder/trae/jcode (#890): undici/Bun prefer
         // lowercase http(s)_proxy over the uppercase injected below, so an
-        // inherited lowercase var would silently route model traffic around bili.
-        env = { ...stripInheritedProxy(process.env), HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: ca, BILLION_CONTEXT_PROXY: origin };
+        // inherited lowercase var would silently route model traffic around sigma.
+        env = { ...stripInheritedProxy(process.env), HTTPS_PROXY: origin, NODE_EXTRA_CA_CERTS: ca, SIGMA_PROXY: origin };
         const opencodePlugin = selfDistFile("agent/opencode.js");
         const opencodePluginPath = opencodePlugin && fs.existsSync(opencodePlugin) ? opencodePlugin : undefined;
         const ocDirMode = opencodePluginPath !== undefined && opencodeMajorVersion(resolveClientCommand("opencode", process.env).command) >= 2;
@@ -3401,7 +3401,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         env.SSL_CERT_FILE = resolveCombinedCaPath(process.env);
         if (routes.httpRewrites.length === 0 && routes.httpsDomains.length === 0) {
             console.error(
-                "bili: no hermes providers found in ~/.hermes/config.yaml — traffic will NOT go through the proxy (configure a provider first).",
+                "sigma: no hermes providers found in ~/.hermes/config.yaml — traffic will NOT go through the proxy (configure a provider first).",
             );
         }
     } else if (base === "dsh") {
@@ -3418,14 +3418,14 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         // stays captured through $DEEPSEEK_BASE_URL (resolution order: settings
         // baseURL ?? env ?? default, so a user setting wins and this env is the
         // no-settings fallback). ONLY loopback destinations take the settings.yaml
-        // /bili/ rewrite below (persistent overlay DSH_HOME ~/.dsh-bili; real
+        // /sigma/ rewrite below (persistent overlay DSH_HOME ~/.dsh-sigma; real
         // ~/.dsh never touched) — dsh bypasses proxy envs for loopback
         // unconditionally. Proxy envs are set only when something actually routes
         // through them, so a launch with no non-loopback custom providers behaves
         // exactly as before.
         const usesProxyEnv = routes.httpsDomains.length > 0 || routes.httpEnvRoutes.length > 0;
         env = usesProxyEnv ? stripInheritedProxy(process.env) : { ...process.env };
-        env.BILLION_CONTEXT_PROXY = origin;
+        env.SIGMA_PROXY = origin;
         env.DEEPSEEK_BASE_URL = wrapUpstream(origin, "https://api.deepseek.com");
         if (usesProxyEnv) {
             const caBundle = resolveCombinedCaPath(process.env);
@@ -3452,16 +3452,16 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             env.DSH_HOME = dshOverlayHome;
         } else if (routes.httpRewrites.length > 0) {
             console.error(
-                "bili: dsh settings.yaml could not be rewritten (unreadable or no matching endpoints) — loopback custom providers will NOT go through the proxy; other routes still do.",
+                "sigma: dsh settings.yaml could not be rewritten (unreadable or no matching endpoints) — loopback custom providers will NOT go through the proxy; other routes still do.",
             );
         } else if (!usesProxyEnv) {
             console.error(
-                "bili: no custom providers found in ~/.dsh/settings.yaml — proxying the built-in deepseek route via DEEPSEEK_BASE_URL only.",
+                "sigma: no custom providers found in ~/.dsh/settings.yaml — proxying the built-in deepseek route via DEEPSEEK_BASE_URL only.",
             );
         }
         // Native /acp command rides a --patch overlay (independent of the
-        // settings rewrite above) unless a persistent `bili plugin install dsh`
-        // already provides it — a second `id: bili-native` insert would trip
+        // settings rewrite above) unless a persistent `sigma plugin install dsh`
+        // already provides it — a second `id: sigma-native` insert would trip
         // cordis' duplicate-entry-id check and hard-fail dsh boot.
         const dshAcpPatch = dshNativeInstalled() ? undefined : writeDshAcpPatch(dshHomeDir);
         if (dshAcpPatch) clientArgs = dshArgsWithPatch(clientArgs, dshAcpPatch);
@@ -3477,7 +3477,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         // only — no rewrite channel exists without editing the user's
         // config.toml. No budget env: kimi's native auto-compaction fires at
         // W − reserved_context_size (~95% of window), which ACP compression
-        // (~55% once windows align via BILI_LAUNCHER_MODEL_WINDOWS) precedes.
+        // (~55% once windows align via SIGMA_LAUNCHER_MODEL_WINDOWS) precedes.
         const usesProxyEnv = routes.httpsDomains.length > 0 || routes.httpEnvRoutes.length > 0;
         env = usesProxyEnv ? stripInheritedProxy(process.env) : { ...process.env };
         if (usesProxyEnv) {
@@ -3489,11 +3489,11 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         }
         if (routes.httpRewrites.length > 0) {
             console.error(
-                `bili: ${routes.httpRewrites.length} loopback endpoint(s) in ${resolveKimiHome(process.env)}/config.toml bypass Kimi Code's unconditional loopback NO_PROXY rule and will NOT go through the proxy — prefix their base_url with ${origin}/bili/ manually to compress them.`,
+                `sigma: ${routes.httpRewrites.length} loopback endpoint(s) in ${resolveKimiHome(process.env)}/config.toml bypass Kimi Code's unconditional loopback NO_PROXY rule and will NOT go through the proxy — prefix their base_url with ${origin}/sigma/ manually to compress them.`,
             );
         } else if (!usesProxyEnv) {
             console.error(
-                `bili: no routable providers found in ${resolveKimiHome(process.env)}/config.toml — traffic will NOT go through the proxy (configure a provider first).`,
+                `sigma: no routable providers found in ${resolveKimiHome(process.env)}/config.toml — traffic will NOT go through the proxy (configure a provider first).`,
             );
         }
     } else if (base === "mcode") {
@@ -3506,7 +3506,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         // endpoints are inventoried only — no rewrite channel exists without
         // editing the user's config.yaml. No budget env: mcode's built-in
         // auto-compaction fires on input-token footprint, which ACP compression
-        // precedes once windows align via BILI_LAUNCHER_MODEL_WINDOWS.
+        // precedes once windows align via SIGMA_LAUNCHER_MODEL_WINDOWS.
         const usesProxyEnv = routes.httpsDomains.length > 0 || routes.httpEnvRoutes.length > 0;
         env = usesProxyEnv ? stripInheritedProxy(process.env) : { ...process.env };
         if (usesProxyEnv) {
@@ -3519,16 +3519,16 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         const mcodeConfigPath = `${process.env.MINIMAX_DATA_DIR?.trim() || process.env.MAVIS_DATA_DIR?.trim() || path.join(os.homedir(), ".minimax")}/config.yaml`;
         if (routes.httpRewrites.length > 0) {
             console.error(
-                `bili: ${routes.httpRewrites.length} loopback endpoint(s) in your MiniMax Code ${mcodeConfigPath} (profile variants ~/.minimax-<profile>/config.yaml count too) bypass its unconditional loopback NO_PROXY rule and will NOT go through the proxy — prefix their base_url with ${origin}/bili/ manually to compress them.`,
+                `sigma: ${routes.httpRewrites.length} loopback endpoint(s) in your MiniMax Code ${mcodeConfigPath} (profile variants ~/.minimax-<profile>/config.yaml count too) bypass its unconditional loopback NO_PROXY rule and will NOT go through the proxy — prefix their base_url with ${origin}/sigma/ manually to compress them.`,
             );
         } else if (!usesProxyEnv) {
             console.error(
-                `bili: no routable providers found in your MiniMax Code ${mcodeConfigPath} — traffic will NOT go through the proxy (configure a provider first).`,
+                `sigma: no routable providers found in your MiniMax Code ${mcodeConfigPath} — traffic will NOT go through the proxy (configure a provider first).`,
             );
         }
     } else if (base === "qoder") {
         // #653: cert-MITM only — the model endpoint scheme is hardcoded https
-        // (no base-URL override env), so /bili/ rewrites cannot reach it.
+        // (no base-URL override env), so /sigma/ rewrites cannot reach it.
         // qoder's undici stack honors HTTPS_PROXY + NODE_EXTRA_CA_CERTS
         // (additive, so the plain root CA suffices). Proxy vars are fully
         // stripped (same contract as hermes). QODER_MODEL_TRANSPORT=http
@@ -3548,7 +3548,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         });
         Object.assign(env, qoderBudget);
         if (qoderBudget[`${qoderPrefix}_AUTOCOMPACT_WINDOW`] !== undefined) {
-            console.error(`bili: qoder budget aligned — ${qoderPrefix}_AUTOCOMPACT_WINDOW=${qoderBudget[`${qoderPrefix}_AUTOCOMPACT_WINDOW`]}`);
+            console.error(`sigma: qoder budget aligned — ${qoderPrefix}_AUTOCOMPACT_WINDOW=${qoderBudget[`${qoderPrefix}_AUTOCOMPACT_WINDOW`]}`);
         }
     } else if (base === "trae") {
         // #655: cert-MITM like codex/qoder (Go binary honors HTTPS_PROXY; CA
@@ -3567,7 +3567,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         env = buildGeminiEnv(origin, ca, routes.httpRewrites, routes.httpsRewrites, stripInheritedProxy(process.env));
         if (routes.httpRewrites.length === 0 && routes.httpsRewrites.length === 0) {
             console.error(
-                "bili: no routable gemini upstream found (unparseable GOOGLE_GEMINI_BASE_URL?) — traffic will NOT go through the proxy.",
+                "sigma: no routable gemini upstream found (unparseable GOOGLE_GEMINI_BASE_URL?) — traffic will NOT go through the proxy.",
             );
         }
     } else if (base === "iflow") {
@@ -3576,7 +3576,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         env = buildIflowEnv(origin, ca, routes.httpRewrites, routes.httpsRewrites, stripInheritedProxy(process.env));
         if (routes.httpRewrites.length === 0 && routes.httpsRewrites.length === 0) {
             console.error(
-                "bili: no routable iFlow upstream found (unparseable IFLOW_BASE_URL?) — traffic will NOT go through the proxy.",
+                "sigma: no routable iFlow upstream found (unparseable IFLOW_BASE_URL?) — traffic will NOT go through the proxy.",
             );
         }
     } else if (base === "qwen") {
@@ -3600,15 +3600,15 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             : { ...process.env };
         if (routes.httpRewrites.length > 0) {
             console.error(
-                `bili: ${routes.httpRewrites.length} loopback endpoint(s) declared for aider bypass NO_PROXY and will NOT go through the proxy — point their base URL at ${origin}/bili/<url> manually (e.g. via --openai-api-base) to compress them.`,
+                `sigma: ${routes.httpRewrites.length} loopback endpoint(s) declared for aider bypass NO_PROXY and will NOT go through the proxy — point their base URL at ${origin}/sigma/<url> manually (e.g. via --openai-api-base) to compress them.`,
             );
         } else if (!usesProxyEnv) {
             console.error(
-                "bili: no routable aider endpoint found — traffic will NOT go through the proxy.",
+                "sigma: no routable aider endpoint found — traffic will NOT go through the proxy.",
             );
         } else if (!aiderDeclared) {
             console.error(
-                `bili: no aider endpoint declared (OPENAI_API_BASE / --openai-api-base / .aider.conf.yml) — assuming ${AIDER_DEFAULT_MODEL_HOSTS.join(" + ")}; pass --mitm-domain <host> for other relays.`,
+                `sigma: no aider endpoint declared (OPENAI_API_BASE / --openai-api-base / .aider.conf.yml) — assuming ${AIDER_DEFAULT_MODEL_HOSTS.join(" + ")}; pass --mitm-domain <host> for other relays.`,
             );
         }
     } else if (base === "copilot") {
@@ -3621,7 +3621,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         // leg and the control plane, so the single whitelist entry covers both.
         env = buildAmpEnv(origin, resolveCombinedCaPath(process.env), stripInheritedProxy(process.env));
     } else if (base === "goose") {
-        // #1049: rustls release builds won't trust bili's CA, so no proxy envs
+        // #1049: rustls release builds won't trust sigma's CA, so no proxy envs
         // at all — every model leg is redirected straight at the proxy as
         // plain HTTP instead: built-in openai/anthropic via their *_HOST
         // session-override envs (honored above any persisted config, stable
@@ -3630,7 +3630,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         // user edits merged back in finalizeGooseHome). Inherited proxy vars
         // are stripped: the plain-HTTP model legs must never detour through a
         // corporate forward proxy.
-        env = { ...stripInheritedProxy(process.env), BILLION_CONTEXT_PROXY: origin };
+        env = { ...stripInheritedProxy(process.env), SIGMA_PROXY: origin };
         env.OPENAI_HOST = wrapUpstream(origin, "https://api.openai.com");
         env.ANTHROPIC_HOST = wrapUpstream(origin, "https://api.anthropic.com");
         if (routes.httpRewrites.length > 0) {
@@ -3639,19 +3639,19 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
                 gooseOverlay = overlay;
                 env.GOOSE_PATH_ROOT = overlay.root;
             } else {
-                console.error("bili: goose custom-provider rewrite unavailable (overlay could not be prepared) — those endpoints will NOT go through the proxy");
+                console.error("sigma: goose custom-provider rewrite unavailable (overlay could not be prepared) — those endpoints will NOT go through the proxy");
             }
         }
         const active = config.goose?.activeProvider;
         if (active && active !== "openai" && active !== "anthropic" && !(active in (config.goose?.customProviders ?? {}))) {
-            console.error(`bili: goose active provider "${active}" has no override seam (not built-in openai/anthropic, not a discovered custom provider) — its model traffic will NOT go through the proxy`);
+            console.error(`sigma: goose active provider "${active}" has no override seam (not built-in openai/anthropic, not a discovered custom provider) — its model traffic will NOT go through the proxy`);
         }
     } else if (base === "codex") {
         // Per-spawn conversation id for the MCP shell's headless
         // self-registration (codex provides no session id of its own).
         const codexConversationId = injectMcp ? randomUUID() : undefined;
         if (directUrl) {
-            env = { ...process.env, BILLION_CONTEXT_PROXY: origin };
+            env = { ...process.env, SIGMA_PROXY: origin };
         } else {
             env = buildCodexEnv(origin, resolveCombinedCaPath(process.env), stripInheritedProxy(process.env));
             clientArgs = buildCodexArgs(origin, routes.httpRewrites, routes.httpsRewrites, clientArgs);
@@ -3664,7 +3664,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             });
             if (budgetArgs.length > 0) {
                 clientArgs = [...budgetArgs, ...clientArgs];
-                console.error(`bili: codex budget aligned — ${budgetArgs.slice(2).join(", ")} (model: ${config.codex?.model})`);
+                console.error(`sigma: codex budget aligned — ${budgetArgs.slice(2).join(", ")} (model: ${config.codex?.model})`);
             }
         }
         if (injectMcp && codexConversationId) {
@@ -3676,7 +3676,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             });
             if (inj.clientArgs.length > 0) clientArgs = [...inj.clientArgs, ...clientArgs];
             Object.assign(env, inj.envPatch);
-            if (inj.warning) console.error(`bili: ${inj.warning}`);
+            if (inj.warning) console.error(`sigma: ${inj.warning}`);
         }
     } else if (base === "codebuddy") {
         env = buildCodebuddyEnv(origin, ca, routes.httpRewrites, routes.httpsRewrites, stripInheritedProxy(process.env));
@@ -3689,13 +3689,13 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         });
         Object.assign(env, codebuddyBudget);
         if (codebuddyBudget.CODEBUDDY_AUTO_COMPACT_WINDOW !== undefined) {
-            console.error(`bili: codebuddy budget aligned — CODEBUDDY_AUTO_COMPACT_WINDOW=${codebuddyBudget.CODEBUDDY_AUTO_COMPACT_WINDOW}`);
+            console.error(`sigma: codebuddy budget aligned — CODEBUDDY_AUTO_COMPACT_WINDOW=${codebuddyBudget.CODEBUDDY_AUTO_COMPACT_WINDOW}`);
         }
     } else {
         env = directUrl
             ? buildClaudePluginEnv(origin, true, process.env)
             : buildClaudeEnv(origin, ca, routes.httpRewrites, routes.httpsRewrites, process.env);
-        if (directUrl) env.BILLION_CONTEXT_PROXY = origin;
+        if (directUrl) env.SIGMA_PROXY = origin;
         const claudeBudget = await resolveClaudeBudgetEnv({
             model: nonEmpty(process.env.ANTHROPIC_MODEL) ? process.env.ANTHROPIC_MODEL : config.claude?.model,
             userAutoCompactWindow: config.claude?.autoCompactWindow,
@@ -3705,31 +3705,31 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
         });
         Object.assign(env, claudeBudget);
         if (claudeBudget.CLAUDE_CODE_AUTO_COMPACT_WINDOW !== undefined) {
-            console.error(`bili: claude budget aligned — CLAUDE_CODE_AUTO_COMPACT_WINDOW=${claudeBudget.CLAUDE_CODE_AUTO_COMPACT_WINDOW}`);
+            console.error(`sigma: claude budget aligned — CLAUDE_CODE_AUTO_COMPACT_WINDOW=${claudeBudget.CLAUDE_CODE_AUTO_COMPACT_WINDOW}`);
         }
-        // #964 coexistence: a native install (`bili plugin install claude`)
+        // #964 coexistence: a native install (`sigma plugin install claude`)
         // pins env.ANTHROPIC_BASE_URL to the STABLE port in user settings —
         // without an override claude would dial the static port, where the
-        // SessionStart hook deliberately spawns nothing (BILLION_CONTEXT_PROXY
+        // SessionStart hook deliberately spawns nothing (SIGMA_PROXY
         // is set below), and every model request would fail. Route claude at
         // THIS launcher's own proxy instead: process env + `--settings` JSON
-        // both carry the same /bili/ URL (settings precedence: CLI > user, but
+        // both carry the same /sigma/ URL (settings precedence: CLI > user, but
         // belt-and-braces covers builds where the settings env block beats
         // inherited process env). The upstream is the user's real relay
-        // (BILI_CLAUDE_UPSTREAM beats discovery), UNWRAPPED first — with the
+        // (SIGMA_CLAUDE_UPSTREAM beats discovery), UNWRAPPED first — with the
         // native block installed, discovery reads the managed static URL.
         if (claudeNativeInstalled()) {
-            const relay = (env.BILI_CLAUDE_UPSTREAM?.trim() || undefined) ?? unwrapUpstream(config.claude?.anthropicBaseUrl ?? "https://api.anthropic.com");
+            const relay = (env.SIGMA_CLAUDE_UPSTREAM?.trim() || undefined) ?? unwrapUpstream(config.claude?.anthropicBaseUrl ?? "https://api.anthropic.com");
             const override = wrapUpstream(origin, relay);
             env.ANTHROPIC_BASE_URL = override;
-            env.BILLION_CONTEXT_PROXY = origin;
+            env.SIGMA_PROXY = origin;
             const settingsArg = buildClaudeSettingsArg(deps.platform ?? process.platform, override);
             if (settingsArg.tmpFile) tmpFiles.push(settingsArg.tmpFile);
             clientArgs = [...settingsArg.clientArgs, ...clientArgs];
-            console.error(`bili: claude native install detected — overriding its static ANTHROPIC_BASE_URL with this launcher's proxy (${override}); the SessionStart hook stays dormant for this session.`);
+            console.error(`sigma: claude native install detected — overriding its static ANTHROPIC_BASE_URL with this launcher's proxy (${override}); the SessionStart hook stays dormant for this session.`);
         }
         if (injectMcp) {
-            const mcpFile = path.join(os.tmpdir(), `bili-mcp-${Date.now()}.json`);
+            const mcpFile = path.join(os.tmpdir(), `sigma-mcp-${Date.now()}.json`);
             fs.writeFileSync(mcpFile, JSON.stringify(buildMcpConfig(origin)));
             tmpFiles.push(mcpFile);
             clientArgs = ["--mcp-config", mcpFile, ...clientArgs];
@@ -3745,7 +3745,7 @@ export async function runLaunch(params: RunLaunchParams, deps: LauncherDeps = {}
             platform: deps.platform,
         });
     } catch (err) {
-        console.error(`bili: failed to launch ${params.client}: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`sigma: failed to launch ${params.client}: ${err instanceof Error ? err.message : String(err)}`);
         code = 1;
     } finally {
         stopProxy(handle);
@@ -3786,15 +3786,15 @@ export async function runTestPi(params: RunTestPiParams, deps: LauncherDeps = {}
     ]);
     const handle = await ensureProxyRunning({ host, port, passthrough, debug, lane: "pi", mitmDomains: domains, modelWindows: collectModelWindows(config, "pi"), modelMaxOutputs: collectModelMaxOutputs(config, "pi") }, deps);
     console.error(
-        `bili: started proxy at ${handle.origin} (MITM domains: ${domains.length ? domains.join(", ") : "defaults"})`,
+        `sigma: started proxy at ${handle.origin} (MITM domains: ${domains.length ? domains.join(", ") : "defaults"})`,
     );
     if (handle.logPath) {
-        console.error(`bili: proxy log: ${handle.logPath}`);
+        console.error(`sigma: proxy log: ${handle.logPath}`);
     }
 
     const ca = resolveCaCertPath(process.env);
     const env = buildPiEnv(handle.origin, ca, stripInheritedProxy(process.env));
-    const sessionDir = path.join(os.tmpdir(), `bili-pi-test-${Date.now()}`);
+    const sessionDir = path.join(os.tmpdir(), `sigma-pi-test-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     const args = [
         "-p",
@@ -3814,7 +3814,7 @@ export async function runTestPi(params: RunTestPiParams, deps: LauncherDeps = {}
     try {
         code = await runClient(command, [...prefixArgs, ...args], env, { spawnImpl: deps.spawnImpl });
     } catch (err) {
-        console.error(`bili: pi test failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`sigma: pi test failed: ${err instanceof Error ? err.message : String(err)}`);
         code = 1;
     } finally {
         stopProxy(handle);

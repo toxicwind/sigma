@@ -1,7 +1,7 @@
 # WORKLOG - <Title>
 
 - Task ID: `<YYYY-MM-DD_short-title>`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: InProgress | Done | Rollback
 - Updated: <YYYY-MM-DD HH:mm>
 

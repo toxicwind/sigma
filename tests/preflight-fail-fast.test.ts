@@ -6,7 +6,7 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 // Fail fast on the very first 429 instead of the default 3 attempts with
 // exponential backoff — these tests are about the post-retry behavior.
-process.env.BILI_REPLAY_RETRY_MAX = "1";
+process.env.SIGMA_REPLAY_RETRY_MAX = "1";
 
 import { defaultConfig, type Config } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -126,7 +126,7 @@ test("e2e #301: overflow + summary upstream 429 → structured 503, over-window 
         // Fresh session: a ~13k-token history against a 10k window — the
         // payload itself overflows, preflight fires, its summarization call
         // 429s. The proxy must fail fast, NOT forward the over-window body.
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-429-sess" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
@@ -185,7 +185,7 @@ test("e2e #301: payload fits the window + preflight 429 → request still forwar
     try {
         const headers = { "content-type": "application/json", "x-acp-session": "preflight-fits-429-sess" };
 
-        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r1 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-big", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -196,7 +196,7 @@ test("e2e #301: payload fits the window + preflight 429 → request still forwar
         // The ~13k-token conversation FITS the 20k window, but the trigger
         // fires on the stale 300k floor: preflight runs, its summarization
         // call 429s — and the proxy must STILL forward the fitting payload.
-        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r2 = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
@@ -232,7 +232,7 @@ test("e2e #301: over-window payload with nothing compressible → structured 502
 
     try {
         const filler = "FILLER_".repeat(7000);
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-exhausted-sess" },
             body: JSON.stringify({
@@ -285,7 +285,7 @@ test("e2e #330: over-window payload whose only foldable content is in the protec
         // forwarding a payload whose real billed input exceeded the window).
         const big1 = "A".repeat(24000);
         const big2 = "B".repeat(24000);
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-relax-sess" },
             body: JSON.stringify({
@@ -328,7 +328,7 @@ test("e2e #470: system + tools overhead counts in the preflight trigger — text
         // input overflows. Before #470 the trigger counted messages only and
         // forwarded the payload verbatim (guaranteed upstream 400 later).
         const big1 = "A".repeat(34_000);
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-overhead-sess" },
             body: JSON.stringify({
@@ -374,7 +374,7 @@ test("e2e #736: operator-shrunk window (compress.modelContextLimit below the mod
 
     try {
         const filler = "FILLER_".repeat(7000);
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-shrink-sess" },
             body: JSON.stringify({
@@ -403,7 +403,7 @@ test("e2e #736: operator-shrunk window (compress.modelContextLimit below the mod
         const proxyPlain = await startProxy(upstreamPort, { "claude-small": { context: 10_000 } }, { protectedTools: ["bash"] });
         await once(proxyPlain, "listening");
         const plainPort = proxyPlain.address().port;
-        const r2 = await fetch(`http://127.0.0.1:${plainPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r2 = await fetch(`http://127.0.0.1:${plainPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-shrink-plain-sess" },
             body: JSON.stringify({
@@ -429,7 +429,7 @@ test("e2e #736: operator-shrunk window (compress.modelContextLimit below the mod
     }
 });
 
-// #737 review: the shrink note must fire ONLY when bili deliberately shrank the
+// #737 review: the shrink note must fire ONLY when sigma deliberately shrank the
 // window (operator override / codex align). On a NON-Anthropic turn the per-request
 // output-headroom reservation (reserveOutputHeadroom = window - max_tokens) ALSO
 // lowers reqConfig.modelContextLimit below the resolved native window — with no
@@ -454,7 +454,7 @@ test("e2e #737: output-headroom-shrunk window (non-Anthropic, no operator overri
 
     try {
         const filler = "FILLER_".repeat(7000);
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "preflight-headroom-sess" },
             body: JSON.stringify({

@@ -42,12 +42,12 @@ function request(
 test("admin endpoints: DNS-rebinding Host is rejected with and without Origin (#115)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-admin-origin-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-admin-origin-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
 
     const port = 8017 + (process.pid % 500);
     const opts: ProxyOptions = {
@@ -92,7 +92,7 @@ test("admin endpoints: DNS-rebinding Host is rejected with and without Origin (#
         const crossOrigin = await request(actualPort, { host: trusted, origin: "http://evil.com:8080" });
         assert.equal(crossOrigin.status, 403, "Origin not in trusted hosts must be rejected");
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         proxy.closeAllConnections?.();
         await close(proxy);
         try { rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -102,12 +102,12 @@ test("admin endpoints: DNS-rebinding Host is rejected with and without Origin (#
 test("admin endpoints work with port: 0 (dynamic port assignment)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-admin-port0-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-admin-port0-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
 
     // port: 0 → the OS assigns the real port; trusted-host pinning must use
     // the socket's localPort, not the configured 0 (regression: every admin
@@ -142,7 +142,7 @@ test("admin endpoints work with port: 0 (dynamic port assignment)", async () => 
         const spoofed = await request(actualPort, { host: `evil.com:${actualPort}` });
         assert.equal(spoofed.status, 403, "rebinding Host still rejected on dynamic port");
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         proxy.closeAllConnections?.();
         await close(proxy);
         try { rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -152,12 +152,12 @@ test("admin endpoints work with port: 0 (dynamic port assignment)", async () => 
 test("unknown /__bili/ path → 404 locally, not forwarded to upstream (#346)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-admin-404-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-admin-404-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
 
     // Dead upstream: if the unknown /__bili/ path were (wrongly) forwarded,
     // this would 502/hang instead of answering 404 immediately.
@@ -198,7 +198,7 @@ test("unknown /__bili/ path → 404 locally, not forwarded to upstream (#346)", 
         });
         assert.equal(res.status, 404, "unknown /__bili/ path must 404 locally, not be forwarded to the upstream");
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         proxy.closeAllConnections?.();
         await close(proxy);
         try { rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ }

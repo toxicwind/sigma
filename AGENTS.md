@@ -1,10 +1,10 @@
-# billion-context Development Specification
+# sigma Development Specification
 
 > **This document is the highest-priority specification. All developers (including AI Agents) MUST comply.**
 
 ## 1. Project Overview
 
-**billion-context** is an npm package (`bili` CLI) — a context-compression proxy for AI agents. It sits between an agent client and an upstream LLM provider, injecting acp-kernel's compression pipeline to manage context growth.
+**sigma** is an npm package (`sigma` CLI) — a context-compression proxy for AI agents. It sits between an agent client and an upstream LLM provider, injecting acp-kernel's compression pipeline to manage context growth.
 
 ### Tech Stack
 
@@ -19,9 +19,9 @@
 
 | Field | Value |
 |-------|-------|
-| npm package | `billion-context` |
-| CLI | `bili` / `bili-proxy` |
-| GitHub | https://github.com/ranxianglei/billion-context |
+| npm package | `sigma` |
+| CLI | `sigma` / `sigma-proxy` |
+| GitHub | https://github.com/ranxianglei/sigma |
 | License | MIT |
 
 ## 2. Architecture
@@ -29,7 +29,7 @@
 ### Module Map
 
 ```
-billion-context/
+sigma/
 ├── src/
 │   ├── index.ts                  # Entry: runs cli.ts main()
 │   ├── cli.ts                    # CLI dispatcher: start/update/export/test/plugin + client launchers
@@ -41,11 +41,11 @@ billion-context/
 │   ├── session-id.ts             # Session ID generation
 │   ├── persist.ts                # On-disk session persistence (kernel StateStore)
 │   ├── update.ts                 # Auto-update: checks npm, auto-installs latest
-│   ├── launcher.ts               # `bili <client>` launchers (pi/codex/claude/omp/opencode/hermes/dsh/codebuddy/qoder/trae/jcode/kimi)
+│   ├── launcher.ts               # `sigma <client>` launchers (pi/codex/claude/omp/opencode/hermes/dsh/codebuddy/qoder/trae/jcode/kimi)
 │   ├── client-config.ts          # READ-only discovery of each client's upstream config
 │   ├── mitm.ts / ca.ts           # Cert-MITM proxying + lazily generated root CA
 │   ├── mcp.ts                    # Plugin-in-launcher MCP shell (spawn-time injection)
-│   ├── plugin.ts / plugin-install.ts # Cooperative plugin protocol + `bili plugin install`
+│   ├── plugin.ts / plugin-install.ts # Cooperative plugin protocol + `sigma plugin install`
 │   ├── registry.ts               # models.dev context-window registry (snapshot-first)
 │   ├── registry-snapshot.json    # Bundled full models.dev snapshot (offline floor)
 │   ├── upstream-proxy.ts         # undici ProxyAgent routing (https_proxy for registry fetch)
@@ -81,21 +81,21 @@ billion-context/
 3. **Auto-update**: checks npm registry every 3 min (`CHECK_INTERVAL_MS = 3*60*1000`), first check per process ignores throttle
 4. **Tee logger**: all proxy logs go through `src/logger.ts` (file + stderr). Do NOT use `console.error` in server-side modules — use `loggerLog()`.
 5. **acp-kernel MUST be pinned to an exact version** (e.g. `"acp-kernel": "0.0.17"`, NEVER `"^0.0.17"`). Because acp-kernel is a build-time dependency that tsup bundles inline into `dist`, a caret range makes the resolved version drift if `package-lock.json` is regenerated or absent, breaking reproducible builds. When bumping acp-kernel: set the exact version in `package.json`, run `npm install` to refresh the lockfile, then rebuild. The `package-lock.json` is committed and kept in sync.
-6. **Single-writer plugin copies (#991)** — every bili presence has exactly one writer. Host-managed copies (pi's npm entry, opencode's plugin dir, dsh profile bundles in pnpm's store) are NEVER overwritten in place by bili: `src/update.ts` → `hostManagedInstall()` detects pnpm virtual-store (`.pnpm`) and host-home trees (pi/opencode/dsh/kimi/omp) and the self-updater skips them; `installViaTarball` refuses them structurally. Reference lanes (omp/claude/codex/kimi) point at the global install and update with it. `bili plugin update [agent]` drives each lane through its own owner. Mixing user commands is fine (they share channels); mixing writers is what the guard forbids.
-7. **Two compression modes with different summary carriers** — `pluginMode` (the `x-bili-plugin` header / registered agent, e.g. `bili pi`) means the ACP-native agent OWNS compression: it executes `compress` locally, the call+result live in its own re-sent history, and the summary carrier on the wire is the **tool call** (the proxy suppresses tool + nudge injection; the agent's view never renders the kernel's `acp_summary`). Proxy mode (plain client, no header) means the proxy executes `compress` server-side: the tool call is ephemeral (never enters the client's history) and preflight blocks have none, so the summary carrier is the **`acp_summary` message**, which the kernel renders as role `system` but `systemToUser` (`src/util.ts`) re-voices as a **`user` message** (leaving it at its anchor) so strict backends (SGLang: exactly one system at index 0, #377) accept it and the head system message stays byte-stable for the prefix cache. The mode is decided per request and bound per session (`session.metadata.pluginAgent`, sticky, upgrade-only). See README "Two compression modes".
+6. **Single-writer plugin copies (#991)** — every sigma presence has exactly one writer. Host-managed copies (pi's npm entry, opencode's plugin dir, dsh profile bundles in pnpm's store) are NEVER overwritten in place by sigma: `src/update.ts` → `hostManagedInstall()` detects pnpm virtual-store (`.pnpm`) and host-home trees (pi/opencode/dsh/kimi/omp) and the self-updater skips them; `installViaTarball` refuses them structurally. Reference lanes (omp/claude/codex/kimi) point at the global install and update with it. `sigma plugin update [agent]` drives each lane through its own owner. Mixing user commands is fine (they share channels); mixing writers is what the guard forbids.
+7. **Two compression modes with different summary carriers** — `pluginMode` (the `x-sigma-plugin` header / registered agent, e.g. `sigma pi`) means the ACP-native agent OWNS compression: it executes `compress` locally, the call+result live in its own re-sent history, and the summary carrier on the wire is the **tool call** (the proxy suppresses tool + nudge injection; the agent's view never renders the kernel's `acp_summary`). Proxy mode (plain client, no header) means the proxy executes `compress` server-side: the tool call is ephemeral (never enters the client's history) and preflight blocks have none, so the summary carrier is the **`acp_summary` message**, which the kernel renders as role `system` but `systemToUser` (`src/util.ts`) re-voices as a **`user` message** (leaving it at its anchor) so strict backends (SGLang: exactly one system at index 0, #377) accept it and the head system message stays byte-stable for the prefix cache. The mode is decided per request and bound per session (`session.metadata.pluginAgent`, sticky, upgrade-only). See README "Two compression modes".
 
-8. **Nudge cadence is flat 50K by design (kernel contract)** — acp-kernel pins the growth interval at 50000 for every window size (`nudge.growthFloor == nudge.growthCap == 50000`; the window-percentage scaling was deliberately removed — kernel #379/#380 settled "growth-driven, no usage/count proxy gates"). Do NOT re-scale the interval with the context window or re-introduce percentage gates; a 1M-window session folding every 50K of growth is intended lean-context behavior. bili exposes the user escape hatch as `compress.nudgeGrowthTokens` (flattens `growthFloor`+`growthCap` to a fixed step) — big-window users who want a lazier cadence set it explicitly. Gentle growth nudges are advisory by design; prompt wording is kernel-owned (`src/nudge-text.ts`).
+8. **Nudge cadence is flat 50K by design (kernel contract)** — acp-kernel pins the growth interval at 50000 for every window size (`nudge.growthFloor == nudge.growthCap == 50000`; the window-percentage scaling was deliberately removed — kernel #379/#380 settled "growth-driven, no usage/count proxy gates"). Do NOT re-scale the interval with the context window or re-introduce percentage gates; a 1M-window session folding every 50K of growth is intended lean-context behavior. sigma exposes the user escape hatch as `compress.nudgeGrowthTokens` (flattens `growthFloor`+`growthCap` to a fixed step) — big-window users who want a lazier cadence set it explicitly. Gentle growth nudges are advisory by design; prompt wording is kernel-owned (`src/nudge-text.ts`).
 
 ### Install-Lane & Update-Ownership Contract (#1196)
 
-Every bili presence on a machine follows ONE contract — decide changes
+Every sigma presence on a machine follows ONE contract — decide changes
 against it, not ad hoc:
 
 1. **One writer per copy, chosen by the install SOURCE.** A copy installed
    through a host's own channel (dsh plugin market, opencode/pi managers,
-   pnpm store) is owned by that host: bili NEVER writes it in place (#991,
-   `hostManagedInstall`). `bili plugin install <agent>` only ever DRIVES the
-   host's channel (e.g. `dsh plugin add`), never installs a second bili-owned
+   pnpm store) is owned by that host: sigma NEVER writes it in place (#991,
+   `hostManagedInstall`). `sigma plugin install <agent>` only ever DRIVES the
+   host's channel (e.g. `dsh plugin add`), never installs a second sigma-owned
    copy beside it (#966).
 2. **Every copy must have a LIVE update path** — this is the actual fix for
    the "frozen forever" bug class (#1196). Exactly one of:
@@ -107,11 +107,11 @@ against it, not ad hoc:
      global ever runs (market-only users), by the copy's own periodic check
      (`refreshDshProfileCopy`, #1196). Self-heal goes THROUGH the owner's
      sanctioned channel, never around it.
-3. **Terminal users get the one-copy experience via launchers** (`bili dsh`
+3. **Terminal users get the one-copy experience via launchers** (`sigma dsh`
    overlay mode loads the global dist, no persistent copy); market users get
    self-contained per-context copies. Both are first-class; the user picks by
    entry point, and the two modes never mix for one lane (duplicate
-   `bili-native` loader ids hard-fail dsh boot).
+   `sigma-native` loader ids hard-fail dsh boot).
 4. **Local pins stay manual.** `link:`/`file:` dev pins are never refreshed
    (`isRegistryDepSpec` gate) — dev lanes track a live checkout by design.
 5. **Transient drift is acceptable and bounded**: lanes converge to the
@@ -119,13 +119,13 @@ against it, not ad hoc:
    Permanent divergence is a bug — file it under this contract.
 
 Machine-global facilities stay SHARED across all copies (deliberately):
-`~/.local/state/billion-context/` (log + sessions, #394 multi-instance
-warning), `~/.cache/billion-context/` (update throttle + cross-process
-update lock), `~/.config/billion-context/` (providers/compress config).
+`~/.local/state/sigma/` (log + sessions, #394 multi-instance
+warning), `~/.cache/sigma/` (update throttle + cross-process
+update lock), `~/.config/sigma/` (providers/compress config).
 
 ### Kernel Contract: Message Ids Are Never Reused
 
-The kernel (`acp-kernel`) guarantees, and billion-context RELIES on: within a
+The kernel (`acp-kernel`) guarantees, and sigma RELIES on: within a
 session, a raw content-hash id and a ref number (`mNNNNN`) denote exactly one
 message forever — **never reused, never duplicated**, even after the message
 dies (edited/truncated/folded). The model can cite any number it has ever
@@ -159,8 +159,8 @@ npm test               # node --import tsx --test tests/*.test.ts
 
 ```bash
 npm run build
-npm install -g billion-context@latest   # install from registry
-bili start --port 8787
+npm install -g sigma@latest   # install from registry
+sigma start --port 8787
 ```
 
 `npm install -g . --install-links` also works (installs a real copy of the
@@ -168,11 +168,11 @@ local build — the `--install-links` flag is REQUIRED: npm ≥ 9 defaults
 local-directory global installs to a SYMLINK (`install-links=false`), which
 leaks dev-tree edits into the "installed" tool and silently re-links on
 reinstall; see #1225). Verify with
-`readlink $(npm root -g)/billion-context` — empty output means a real copy.
+`readlink $(npm root -g)/sigma` — empty output means a real copy.
 The registry install remains preferred for testing the real published
 artifact.
 
-### E2E Regression (real client through bili)
+### E2E Regression (real client through sigma)
 
 `tests/e2e/e2e-codex.test.ts` drives the **real `codex` CLI** through a built
 proxy against a real Responses-compatible upstream and asserts the full
@@ -232,7 +232,7 @@ Rules:
 - Run it before merging changes to `src/update.ts` or the install/uninstall
   pipeline (`src/plugin-install.ts`).
 - The updater's registry base URL and check interval are overridable via
-  `BILI_UPDATE_REGISTRY` / `BILI_UPDATE_CHECK_INTERVAL_MS` (defaults unchanged
+  `SIGMA_UPDATE_REGISTRY` / `SIGMA_UPDATE_CHECK_INTERVAL_MS` (defaults unchanged
   when unset) — these seams exist for this suite (#1153); keep them
   default-invariant.
 - The fixture MUST bring its own registry instance — never point it at an
@@ -240,7 +240,7 @@ Rules:
 
 ### Configuration Surface Discipline (owner-gated)
 
-The config surface — every field of `~/.config/billion-context/config.json`, every `BILI_*` env var, every CLI flag, mirrored across CONFIGURATION.md en/zh — is **owner-design territory**. Hard rules:
+The config surface — every field of `~/.config/sigma/config.json`, every `SIGMA_*` env var, every CLI flag, mirrored across CONFIGURATION.md en/zh — is **owner-design territory**. Hard rules:
 
 1. **Any change that adds, renames, or re-semantics a config field MUST report it explicitly** in the PR description under a "config surface" heading: what is added/changed, why the existing surface cannot express it, which existing mechanisms were considered (providers table and its key species, the three-level `compress` hierarchy, env-var conventions, launcher↔extension channels), and the compat/migration story. A PR touching config without this section is incomplete by definition.
 2. **Agents do NOT invent new config shapes on their own initiative.** A new section/field proposed merely because it is locally convenient — without mapping it onto the existing system — is rejected on principle: **don't even build it**. File the proposal (issue, with the mapping above) and wait.
@@ -301,7 +301,7 @@ curl -sS -f -X POST \
   -H "Accept: application/vnd.github+json" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   -H "Content-Type: application/json" \
-  https://api.github.com/repos/ranxianglei/billion-context/pulls \
+  https://api.github.com/repos/ranxianglei/sigma/pulls \
   -d @/tmp/pr.json
 ```
 
@@ -338,7 +338,7 @@ tracker — never fixed silently and moved on.
    cause (if known), suggested fix.
 2. **Fixed a problem** — after the fix, submit an issue to the owning project
    recording the problem and how it was fixed. For problems in this project:
-   https://github.com/ranxianglei/billion-context/issues . If the fix ships as
+   https://github.com/ranxianglei/sigma/issues . If the fix ships as
    a PR, the PR MUST reference its issue (`Fixes #N`); a bare PR without an
    issue is not acceptable — file the issue first, then link it. An existing
    PR for the fix counts, but it should carry an accompanying issue.
@@ -392,15 +392,15 @@ When testing locally, install from the **registry** to test the real
 published artifact:
 
 ```bash
-npm install -g billion-context@latest
+npm install -g sigma@latest
 ```
 
 `npm install -g . --install-links` is also acceptable — it copies the local
 package into the global `node_modules`. The `--install-links` flag is
 REQUIRED on npm ≥ 9: without it the install is a SYMLINK to this working
 tree (`install-links=false` default), so dev-tree changes leak into the
-global `bili` and a reinstall silently re-links (#1225). Verify with
-`readlink $(npm root -g)/billion-context` (empty = real copy). Just be aware
+global `sigma` and a reinstall silently re-links (#1225). Verify with
+`readlink $(npm root -g)/sigma` (empty = real copy). Just be aware
 the installed version reflects whatever is in the project directory at
 install time, not the registry.
 
@@ -453,7 +453,7 @@ The Agent does steps 1–5, the human does step 6 (merge).
      creates git tag `v{VERSION}`, and creates a GitHub Release.
 8. **Verify** the published version is live:
    ```bash
-   npm view billion-context version
+   npm view sigma version
    ```
 
 ### One-click manual release (fast path)
@@ -511,9 +511,9 @@ or whenever a human wants the review gate).
 ⚠️ **When bumping the acp-kernel dependency version:**
 1. Release `acp-kernel` first (merge its release PR, wait for CI publish).
 2. **Verify it is live on npm:** `npm view acp-kernel version` returns the new version.
-3. THEN bump `acp-kernel` in this repo's `package.json` and release billion-context.
+3. THEN bump `acp-kernel` in this repo's `package.json` and release sigma.
 
-Rationale: billion-context CI runs `npm ci`, which installs the exact
+Rationale: sigma CI runs `npm ci`, which installs the exact
 `acp-kernel` version pinned in `package.json`. A release branch that bumps
 `acp-kernel` to a not-yet-published version fails CI at install time.
 
@@ -523,14 +523,14 @@ To test that a running older version auto-updates to a newer registry version:
 
 ```bash
 # 1. Install older version from registry
-npm install -g billion-context@0.1.16
+npm install -g sigma@0.1.16
 
 # 2. Merge the newer release PR (HUMAN merges) — CI publishes 0.1.17 to npm.
 
 # 3. Start the older version
-bili start --port 19195
+sigma start --port 19195
 # Within ~10s (startup check) it detects 0.1.17 and installs it, logging:
-#   ✔ billion-context auto-updated 0.1.16 → 0.1.17. Restart bili to finish.
+#   ✔ sigma auto-updated 0.1.16 → 0.1.17. Restart sigma to finish.
 ```
 
 ### ⚠ Releasing changes to the auto-update mechanism itself
@@ -553,7 +553,7 @@ change.** The sequence is:
    - Commit: `release v{VERSION}` (version bump only).
    - PR body MUST state it is a no-op and why (validation release).
 2. **Only after the no-op release is confirmed on npm** (`npm view
-   billion-context version` returns it) AND a real upgrade has been observed
+   sigma version` returns it) AND a real upgrade has been observed
    succeeding (the log shows `auto-updated OLD → NEW`), ship the actual change
    as a separate subsequent release.
 3. If the no-op release's upgrade **fails**, STOP. Do not ship the updater
@@ -594,8 +594,8 @@ after that succeeded was the Windows fix shipped in a follow-up release.
 
 ## 7. Review & Auto-Merge Discipline
 
-> Distilled from a full-history review of AI auto-dev across billion-context /
-> billion-context-pi / acp-kernel (#801): 1543 issues+PRs, 3645 comments,
+> Distilled from a full-history review of AI auto-dev across sigma /
+> sigma-pi / acp-kernel (#801): 1543 issues+PRs, 3645 comments,
 > `devlog/`, and this file's own git history. Goal: ~90% of bugfixes mergeable
 > without rework, without drifting off direction. Full cited material:
 > `AUTO-MERGE-GUARDRAILS.md`.
@@ -687,7 +687,7 @@ after that succeeded was the Windows fix shipped in a follow-up release.
     **acp-kernel**, not this repo (see §2 "Kernel Contract"). This repo only
     consumes them faithfully. Codifying the kernel-side spec is a separate
     acp-kernel change — deferred; cross-repo work stays manual for now.
-- **Symptom ≠ mechanism.** Before attributing a bug to bili's mechanism, verify
+- **Symptom ≠ mechanism.** Before attributing a bug to sigma's mechanism, verify
   against upstream logs — repeated-compression logs may be an upstream rate-limit
   retry illusion, not over-compression (#282).
 - **Wire-constraint ledger only grows (#1304).** Every upstream rejection or

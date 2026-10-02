@@ -107,7 +107,7 @@ test("lookupContextLimit returns undefined for unknown models", () => {
 });
 
 // ── resolveContextLimit: longest-prefix matching on URL keys ──────────────
-// The key is the /bili/<this> string. A request matches when its embedded
+// The key is the /sigma/<this> string. A request matches when its embedded
 // upstream URL equals the key, or starts with key + "/". Longest key wins
 // (most specific). Shallow keys match the whole host; deep keys match only
 // that endpoint. This never cross-matches different hosts/paths because the

@@ -32,14 +32,14 @@ async function withHeal<T>(fn: (ctx: { sink: string[]; rearm: (v: typeof fetch) 
     }
 }
 
-test("#1158 self-heal: third-party reset to a frozen bare fetch re-chains and keeps routing through bili", async () => {
+test("#1158 self-heal: third-party reset to a frozen bare fetch re-chains and keeps routing through sigma", async () => {
     const bareSink: string[] = [];
     const { sink } = await withHeal(async ({ rearm, fetch }) => {
         rearm(fakeFetch(bareSink));
         const res = await fetch()("http://127.0.0.1:8199/v1/messages", { method: "POST" });
         assert.equal(res.status, 200);
     });
-    assert.deepEqual(bareSink, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages"]);
+    assert.deepEqual(bareSink, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages"]);
     assert.deepEqual(sink, []);
 });
 
@@ -54,9 +54,9 @@ test("#1158 self-heal: third-party wrapper becomes the downstream (dsh-http-prox
         const res = await fetch()("http://127.0.0.1:8199/v1/messages");
         assert.equal(res.status, 200);
         // Non-model URL still passes through to the third-party wrapper untouched.
-        await fetch()("https://registry.npmjs.org/billion-context");
+        await fetch()("https://registry.npmjs.org/sigma");
     });
-    assert.deepEqual(downstreamSeen, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages", "https://registry.npmjs.org/billion-context"]);
+    assert.deepEqual(downstreamSeen, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages", "https://registry.npmjs.org/sigma"]);
     assert.deepEqual(sink, []);
     assert.equal(downstreamSeen.length, 2);
 });
@@ -68,7 +68,7 @@ test("#1158 self-heal: guarded property is transparent when nobody fights it", a
         // A re-read of the global yields a stable callable (accessor works).
         assert.equal(typeof fetch(), "function");
     });
-    assert.deepEqual(sink, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages"]);
+    assert.deepEqual(sink, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages"]);
 });
 
 test("#1158 self-heal: non-function and self writes are ignored by the guard", async () => {
@@ -79,13 +79,13 @@ test("#1158 self-heal: non-function and self writes are ignored by the guard", a
         const res = await mine("http://127.0.0.1:8199/v1/messages");
         assert.equal(res.status, 200);
     });
-    assert.deepEqual(sink, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages"]);
+    assert.deepEqual(sink, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages"]);
 });
 
 // #1410: a coexisting network-scope plugin (dsh-codex-subscription shape)
 // wraps globalThis.fetch while its scope is open and, on scope end, restores
 // ONLY if its wrapper still sits on top — then unconditionally nulls its own
-// closure locals. If bili had adopted that transient wrapper as downstream,
+// closure locals. If sigma had adopted that transient wrapper as downstream,
 // every later request died with "baseFetch is not a function". These suites
 // pin the interleave outcomes: the chain must survive either teardown order.
 
@@ -131,16 +131,16 @@ test("#1410: install inside a foreign network scope survives scope teardown (re-
         assert.equal(installNativeFetchIntercept({ origin: "http://127.0.0.1:40001", ready: Promise.resolve("http://127.0.0.1:40001") }), true);
         // While the scope is still open, routing rides the live wrapper.
         await globalThis.fetch("http://127.0.0.1:8199/v1/messages");
-        assert.deepEqual(nativeSink, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages"]);
-        scope.close(); // its guard sees bili's chain on top → skips restore, nulls its locals
+        assert.deepEqual(nativeSink, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages"]);
+        scope.close(); // its guard sees sigma's chain on top → skips restore, nulls its locals
         const res = await globalThis.fetch("http://127.0.0.1:8199/v1/messages");
         assert.equal(res.status, 200);
-        await globalThis.fetch("https://registry.npmjs.org/billion-context");
+        await globalThis.fetch("https://registry.npmjs.org/sigma");
     });
     assert.deepEqual(nativeSink, [
-        "http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages",
-        "http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages",
-        "https://registry.npmjs.org/billion-context",
+        "http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages",
+        "http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages",
+        "https://registry.npmjs.org/sigma",
     ]);
 });
 
@@ -150,15 +150,15 @@ test("#1410: foreign scope opening AFTER install — re-arm adopts its wrapper; 
     await withScope(nativeFetch, async ({ scope }) => {
         const state: NativeInterceptState = { origin: "http://127.0.0.1:40001", ready: Promise.resolve("http://127.0.0.1:40001") };
         assert.equal(installNativeFetchIntercept(state), true);
-        scope.open(); // captures bili's top as its base; the write re-arms (#1158) onto its wrapper
-        scope.close(); // guard fails (bili's chain on top) → wrapper torn down behind our back
+        scope.open(); // captures sigma's top as its base; the write re-arms (#1158) onto its wrapper
+        scope.close(); // guard fails (sigma's chain on top) → wrapper torn down behind our back
         const res = await globalThis.fetch("http://127.0.0.1:8199/v1/messages");
         assert.equal(res.status, 200);
-        await globalThis.fetch("https://registry.npmjs.org/billion-context");
+        await globalThis.fetch("https://registry.npmjs.org/sigma");
     });
     assert.deepEqual(nativeSink, [
-        "http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages",
-        "https://registry.npmjs.org/billion-context",
+        "http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages",
+        "https://registry.npmjs.org/sigma",
     ]);
 });
 
@@ -176,7 +176,7 @@ test("#1410: writing back our OWN stale chain link is recognized as ours — no 
         assert.equal(res.status, 200);
     });
     // Routing still flows through the third-party downstream adopted at re-arm.
-    assert.deepEqual(foreignSink, ["http://127.0.0.1:40001/bili/http://127.0.0.1:8199/v1/messages"]);
+    assert.deepEqual(foreignSink, ["http://127.0.0.1:40001/sigma/http://127.0.0.1:8199/v1/messages"]);
     assert.deepEqual(sink, []);
 });
 
@@ -222,8 +222,8 @@ test("#1410: every observed fetch torn down → loud failure, no silent corrupti
     }
 });
 
-test("#1158 escape hatch: BILI_RECLAIM_FETCH_PATCH=0 keeps the classic direct install", async () => {
-    process.env.BILI_RECLAIM_FETCH_PATCH = "0";
+test("#1158 escape hatch: SIGMA_RECLAIM_FETCH_PATCH=0 keeps the classic direct install", async () => {
+    process.env.SIGMA_RECLAIM_FETCH_PATCH = "0";
     try {
         const saved = globalThis.fetch;
         const { _resetForTest } = await import("../src/agent/native-intercept.js");
@@ -237,7 +237,7 @@ test("#1158 escape hatch: BILI_RECLAIM_FETCH_PATCH=0 keeps the classic direct in
             assert.equal(Object.getOwnPropertyDescriptor(globalThis, "fetch")?.writable, true);
             const thirdParty = fakeFetch([]);
             globalThis.fetch = thirdParty;
-            // The third party wins: direct send, no bili rewrite.
+            // The third party wins: direct send, no sigma rewrite.
             assert.equal(globalThis.fetch, thirdParty);
             const res = await globalThis.fetch("http://127.0.0.1:8199/v1/messages");
             assert.equal(res.status, 200);
@@ -246,6 +246,6 @@ test("#1158 escape hatch: BILI_RECLAIM_FETCH_PATCH=0 keeps the classic direct in
             _resetForTest();
         }
     } finally {
-        delete process.env.BILI_RECLAIM_FETCH_PATCH;
+        delete process.env.SIGMA_RECLAIM_FETCH_PATCH;
     }
 });

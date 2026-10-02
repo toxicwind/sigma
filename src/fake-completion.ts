@@ -10,7 +10,7 @@ import { appendTrailingUserText } from "./wire-body.js";
 // and retries once with a corrective hint, bounded per turn and per session.
 
 export const FAKE_COMPLETION_HINT =
-    "[billion-context] Your last reply described a tool call as plain text instead of invoking it, so no tool actually ran. " +
+    "[sigma] Your last reply described a tool call as plain text instead of invoking it, so no tool actually ran. " +
     "To act, invoke the tool through the proper tool-calling mechanism (emit a tool_use / tool_calls / function_call block). " +
     "Do not write tool-call markup as text in your reply.";
 
@@ -21,16 +21,16 @@ export const FAKE_COMPLETION_HINT =
 // the client sees it (a fake completion is only knowable at end-of-stream),
 // which defeats incremental streaming. That cost is only worth paying for the
 // low-frequency fake-completion case (small models via gateways), so it is
-// opt-in: set BILI_FAKE_COMPLETION_RETRIES=2 to enable. 0 = pre-#371 passthrough.
+// opt-in: set SIGMA_FAKE_COMPLETION_RETRIES=2 to enable. 0 = pre-#371 passthrough.
 export function maxFakeCompletionRetries(): number {
-    const n = Number.parseInt(process.env.BILI_FAKE_COMPLETION_RETRIES ?? "0", 10);
+    const n = Number.parseInt(process.env.SIGMA_FAKE_COMPLETION_RETRIES ?? "0", 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 // OOM guard for a pathological upstream; LLM responses are bounded by max_tokens
 // and normally well under 1 MiB.
 export function fakeBufCap(): number {
-    const n = Number.parseInt(process.env.BILI_FAKE_BUF_CAP ?? String(16 * 1024 * 1024), 10);
+    const n = Number.parseInt(process.env.SIGMA_FAKE_BUF_CAP ?? String(16 * 1024 * 1024), 10);
     return Number.isFinite(n) && n > 0 ? n : 16 * 1024 * 1024;
 }
 

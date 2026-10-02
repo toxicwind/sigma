@@ -9,7 +9,7 @@ import { dropSessionForGc, peekSession } from "./session.js";
 
 /**
  * Session-file garbage collection (#1082). OPT-IN: disabled unless
- * BILI_SESSION_GC is set to 1/true/on. Session files are user data
+ * SIGMA_SESSION_GC is set to 1/true/on. Session files are user data
  * (exportable, resumable), so there is no silent deletion policy — the
  * kernel store never deletes, and this sweep only runs when asked to.
  *
@@ -17,7 +17,7 @@ import { dropSessionForGc, peekSession } from "./session.js";
  * (owner requirement #1082: both are load-bearing, neither alone suffices):
  *
  *   1. AGE: last activity (envelope savedAt) older than
- *      BILI_SESSION_GC_MAX_AGE_DAYS (default 7d). The threshold must stay far
+ *      SIGMA_SESSION_GC_MAX_AGE_DAYS (default 7d). The threshold must stay far
  *      beyond any plausible resume window: after deletion a resumed session
  *      restarts numbering from m00001 while a resuming agent's transcript may
  *      still cite old numbers (kernel contract: ids are never reused), so a
@@ -26,7 +26,7 @@ import { dropSessionForGc, peekSession } from "./session.js";
  *      blocks, active or inactive, and no blockContents) AND its re-send size
  *      is bounded — deleting it loses no summaries, only bytes:
  *        2a. metadata.rawInputTokens known (recorded per turn since #1082):
- *            rawInputTokens <= BILI_SESSION_GC_MAX_TOKENS (default 1M);
+ *            rawInputTokens <= SIGMA_SESSION_GC_MAX_TOKENS (default 1M);
  *        2b. unknown (legacy/pre-upgrade file): stats.contextTokens <= the
  *            same threshold. A session WITH folds can read small in context
  *            yet carry huge raw history (compressed 300K → 20K) and its
@@ -81,13 +81,13 @@ const DAY_MS = 86_400_000;
 
 export function gcConfigFromEnv(): GcConfig {
     // Opt-in only (owner requirement #1082): unset means disabled.
-    const env = process.env.BILI_SESSION_GC?.toLowerCase();
+    const env = process.env.SIGMA_SESSION_GC?.toLowerCase();
     const enabled = env === "1" || env === "true" || env === "on";
     return {
         enabled,
-        maxAgeMs: intEnv("BILI_SESSION_GC_MAX_AGE_DAYS", DEFAULT_MAX_AGE_DAYS) * DAY_MS,
-        maxTokens: intEnv("BILI_SESSION_GC_MAX_TOKENS", DEFAULT_MAX_TOKENS),
-        intervalMs: intEnv("BILI_SESSION_GC_INTERVAL_MS", DEFAULT_INTERVAL_MS),
+        maxAgeMs: intEnv("SIGMA_SESSION_GC_MAX_AGE_DAYS", DEFAULT_MAX_AGE_DAYS) * DAY_MS,
+        maxTokens: intEnv("SIGMA_SESSION_GC_MAX_TOKENS", DEFAULT_MAX_TOKENS),
+        intervalMs: intEnv("SIGMA_SESSION_GC_INTERVAL_MS", DEFAULT_INTERVAL_MS),
     };
 }
 

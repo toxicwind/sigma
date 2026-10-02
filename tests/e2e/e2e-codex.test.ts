@@ -10,9 +10,9 @@ const run = process.env.ACP_TEST_E2E === "1";
 const skipReason = !run ? "set ACP_TEST_E2E=1 (real codex + real upstream; costs tokens)" : undefined;
 
 const UPSTREAM_URL = process.env.E2E_UPSTREAM_URL ?? "http://127.0.0.1:8199/v1";
-const UPSTREAM_KEY = process.env.E2E_UPSTREAM_KEY ?? "bili-local-test";
+const UPSTREAM_KEY = process.env.E2E_UPSTREAM_KEY ?? "sigma-local-test";
 const CODEX_BIN = process.env.E2E_CODEX_BIN ?? "codex";
-const DIST = process.env.E2E_BILI_DIST ?? path.resolve(import.meta.dirname, "../../dist/index.js");
+const DIST = process.env.E2E_SIGMA_DIST ?? path.resolve(import.meta.dirname, "../../dist/index.js");
 const MODEL = process.env.E2E_MODEL ?? "qwen3.8-27b";
 const TMO = Number(process.env.E2E_TMO ?? 420_000);
 const FORGE = process.env.E2E_FORGE === "1";
@@ -21,7 +21,7 @@ fs.mkdirSync(WORK_ROOT, { recursive: true });
 const WORK = fs.mkdtempSync(path.join(WORK_ROOT, "e2e-codex-"));
 // codex discovers AGENTS.md by walking UP from its spawn cwd (#815): keep the
 // cwd outside the repo tree or the whole repo doc leaks into every request.
-const CODEX_CWD = fs.mkdtempSync(path.join(os.tmpdir(), "billion-context-e2e-"));
+const CODEX_CWD = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-e2e-"));
 
 /** Deterministic filler for payload turns: unique per index.
  * Carried verbatim in user messages so context growth is fully deterministic
@@ -55,7 +55,7 @@ function freePort(): Promise<number> {
 }
 
 function windowEnv(contextWindow: number): Record<string, string> {
-    return { BILI_LAUNCHER_MODEL_WINDOWS: JSON.stringify({ [MODEL]: contextWindow }) };
+    return { SIGMA_LAUNCHER_MODEL_WINDOWS: JSON.stringify({ [MODEL]: contextWindow }) };
 }
 
 function writeCodexConfig(ctx: Ctx): void {
@@ -67,7 +67,7 @@ function writeCodexConfig(ctx: Ctx): void {
         "",
         "[model_providers.e2e]",
         'name = "OpenAI"',
-        `base_url = "http://127.0.0.1:${ctx.port}/bili/${UPSTREAM_URL}"`,
+        `base_url = "http://127.0.0.1:${ctx.port}/sigma/${UPSTREAM_URL}"`,
         'wire_api = "responses"',
         'env_key = "E2E_UPSTREAM_KEY"',
         "",
@@ -76,14 +76,14 @@ function writeCodexConfig(ctx: Ctx): void {
 
 function startProxy(ctx: Ctx, env: Record<string, string> = {}): Promise<void> {
     return new Promise((resolve, reject) => {
-        const logPath = path.join(WORK, `bili-${Date.now()}.log`);
+        const logPath = path.join(WORK, `sigma-${Date.now()}.log`);
         const child = spawn(process.execPath, [DIST, "start", "--port", String(ctx.port), "--no-auto-update"], {
             env: {
                 ...process.env,
                 XDG_CONFIG_HOME: ctx.xdg.config,
                 XDG_CACHE_HOME: ctx.xdg.cache,
                 XDG_STATE_HOME: ctx.xdg.state,
-                BILLION_CONTEXT_NO_AUTO_UPDATE: "1",
+                SIGMA_NO_AUTO_UPDATE: "1",
                 ...env,
             },
             stdio: ["ignore", "ignore", "pipe"],
@@ -117,9 +117,9 @@ function killProxy(ctx: Ctx): void {
 
 function logs(ctx: Ctx): string {
     const parts: string[] = [];
-    const stateLog = path.join(ctx.xdg.state, "billion-context", "bili.log");
+    const stateLog = path.join(ctx.xdg.state, "sigma", "sigma.log");
     for (const f of fs.existsSync(stateLog) ? [stateLog] : []) parts.push(fs.readFileSync(f, "utf8"));
-    for (const f of fs.readdirSync(WORK).filter((x) => x.startsWith("bili-")).sort()) {
+    for (const f of fs.readdirSync(WORK).filter((x) => x.startsWith("sigma-")).sort()) {
         try { parts.push(fs.readFileSync(path.join(WORK, f), "utf8")); } catch { /* mid-rotation */ }
     }
     return parts.join("");
@@ -264,7 +264,7 @@ test("e2e codex: warmup / load / ACP compress / purity / (forge)", { skip: skipR
     // trivial. The small phase-1 window stays behind for compression phases.
     killProxy(ctx);
     await new Promise((r) => setTimeout(r, 800));
-    await startProxy(ctx, { ...windowEnv(128_000), BILI_CODEX_COMPACT: "intercept" });
+    await startProxy(ctx, { ...windowEnv(128_000), SIGMA_CODEX_COMPACT: "intercept" });
     const f0 = await turnExpect(ctx, `补充档案片段 #9 如下:\n${filler(9, 300)}\n哨兵值 = 9500。请只回复: 收到#9`,
         (last) => last.includes("收到#9") || /compress/i.test(last),
         ["-c", "model_auto_compact_token_limit=999999"]);
@@ -278,7 +278,7 @@ test("e2e codex: warmup / load / ACP compress / purity / (forge)", { skip: skipR
         ["-c", "model_auto_compact_token_limit=3000"]);
     assert.strictEqual(f1.code, 0, `forge-turn exit=${f1.code}`);
     assert.ok(/codex compact intercepted/.test(logs(ctx)),
-        `forge not observed (BILI_CODEX_COMPACT support missing in dist, or gate passed through): last 3000 chars: ${logs(ctx).slice(-3000)}`);
+        `forge not observed (SIGMA_CODEX_COMPACT support missing in dist, or gate passed through): last 3000 chars: ${logs(ctx).slice(-3000)}`);
     const f2 = await turnExpect(ctx, "只回答一个数字: 档案#10 的哨兵值是多少?",
         (last) => last.includes("9600"),
         ["-c", "model_auto_compact_token_limit=3000"]);

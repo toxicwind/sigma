@@ -42,19 +42,19 @@ test("dumpsDir: respects XDG_STATE_HOME", () => {
         delete process.env.ACP_DUMP_DIR;
         process.env.XDG_STATE_HOME = "/custom/state";
         // mirrors stateDir()'s path.resolve of the env override; a bare path.join disagrees on win32 (drive-relative fixture)
-        assert.equal(dumpsDir(), path.join(path.resolve("/custom/state"), "billion-context", "dumps"));
-        assert.equal(dumpsDir(), path.join(stateDir(), "dumps"), "co-located with bili.log state dir");
+        assert.equal(dumpsDir(), path.join(path.resolve("/custom/state"), "sigma", "dumps"));
+        assert.equal(dumpsDir(), path.join(stateDir(), "dumps"), "co-located with sigma.log state dir");
     } finally {
         restoreEnv(prev);
     }
 });
 
-test("dumpsDir: default is under ~/.local/state/billion-context/dumps (no raw $HOME, no /tmp)", () => {
+test("dumpsDir: default is under ~/.local/state/sigma/dumps (no raw $HOME, no /tmp)", () => {
     const prev = saveEnv();
     try {
         delete process.env.ACP_DUMP_DIR;
         delete process.env.XDG_STATE_HOME;
-        assert.equal(dumpsDir(), path.join(homedir(), ".local", "state", "billion-context", "dumps"));
+        assert.equal(dumpsDir(), path.join(homedir(), ".local", "state", "sigma", "dumps"));
         assert.ok(!dumpsDir().startsWith("/tmp"), "must not fall back to /tmp");
     } finally {
         restoreEnv(prev);

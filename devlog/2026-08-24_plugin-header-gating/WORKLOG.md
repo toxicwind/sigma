@@ -1,13 +1,13 @@
 # WORKLOG - Plugin header gating
 
 - Task ID: `2026-08-24_plugin-header-gating`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-08-24 17:25
 
 ## 1. Summary
 
-- **What was done**: `before_provider_headers` now stamps `x-bili-plugin*`
+- **What was done**: `before_provider_headers` now stamps `x-sigma-plugin*`
   only after `registerTools()` has completed (`toolsReady` on `RegisterState`).
 - **Why**: the stamped header claims plugin ownership; stamping it before the
   tools exist sent round 1 out with no ACP tools (one-shot `-p` runs never
@@ -36,7 +36,7 @@
 
 - typecheck ✅ · **533/533** tests ✅ (+2 net) · build ✅
 - Real e2e (local SGLang 8199, anthropic protocol): one-shot
-  `bili pi --model sglang-anthropic/qwen3.8-27b -p "reply with exactly: pong"`
+  `sigma pi --model sglang-anthropic/qwen3.8-27b -p "reply with exactly: pong"`
   → round 1 `tools=[read,bash,edit,write,compress,decompress,search_context,acp_status]`
   (previously round 1 lacked the 4 ACP tools) → output `pong`, exit 0.
 - Verified across all three protocols earlier in the session (openai chat /

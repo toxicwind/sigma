@@ -4,11 +4,11 @@
 // catalog refresh as long as it uses its own provider name + model alias
 // (the refresh orchestrator preserves user-owned entries).
 
-export const KIMI_PROVIDER = "bili";
-export const KIMI_ALIAS = "bili-kimi";
-export const KIMI_MANAGED_BEGIN = "# bili begin (managed by billion-context — `bili plugin install kimi`)";
-export const KIMI_MANAGED_END = "# bili end";
-export const KIMI_PREV_MODEL_KEY = "# bili prev-default-model";
+export const KIMI_PROVIDER = "sigma";
+export const KIMI_ALIAS = "sigma-kimi";
+export const KIMI_MANAGED_BEGIN = "# sigma begin (managed by sigma — `sigma plugin install kimi`)";
+export const KIMI_MANAGED_END = "# sigma end";
+export const KIMI_PREV_MODEL_KEY = "# sigma prev-default-model";
 export const KIMI_DEFAULT_UPSTREAM = "https://api.kimi.com/coding/v1";
 export const KIMI_CODE_PROVIDER = "managed:kimi-code";
 
@@ -57,7 +57,7 @@ function keyValue(line: string): { key: string; strVal?: string; numVal?: number
     if (strMatch) return { key: strMatch[1], strVal: strMatch[2] !== undefined ? strMatch[2] : strMatch[3] };
     const numMatch = /^([A-Za-z0-9_.-]+)\s*=\s*([0-9]+)\b/.exec(l);
     if (numMatch) return { key: numMatch[1], numVal: Number(numMatch[2]) };
-    // Inline tables / arrays ({ x-bili-plugin = "kimi" }, ["a"]) have no scalar
+    // Inline tables / arrays ({ x-sigma-plugin = "kimi" }, ["a"]) have no scalar
     // value — key-only, so callers can still locate/replace the line.
     const tblMatch = /^([A-Za-z0-9_.-]+)\s*=\s*[{[]/.exec(l);
     if (tblMatch) return { key: tblMatch[1] };
@@ -79,10 +79,10 @@ export function stripKimiManagedBlock(text: string): { text: string; hadBlock: b
                 end = i;
                 break;
             }
-            throw new Error("config.toml contains a stray \"# bili end\" marker outside a managed block — fix it manually or run `bili plugin remove kimi`");
+            throw new Error("config.toml contains a stray \"# sigma end\" marker outside a managed block — fix it manually or run `sigma plugin remove kimi`");
         }
     }
-    if (start >= 0 && end < 0) throw new Error("config.toml managed block is truncated (missing \"# bili end\") — fix it manually or run `bili plugin remove kimi`");
+    if (start >= 0 && end < 0) throw new Error("config.toml managed block is truncated (missing \"# sigma end\") — fix it manually or run `sigma plugin remove kimi`");
     if (start < 0) return { text, hadBlock: false };
     // drop one blank separator line left behind above the block
     const cutFrom = start > 0 && doc.lines[start - 1].trim() === "" ? start - 1 : start;
@@ -100,23 +100,23 @@ export interface KimiRouteState {
 }
 
 export function kimiProxiedBaseUrl(port: number, upstream: string): string {
-    return `http://127.0.0.1:${port}/bili/${upstream.replace(/\/+$/, "")}`;
+    return `http://127.0.0.1:${port}/sigma/${upstream.replace(/\/+$/, "")}`;
 }
 
-export function extractBiliUpstream(baseUrl: string): string | undefined {
-    const m = /^https?:\/\/[^/]+\/bili\/(https?:\/\/.+)$/.exec(baseUrl);
+export function extractSigmaUpstream(baseUrl: string): string | undefined {
+    const m = /^https?:\/\/[^/]+\/sigma\/(https?:\/\/.+)$/.exec(baseUrl);
     return m?.[1]?.replace(/\/+$/, "");
 }
 
 /** Render the managed block. `authLines` are spliced verbatim between the
  *  base_url key and the next table header — the resolver owns their meaning
  *  (an `api_key` line, an `api_key_env` line, or `api_key = ""` + an
- *  `[providers.bili.oauth]` sub-table copied from the active provider). */
+ *  `[providers.sigma.oauth]` sub-table copied from the active provider). */
 export function renderKimiManagedBlock(state: KimiRouteState, prevDefaultModel: string): string {
     const out: string[] = [];
     out.push(KIMI_MANAGED_BEGIN);
-    out.push(`# Routes ${KIMI_ALIAS} through the local bili proxy. Managed by `);
-    out.push("# billion-context — edits here are overwritten; uninstall restores your config.");
+    out.push(`# Routes ${KIMI_ALIAS} through the local sigma proxy. Managed by `);
+    out.push("# sigma — edits here are overwritten; uninstall restores your config.");
     out.push(`[providers.${KIMI_PROVIDER}]`);
     out.push('type = "kimi"');
     out.push(`base_url = "${kimiProxiedBaseUrl(state.port, state.upstream)}"`);
@@ -156,15 +156,15 @@ function readCarriedDefaultModel(text: string): string | undefined {
 
 /** Strip any previous managed block, point `default_model` at our alias
  *  (recording the previous value inside the block), and append a fresh block.
- *  Refuses to write when the user already owns [providers.bili] or
- *  [models.bili-kimi] outside the markers. */
+ *  Refuses to write when the user already owns [providers.sigma] or
+ *  [models.sigma-kimi] outside the markers. */
 export function applyKimiManagedConfig(text: string, state: KimiRouteState): string {
     const stripped = stripKimiManagedBlock(text);
     const doc = openDoc(stripped.text);
     for (const line of doc.lines) {
         const parts = headerParts(line);
         if (parts && ((parts[0] === "providers" && parts[1] === KIMI_PROVIDER) || (parts[0] === "models" && parts[1] === KIMI_ALIAS))) {
-            throw new Error(`config.toml already defines [${parts.slice(0, 2).join(".")}] outside the bili managed block — rename it, or run \`bili plugin remove kimi\` first`);
+            throw new Error(`config.toml already defines [${parts.slice(0, 2).join(".")}] outside the sigma managed block — rename it, or run \`sigma plugin remove kimi\` first`);
         }
     }
     const headerAt = firstTableHeaderIndex(doc.lines);
@@ -173,7 +173,7 @@ export function applyKimiManagedConfig(text: string, state: KimiRouteState): str
     if (stripped.hadBlock) {
         // Re-apply (a new session bootstraps again): carry the ORIGINAL
         // pre-native value forward — otherwise every bootstrap degrades it to
-        // our own alias and unroute would leave the user stuck on bili-kimi.
+        // our own alias and unroute would leave the user stuck on sigma-kimi.
         // A default_model the user switched to by hand during native mode is
         // their latest intent: leave it untouched (routing stays off until
         // they pick us again), never yank it back to our alias (§7.3).
@@ -332,10 +332,10 @@ export function resolveKimiRoute(text: string, env: NodeJS.ProcessEnv): KimiRout
         // own base_url plus the auth sub-table we cloned on first apply.
         const selfProv = scan.providers.get(KIMI_PROVIDER);
         const selfModel = scan.models.get(KIMI_ALIAS);
-        const upstream = selfProv?.baseUrl ? extractBiliUpstream(selfProv.baseUrl) : undefined;
+        const upstream = selfProv?.baseUrl ? extractSigmaUpstream(selfProv.baseUrl) : undefined;
         const auth = authLinesFor(selfProv);
-        if (!auth) return { ok: false, reason: "managed block lost its credentials — run `bili plugin remove kimi` and reinstall" };
-        if (!upstream) return { ok: false, reason: "managed block base_url no longer embeds a bili route — run `bili plugin remove kimi` and reinstall" };
+        if (!auth) return { ok: false, reason: "managed block lost its credentials — run `sigma plugin remove kimi` and reinstall" };
+        if (!upstream) return { ok: false, reason: "managed block base_url no longer embeds a sigma route — run `sigma plugin remove kimi` and reinstall" };
         return {
             ok: true,
             upstream,
@@ -379,8 +379,8 @@ export function resolveKimiRoute(text: string, env: NodeJS.ProcessEnv): KimiRout
     };
 }
 
-/** Add/refresh `custom_headers = { x-bili-plugin = "kimi" }` inside our
- *  managed [providers.bili] section — the plugin-mode stamp. Written only
+/** Add/refresh `custom_headers = { x-sigma-plugin = "kimi" }` inside our
+ *  managed [providers.sigma] section — the plugin-mode stamp. Written only
  *  after the ACP tool list is known good, so round 1 rides wire mode. */
 export function stampKimiPluginHeader(text: string): string {
     const doc = openDoc(text);
@@ -395,7 +395,7 @@ export function stampKimiPluginHeader(text: string): string {
         if (parts && parts[0] === "providers" && parts[1] === KIMI_PROVIDER) { sectionAt = i; break; }
     }
     if (sectionAt < 0) return text;
-    const line = 'custom_headers = { x-bili-plugin = "kimi" }';
+    const line = 'custom_headers = { x-sigma-plugin = "kimi" }';
     for (let i = sectionAt + 1; i < doc.lines.length; i++) {
         const kv = keyValue(doc.lines[i]);
         if (kv === undefined && headerParts(doc.lines[i]) !== undefined) break;

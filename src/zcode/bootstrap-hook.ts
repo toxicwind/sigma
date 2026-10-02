@@ -1,7 +1,7 @@
 // zcode SessionStart hook (#1145): best-effort attach-only bootstrap. The MCP
 // child is authoritative; this hook only routes the provider store to an
 // ALREADY RUNNING proxy (never spawns one — a short-lived parent would kill
-// it) so sessions started while `bili start` is running get compression
+// it) so sessions started while `sigma start` is running get compression
 // without waiting for the per-session spawn path. Fails open: always exits 0.
 
 import { resolveProxyOrigin } from "../mcp.js";

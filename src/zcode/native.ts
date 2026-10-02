@@ -27,13 +27,13 @@ export type ZcodeNativePlan =
     | { readonly mode: "attach"; readonly attachOrigin: string }
     | { readonly mode: "spawn" };
 
-// Kill-switches > attach (BILLION_CONTEXT_ATTACH ?? BILLION_CONTEXT_PROXY) >
-// spawn. A preset BILLION_CONTEXT_PROXY is the launcher (or a user attach):
+// Kill-switches > attach (SIGMA_ATTACH ?? SIGMA_PROXY) >
+// spawn. A preset SIGMA_PROXY is the launcher (or a user attach):
 // routing is already owned, so we attach — never rewrite, never spawn. Same
 // contract as planNativeKimi (#963) / planNativeDsh (#941).
 export function planNativeZcode(env: NodeJS.ProcessEnv = process.env): ZcodeNativePlan {
-    if (env.BILLION_CONTEXT_PLUGIN === "0" || env.BILI_NATIVE_ZCODE === "0") return { mode: "off" };
-    if (env.BILI_PROVIDER_REWRITES !== undefined) return { mode: "off" };
+    if (env.SIGMA_PLUGIN === "0" || env.SIGMA_NATIVE_ZCODE === "0") return { mode: "off" };
+    if (env.SIGMA_PROVIDER_REWRITES !== undefined) return { mode: "off" };
     const attach = nativeAttachOrigin(env) ?? proxyEnvOrigin(env);
     if (attach !== undefined) return { mode: "attach", attachOrigin: attach };
     return { mode: "spawn" };
@@ -62,7 +62,7 @@ export async function waitForProxyHealthy(origin: string, deadlineMs = 15000, in
     }
 }
 
-const CONFIG_LOCK_DIR = ".bili-config.lock";
+const CONFIG_LOCK_DIR = ".sigma-config.lock";
 const CONFIG_LOCK_TIMEOUT_MS = 5000;
 const CONFIG_LOCK_STALE_MS = 30000;
 
@@ -120,7 +120,7 @@ export interface RouteZcodeOptions {
     readonly log?: (msg: string) => void;
 }
 
-// #1002 snapshot discipline: .bili-bak holds the state before bili's LATEST
+// #1002 snapshot discipline: .sigma-bak holds the state before sigma's LATEST
 // write, re-snapshotted whenever the file changed since our previous write —
 // i.e. user edits made while native mode is active are never lost on restore.
 function hashText(text: string): string {
@@ -128,8 +128,8 @@ function hashText(text: string): string {
 }
 
 function snapshotAndWrite(file: string, text: string): void {
-    const bak = `${file}.bili-bak`;
-    const last = `${file}.bili-last`;
+    const bak = `${file}.sigma-bak`;
+    const last = `${file}.sigma-last`;
     if (fs.existsSync(file)) {
         let cur: string;
         try {
@@ -151,10 +151,10 @@ function snapshotAndWrite(file: string, text: string): void {
 
 function removeSnapshots(file: string): void {
     try {
-        fs.rmSync(`${file}.bili-bak`, { force: true });
+        fs.rmSync(`${file}.sigma-bak`, { force: true });
     } catch {}
     try {
-        fs.rmSync(`${file}.bili-last`, { force: true });
+        fs.rmSync(`${file}.sigma-last`, { force: true });
     } catch {}
 }
 
@@ -229,7 +229,7 @@ export async function activateZcodePluginMode(applied: ZcodeRouteApplied, opts: 
 }
 
 /** Revert both provider stores to pre-native routing (watchdog give-up /
- *  kill-switch): strips the /bili/ wrapper in place so edits made while native
+ *  kill-switch): strips the /sigma/ wrapper in place so edits made while native
  *  mode was active survive. */
 export function unrouteZcode(opts: { env?: NodeJS.ProcessEnv; dataDir?: string; log?: (msg: string) => void }): void {
     const env = opts.env ?? process.env;
@@ -240,7 +240,7 @@ export function unrouteZcode(opts: { env?: NodeJS.ProcessEnv; dataDir?: string; 
             for (const file of zcodeStoreCandidates(dataDir, kind, env)) {
                 try {
                     const text = fs.readFileSync(file, "utf8");
-                    if (text.includes("/bili/")) {
+                    if (text.includes("/sigma/")) {
                         fs.writeFileSync(file, unrouteZcodeText(text, kind).text);
                         log(`reverted ${path.basename(file)} to pre-native routing`);
                     }
@@ -257,7 +257,7 @@ export interface RestoreZcodeBackupResult {
     readonly restored: boolean;
 }
 
-/** Uninstall-level restore: put the pristine .bili-bak text back verbatim
+/** Uninstall-level restore: put the pristine .sigma-bak text back verbatim
  *  for every store that has one. */
 export function restoreZcodeBackup(opts: { env?: NodeJS.ProcessEnv; dataDir?: string; log?: (msg: string) => void }): RestoreZcodeBackupResult {
     const env = opts.env ?? process.env;
@@ -267,7 +267,7 @@ export function restoreZcodeBackup(opts: { env?: NodeJS.ProcessEnv; dataDir?: st
     for (const kind of ["legacy", "new"] as const) {
         for (const file of zcodeStoreCandidates(dataDir, kind, env)) {
             try {
-                const bak = fs.readFileSync(`${file}.bili-bak`, "utf8");
+                const bak = fs.readFileSync(`${file}.sigma-bak`, "utf8");
                 fs.writeFileSync(file, bak);
                 removeSnapshots(file);
                 log(`restored ${path.basename(file)} from the pre-install snapshot`);
@@ -280,7 +280,7 @@ export function restoreZcodeBackup(opts: { env?: NodeJS.ProcessEnv; dataDir?: st
 }
 
 export function defaultLog(msg: string): void {
-    process.stderr.write(`[bili-zcode] ${msg}\n`);
+    process.stderr.write(`[sigma-zcode] ${msg}\n`);
 }
 
 export type BootstrapMode =
@@ -313,7 +313,7 @@ export async function bootstrapZcodeNative(opts: BootstrapZcodeOptions = {}): Pr
         origin = plan.attachOrigin;
         attached = true;
         if (!(await waitForProxyHealthy(origin, opts.healthDeadlineMs))) {
-            throw new Error(`attach target ${origin} is not healthy — start your bili proxy first`);
+            throw new Error(`attach target ${origin} is not healthy — start your sigma proxy first`);
         }
     } else {
         const ensure = opts.ensureProxy ?? defaultEnsureProxy;
@@ -328,7 +328,7 @@ export async function bootstrapZcodeNative(opts: BootstrapZcodeOptions = {}): Pr
 }
 
 async function defaultEnsureProxy(): Promise<{ origin: string; attached: boolean }> {
-    // The spawned proxy's parent-gone watchdog (#server.ts BILI_PARENT_PID)
+    // The spawned proxy's parent-gone watchdog (#server.ts SIGMA_PARENT_PID)
     // keys off OUR pid: zcode kills this MCP child when its session ends, so
     // the per-session proxy tears itself down with it.
     const handle = await ensureProxyRunning(

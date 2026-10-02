@@ -82,7 +82,7 @@ function startHarness(scripts: string[][]): Promise<Harness> {
 }
 
 async function callAnthropic(h: Harness, session: string, messages: Array<{ role: string; content: string }>): Promise<string> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": session },
         body: JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, system: "You are a test assistant.", messages }),

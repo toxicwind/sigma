@@ -1,10 +1,10 @@
-# billion-context Cooperative Plugin Protocol
+# sigma Cooperative Plugin Protocol
 
-> Status: protocol v1, experimental. Implemented by the proxy (`src/plugin.ts`), exercised by `tests/plugin-protocol.test.ts`. Issue: dog/billion-context#1 ("inside and outside answering each other" — inside/outside cooperation).
+> Status: protocol v1, experimental. Implemented by the proxy (`src/plugin.ts`), exercised by `tests/plugin-protocol.test.ts`. Issue: dog/sigma#1 ("inside and outside answering each other" — inside/outside cooperation).
 
 ## Why
 
-Pure proxy mode works with any agent but is blind inside the agent: tools are injected at the wire level, the compress tool-call loop is emulated by intercepting and re-requesting SSE streams, and session identity has to be guessed from headers or content fingerprints. Pure extension mode (see billion-context-pi) has native integration but needs one adapter per agent.
+Pure proxy mode works with any agent but is blind inside the agent: tools are injected at the wire level, the compress tool-call loop is emulated by intercepting and re-requesting SSE streams, and session identity has to be guessed from headers or content fingerprints. Pure extension mode (see sigma-pi) has native integration but needs one adapter per agent.
 
 The cooperative plugin mode splits the job:
 
@@ -31,7 +31,7 @@ Fetch once at plugin startup.
 {
   "ok": true,
   "protocolVersion": 1,
-  "proxy": "billion-context",
+  "proxy": "sigma",
   "version": "0.1.42",
   "toolNames": ["compress", "decompress", "search_context", "acp_status"],
   "tools": {
@@ -40,10 +40,10 @@ Fetch once at plugin startup.
     "responses": [ /* Responses API schemas */ ]
   },
   "headers": {
-    "agent": "x-bili-plugin",
-    "conversation": "x-bili-plugin-conversation",
-    "contextWindow": "x-bili-plugin-context-window",
-    "instructionsMutable": "x-bili-plugin-instructions-mutable"
+    "agent": "x-sigma-plugin",
+    "conversation": "x-sigma-plugin-conversation",
+    "contextWindow": "x-sigma-plugin-context-window",
+    "instructionsMutable": "x-sigma-plugin-instructions-mutable"
   },
   "toolEndpoint": "/__bili/plugin/tool",
   "statusEndpoint": "/__bili/plugin/status"
@@ -56,10 +56,10 @@ Register the tools natively with your agent, in whichever wire format your agent
 
 On **every model request** the plugin sends:
 
-- `x-bili-plugin: <agent-name>` — announces plugin mode for this session.
-- `x-bili-plugin-conversation: <conversation-id>` — the agent's real conversation/session id, stable for the whole conversation.
-- `x-bili-plugin-context-window: <tokens>` (optional but recommended) — the model's context window as configured inside the agent (e.g. a pinned/overridden `contextWindow`). This becomes the authoritative "native" window for nudge decisions — it outranks the proxy's built-in table and the models.dev registry (most valuable for private relays and MITM mode), while operator tuning (`compress.modelContextLimit`) still outranks it.
-- `x-bili-plugin-instructions-mutable: 1` (optional; send only if true) — declares that your conversation ids are **persona-scoped**: one id per persona, and the request's system/instructions text may change mid-conversation without changing the persona (e.g. opencode re-renders AGENTS.md into `instructions` on every edit). The proxy now keys plugin conversation ids verbatim by default (#1106), so this flag is vestigial for current proxies — keep stamping it for compatibility with older proxy versions, which use it to stop mixing the instructions text into the compression-namespace fingerprint.
+- `x-sigma-plugin: <agent-name>` — announces plugin mode for this session.
+- `x-sigma-plugin-conversation: <conversation-id>` — the agent's real conversation/session id, stable for the whole conversation.
+- `x-sigma-plugin-context-window: <tokens>` (optional but recommended) — the model's context window as configured inside the agent (e.g. a pinned/overridden `contextWindow`). This becomes the authoritative "native" window for nudge decisions — it outranks the proxy's built-in table and the models.dev registry (most valuable for private relays and MITM mode), while operator tuning (`compress.modelContextLimit`) still outranks it.
+- `x-sigma-plugin-instructions-mutable: 1` (optional; send only if true) — declares that your conversation ids are **persona-scoped**: one id per persona, and the request's system/instructions text may change mid-conversation without changing the persona (e.g. opencode re-renders AGENTS.md into `instructions` on every edit). The proxy now keys plugin conversation ids verbatim by default (#1106), so this flag is vestigial for current proxies — keep stamping it for compatibility with older proxy versions, which use it to stop mixing the instructions text into the compression-namespace fingerprint.
 
 Effects on the proxy for that session:
 
@@ -74,7 +74,7 @@ Execute a tool against the conversation's compression state.
 
 ```json
 {
-  "conversationId": "the same value you send as x-bili-plugin-conversation",
+  "conversationId": "the same value you send as x-sigma-plugin-conversation",
   "tool": "compress",
   "args": { "content": [{ "startId": "m00001", "endId": "m00042", "summary": "...", "topic": "..." }] }
 }
@@ -122,14 +122,14 @@ Context-level visibility for plugin UIs (status bars / slash commands):
 Notify the proxy that the agent performed an **in-session native compaction** (e.g. omp's `/compact` or its auto threshold): the next model request re-sends a shortened history (compaction summary + retained tail) under the SAME conversation id. Fire-and-forget is fine — a failed notification must never break the agent's compaction.
 
 ```json
-{ "conversationId": "the same value you send as x-bili-plugin-conversation" }
+{ "conversationId": "the same value you send as x-sigma-plugin-conversation" }
 ```
 
 Effect: the proxy marks a one-shot compaction boundary on the session. On the next model request, blocks that were active before the compaction but no longer anchor into the shortened history are downgraded to a pre-compaction archive (listed by `acp_status` with a reason; `decompress` on one returns an explicit "unavailable" error instead of failing silently), and stale `byRaw`/`byRef` mappings are pruned to the live ids. Errors: `400` invalid JSON / missing `conversationId`, `404` unknown conversation.
 
 ### 6. MITM transparent-proxy mode
 
-The `/bili/` prefix is absent in MITM mode, so URL-based detection cannot work. Instead the proxy's own launcher (`bili pi` / `bili codex` / `bili claude`) exports `BILLION_CONTEXT_PROXY=http://127.0.0.1:<port>` in the child env, next to the `HTTPS_PROXY` + CA vars it already sets. A plugin detects cooperative mode by reading that env var (the proxy origin for all `/__bili/plugin/*` calls); everything else (headers, tool forwarding, status) is identical — the `x-bili-plugin*` headers pass through the MITM tunnel into the same pipeline. This is also where `x-bili-plugin-context-window` matters most: MITM upstreams are often private relays the models.dev registry doesn't know.
+The `/sigma/` prefix is absent in MITM mode, so URL-based detection cannot work. Instead the proxy's own launcher (`sigma pi` / `sigma codex` / `sigma claude`) exports `SIGMA_PROXY=http://127.0.0.1:<port>` in the child env, next to the `HTTPS_PROXY` + CA vars it already sets. A plugin detects cooperative mode by reading that env var (the proxy origin for all `/__bili/plugin/*` calls); everything else (headers, tool forwarding, status) is identical — the `x-sigma-plugin*` headers pass through the MITM tunnel into the same pipeline. This is also where `x-sigma-plugin-context-window` matters most: MITM upstreams are often private relays the models.dev registry doesn't know.
 
 ### 7. Lifecycle of one compression (what the plugin does)
 
@@ -151,7 +151,7 @@ No special handling is needed for decompression: `decompress` results come back 
 1. Register the tools from the manifest (all of them as listed; the model relies on the full set).
 2. Send both headers on every model request through the proxy.
 3. Forward tool executions verbatim; return `result` as the tool result.
-4. Self-disable when not running behind bili (e.g. the agent's baseURL does not point at the proxy) — same convention as billion-context-pi / opencode-acp extensions.
+4. Self-disable when not running behind sigma (e.g. the agent's baseURL does not point at the proxy) — same convention as sigma-pi / opencode-acp extensions.
 
 ## Reference
 

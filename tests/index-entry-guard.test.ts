@@ -1,6 +1,6 @@
 // Entry-guard regression: npm hosts (opencode 1.18.x's plugin loader) import
 // the package root — exports["."] resolves to the same dist/index.js that the
-// `bili` bin runs — inside their own process. An unguarded main() dispatched a
+// `sigma` bin runs — inside their own process. An unguarded main() dispatched a
 // CLI against the HOST's argv there: plain `opencode` defaulted to "start" and
 // crashed on the occupied 8787 port; `opencode run x` hit unknown-command and
 // process.exit(2)'d the host. Importing must stay side-effect-free; direct
@@ -33,7 +33,7 @@ function runNode(args: string[], opts: { cwd?: string } = {}): { code: number | 
 test("import-only host: awaiting import of the entry runs no CLI", () => {
     const entry = path.join(root, "dist", "index.js");
     ensureDistBuilt(entry);
-    const box = fs.mkdtempSync(path.join(os.tmpdir(), "bili-entry-guard-"));
+    const box = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-entry-guard-"));
     try {
         // Exactly opencode's posture: a host script whose OWN argv[1] is the
         // host, importing the package entry as a module.
@@ -42,7 +42,7 @@ test("import-only host: awaiting import of the entry runs no CLI", () => {
         const r = runNode([host]);
         assert.equal(r.code, 0, `stderr: ${r.stderr}`);
         assert.match(r.stdout, /HOST-IMPORT-OK/);
-        assert.doesNotMatch(r.stdout + r.stderr, /bili:|port 8787|unknown command/);
+        assert.doesNotMatch(r.stdout + r.stderr, /sigma:|port 8787|unknown command/);
     } finally {
         fs.rmSync(box, { recursive: true, force: true });
     }
@@ -50,7 +50,7 @@ test("import-only host: awaiting import of the entry runs no CLI", () => {
 
 test("import-only host under tsx: src entry equally inert", () => {
     const srcEntry = path.join(root, "src", "index.ts");
-    const box = fs.mkdtempSync(path.join(os.tmpdir(), "bili-entry-guard-"));
+    const box = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-entry-guard-"));
     try {
         const host = path.join(box, "host.ts");
         // Top-level await would be CJS-incompatible under tsx outside a

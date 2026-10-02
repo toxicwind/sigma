@@ -70,7 +70,7 @@ test("forward: strips hop-by-hop and Connection-named headers both ways (#80)", 
             {
                 host: "127.0.0.1",
                 port: proxyPort,
-                path: `/bili/http://127.0.0.1:${upstreamPort}/v1/models`,
+                path: `/sigma/http://127.0.0.1:${upstreamPort}/v1/models`,
                 headers: {
                     // Static hop-by-hop with credentials — must NOT reach upstream.
                     "proxy-authorization": "Basic dXNlcjpwYXNz",

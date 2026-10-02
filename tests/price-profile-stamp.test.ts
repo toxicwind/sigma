@@ -74,7 +74,7 @@ test("priceProfile stamp: provider-level priceProfile stamps session.metadata; a
     const proxyPortWith = (proxyWith.address() as { port: number }).port;
 
     const post = (port: number): Promise<Response> =>
-        fetch(`http://127.0.0.1:${port}/bili/http://127.0.0.1:${upstream.port}/v1/messages`, {
+        fetch(`http://127.0.0.1:${port}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-api-key": "test", "x-acp-session": "pp-stamp-conv" },
             // max_tokens must stay above SIDE_REQUEST_MAX_TOKENS — small
@@ -132,7 +132,7 @@ test("priceProfile stamp: registry pricing is the default when no level configur
     // The fake upstream is an unknown relay (127.0.0.1), so the lookup runs
     // its cross-host suffix scan and finds "somehost/claude-reg".
     const post = (model: string, sessionId: string): Promise<Response> =>
-        fetch(`http://127.0.0.1:${port}/bili/http://127.0.0.1:${upstream.port}/v1/messages`, {
+        fetch(`http://127.0.0.1:${port}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-api-key": "test", "x-acp-session": sessionId },
             body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: "user", content: "hello" }] }),
@@ -169,7 +169,7 @@ test("priceProfile stamp: registry pricing is the default when no level configur
             await once(proxyCfg, "listening");
             const cfgPort = (proxyCfg.address() as { port: number }).port;
             const beforeC = new Set(listSessions().map((s) => s.id));
-            const rc = await fetch(`http://127.0.0.1:${cfgPort}/bili/http://127.0.0.1:${upstream.port}/v1/messages`, {
+            const rc = await fetch(`http://127.0.0.1:${cfgPort}/sigma/http://127.0.0.1:${upstream.port}/v1/messages`, {
                 method: "POST",
                 headers: { "content-type": "application/json", "x-api-key": "test", "x-acp-session": "pp-registry-c" },
                 body: JSON.stringify({ model: "claude-reg", max_tokens: 1024, messages: [{ role: "user", content: "hello" }] }),

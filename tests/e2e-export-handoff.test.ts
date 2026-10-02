@@ -12,12 +12,12 @@ import { exportSession, listSessions } from "../src/export.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import type { ProxyOptions } from "../src/config.ts";
 
-// E2E for `bili export` (#151): drives the REAL proxy (startServer) against a
+// E2E for `sigma export` (#151): drives the REAL proxy (startServer) against a
 // mock upstream that plays the model's side of the compress protocol — it reads
 // the REAL <acp> ref tags off the wire, calls the injected `compress` tool with
 // a real startId/endId range, and the proxy executes it into a real block.
 // Asserts the block lands in the REAL on-disk SessionStore and that
-// exportSession (the code `bili export` runs) renders the model-written summary
+// exportSession (the code `sigma export` runs) renders the model-written summary
 // into the handoff doc. The chain HTTP → compress → block → persist → export
 // is exercised with zero hand-built session state — unlike cli-export.test.ts,
 // which constructs blocks by hand.
@@ -33,8 +33,8 @@ function close(server: http.Server): Promise<void> {
 
 const SUMMARY_MARKER = "E2E-HANDOFF-SUMMARY";
 
-test("e2e export: real proxy compresses via real tool call, block persists, bili export renders it", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-e2e-export-"));
+test("e2e export: real proxy compresses via real tool call, block persists, sigma export renders it", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-e2e-export-"));
     const store = new SessionStore({ dir, enabled: true, debounceMs: 0 });
     _setStoreForTest(store);
     setRegistryForTest({});
@@ -138,7 +138,7 @@ test("e2e export: real proxy compresses via real tool call, block persists, bili
     const proxyPort = (proxy.address() as { port: number }).port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const big = (label: string, n: number) => `${label}: ${"detail ".repeat(n)}`.slice(0, 4800);
         const history = [
             { role: "user", content: `${big("hello proxy, please track this greeting", 400)} ${big("", 300)}` },
@@ -179,7 +179,7 @@ test("e2e export: real proxy compresses via real tool call, block persists, bili
         assert.ok(sessions[0]!.blocks >= 1, "real compression block did not persist");
 
         const md = await exportSession(sessions[0]!.id, { dir });
-        assert.match(md, /# billion-context session handoff/);
+        assert.match(md, /# sigma session handoff/);
         assert.match(md, new RegExp(SUMMARY_MARKER), "model-written summary missing from folded handoff doc");
         assert.match(md, /final question/, "uncompressed tail missing from handoff doc");
         assert.doesNotMatch(md, /DEEPMARKER778899/, "folded handoff view should omit compressed originals (deep body text leaked)");

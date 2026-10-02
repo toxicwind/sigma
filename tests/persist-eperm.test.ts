@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PersistEpermAlert, buildAlertMessage } from "../src/persist-eperm.ts";
 
-const DIR = "/home/u/.local/share/billion-context/sessions";
+const DIR = "/home/u/.local/share/sigma/sessions";
 
 function failLine(id: string, count: number, code = "EPERM", where = "; data spilled to /x"): string {
     const err = `${code}: operation not permitted, rename '/x/.tmp-${id}' -> '/x/${id}.json'`;

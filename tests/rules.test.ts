@@ -227,7 +227,7 @@ test("handlePluginManifest: acp_rule advertised only when enabled", () => {
 });
 
 test("persist round-trip: recorded rules survive save/load", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-rules-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-rules-"));
     const store = new SessionStore({ dir, debounceMs: 0 });
     const session = getSession(`t-rules-persist-${Math.random().toString(36).slice(2)}`, { protocol: "anthropic" });
     executeRule({ rule: "survive restarts" }, { config: { ...defaultConfig(200000), rules: { enabled: true } }, session, log: () => {} });

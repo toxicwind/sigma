@@ -46,12 +46,12 @@ interface Harness {
 async function startProxy(upstream: http.Server): Promise<Harness> {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-fix806mb-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-fix806mb-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, "{}", "utf8");
-    const previous = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const upstreamPort = (upstream.address() as { port: number }).port;
     const port = await freePort();
     const opts: ProxyOptions = {
@@ -81,7 +81,7 @@ async function startProxy(upstream: http.Server): Promise<Harness> {
         port,
         stop: async () => { await close(proxy); },
         cleanup: () => {
-            if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+            if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
             rmSync(root, { recursive: true, force: true });
         },
     };
@@ -190,7 +190,7 @@ test("unparseable body stays on the raw-forward path — upstream rejects it its
             headers: { "content-type": "application/json" },
             body: "not-json",
         });
-        assert.equal(res.status, 200, "garbage body must be forwarded verbatim, not rejected by bili");
+        assert.equal(res.status, 200, "garbage body must be forwarded verbatim, not rejected by sigma");
         assert.equal(seen.length, 1);
         assert.equal(seen[0].body, "not-json");
     } finally {

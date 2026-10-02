@@ -1,4 +1,4 @@
-# REQ — jcode launcher (`bili jcode`)
+# REQ — jcode launcher (`sigma jcode`)
 
 ## Date
 2026-09-13
@@ -7,18 +7,18 @@
 jcode (https://github.com/1jehuang/jcode) is a Rust terminal coding-agent
 harness now in daily use in this environment with two model legs: a hosted
 `zai` leg (api.z.ai, GLM) and a local unsloth loopback. Hosted legs should
-ride the bili cert-MITM proxy like every other launched client; the loopback
+ride the sigma cert-MITM proxy like every other launched client; the loopback
 leg must stay direct. jcode keeps its own MCP config and does not read a
 JSON/TOML client config the launcher could rewrite, so the trae-style
 "env-only MITM" pattern is the right fit.
 
 ## Requirements
-1. `bili jcode [--] [args]` launches jcode through the proxy with
+1. `sigma jcode [--] [args]` launches jcode through the proxy with
    HTTPS_PROXY + SSL_CERT_FILE (combined CA) set, exactly like the codex and
    trae paths, plus NO_PROXY covering loopback so local model servers bypass.
 2. Default MITM domain allowlist for the jcode leg covers api.z.ai without
    user config; compression for other hosts stays opt-in via ambient
-   BILI_MITM_DOMAINS (no TOML config reader yet — see WORKLOG ceiling note).
+   SIGMA_MITM_DOMAINS (no TOML config reader yet — see WORKLOG ceiling note).
 3. MCP injection is skipped for jcode (it manages its own ~/.jcode/mcp.json).
 4. Existing clients' behavior unchanged.
 

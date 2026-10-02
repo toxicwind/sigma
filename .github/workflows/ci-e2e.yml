@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       forge:
-        description: "run forge phase (needs BILI_CODEX_COMPACT support in master)"
+        description: "run forge phase (needs SIGMA_CODEX_COMPACT support in master)"
         type: boolean
         default: false
   # #1296 note ④ hardening: routing/pipeline changes (#1284/#1290 class) got

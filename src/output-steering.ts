@@ -38,12 +38,12 @@ export { resolveVerbosityLevel } from "acp-kernel";
  *      toggle `thinking.type` (disabling thinking over a history that carries
  *      thinking blocks 400s and busts the cache tier).
  *
- * Default OFF. Config: billion-context.json `outputSteering` block (global, with
+ * Default OFF. Config: sigma.json `outputSteering` block (global, with
  * optional per-provider route overlay). Hard acceptance: no prefix-cache hit-rate
  * regression (compare `[acp-usage]` cache hit %).
  */
 
-/** Sentinel wrapping the steering directive. Bili-owned (distinct from
+/** Sentinel wrapping the steering directive. Sigma-owned (distinct from
  *  headroom's) so a body that passed through both proxies never collides. */
 const SENTINEL = "<bili_output_steering>";
 const SUFFIX = "</bili_output_steering>";
@@ -94,7 +94,7 @@ export function parseOutputSteering(v: unknown): OutputSteeringConfig | undefine
 // ---- Turn normalization (wire-specific; feeds acp-kernel's classifier) ----
 // Each wire names its tool-result shape differently (anthropic tool_result
 // blocks / openai role:"tool" messages / responses *_call_output items / google
-// functionResponse parts), so only bili can map them onto the kernel's
+// functionResponse parts), so only sigma can map them onto the kernel's
 // protocol-neutral StructuralMessage model. The DECISION (turn kind, whether to
 // lower effort, verbosity level) is acp-kernel's decideOutputSteering — shared
 // with the agent side, single source of truth.

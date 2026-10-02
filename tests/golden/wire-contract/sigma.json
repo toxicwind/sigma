@@ -167,7 +167,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -376,7 +376,7 @@
               },
               "conversation_id": {
                 "type": "string",
-                "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+                "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
               }
             },
             "required": [
@@ -587,7 +587,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -717,7 +717,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -785,7 +785,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -839,7 +839,7 @@
           },
           "conversation_id": {
             "type": "string",
-            "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+            "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
           }
         },
         "required": [
@@ -865,7 +865,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -891,7 +891,7 @@
           },
           "conversation_id": {
             "type": "string",
-            "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+            "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
           }
         },
         "required": [
@@ -915,7 +915,7 @@
           },
           "conversation_id": {
             "type": "string",
-            "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+            "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
           }
         },
         "required": [

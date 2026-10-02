@@ -11,7 +11,7 @@ process.env.NODE_ENV = "test";
 
 import { proxyBaseFromUrl, proxyBaseFromEnv, detectProxyBase, fetchManifest, forwardTool, fetchStatus } from "../src/agent/shared.ts";
 import { wrapCacheReport, wrapRuleReport } from "../src/acp-panel.ts";
-import biliPlugin, { createBiliPlugin } from "../src/agent/pi.ts";
+import biliPlugin, { createSigmaPlugin } from "../src/agent/pi.ts";
 import ompPlugin from "../src/agent/omp.ts";
 import { pluginInstall, pluginRemove, pluginStatusAll, PLUGIN_AGENTS, selfPackageRoot, pickPluginKey, detectOpencodeMajor, piEntryFor, PI_NPM_ENTRY, isPiEntry, claudeNativeInstalled } from "../src/plugin-install.ts";
 import { resolveProxyOrigin, forwardTool as mcpForwardTool } from "../src/mcp.ts";
@@ -31,26 +31,26 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => void | Prom
     });
 }
 
-test("proxyBaseFromUrl detects /bili/ prefix and returns origin", () => {
-    assert.equal(proxyBaseFromUrl("http://127.0.0.1:8787/bili/https://api.example.com/v1"), "http://127.0.0.1:8787");
-    assert.equal(proxyBaseFromUrl("https://proxy.example.com/bili/https://upstream"), "https://proxy.example.com");
+test("proxyBaseFromUrl detects /sigma/ prefix and returns origin", () => {
+    assert.equal(proxyBaseFromUrl("http://127.0.0.1:8787/sigma/https://api.example.com/v1"), "http://127.0.0.1:8787");
+    assert.equal(proxyBaseFromUrl("https://proxy.example.com/sigma/https://upstream"), "https://proxy.example.com");
     assert.equal(proxyBaseFromUrl("https://api.example.com/v1"), undefined);
     assert.equal(proxyBaseFromUrl(undefined), undefined);
     assert.equal(proxyBaseFromUrl("not a url"), undefined);
-    assert.equal(proxyBaseFromUrl("http://x/api/bili/v1"), undefined);
-    assert.equal(proxyBaseFromUrl("http://x/bili/ftp://y"), undefined);
+    assert.equal(proxyBaseFromUrl("http://x/api/sigma/v1"), undefined);
+    assert.equal(proxyBaseFromUrl("http://x/sigma/ftp://y"), undefined);
 });
 
-test("proxyBaseFromEnv accepts BILLION_CONTEXT_PROXY, detectProxyBase honors kill switch", async () => {
-    await withEnv({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8790/", BILLION_CONTEXT_PLUGIN: undefined }, () => {
+test("proxyBaseFromEnv accepts SIGMA_PROXY, detectProxyBase honors kill switch", async () => {
+    await withEnv({ SIGMA_PROXY: "http://127.0.0.1:8790/", SIGMA_PLUGIN: undefined }, () => {
         assert.equal(proxyBaseFromEnv(), "http://127.0.0.1:8790");
         assert.equal(detectProxyBase("https://api.example.com/v1"), "http://127.0.0.1:8790");
-        assert.equal(detectProxyBase("http://x/bili/https://y"), "http://x");
+        assert.equal(detectProxyBase("http://x/sigma/https://y"), "http://x");
     });
-    await withEnv({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8790/", BILLION_CONTEXT_PLUGIN: "0" }, () => {
-        assert.equal(detectProxyBase("http://x/bili/https://y"), undefined);
+    await withEnv({ SIGMA_PROXY: "http://127.0.0.1:8790/", SIGMA_PLUGIN: "0" }, () => {
+        assert.equal(detectProxyBase("http://x/sigma/https://y"), undefined);
     });
-    await withEnv({ BILLION_CONTEXT_PROXY: "ftp://bad" }, () => {
+    await withEnv({ SIGMA_PROXY: "ftp://bad" }, () => {
         assert.equal(proxyBaseFromEnv(), undefined);
     });
 });
@@ -212,7 +212,7 @@ function makeFakePi(): FakePi {
 function fakeCtx(proxy: FakeProxy | undefined, sessionId = "sess-42"): Record<string, unknown> {
     return {
         sessionManager: { getSessionId: () => sessionId },
-        model: { contextWindow: 1000000, baseUrl: proxy ? `${proxy.origin}/bili/https://api.example.com/v1` : "https://api.example.com/v1" },
+        model: { contextWindow: 1000000, baseUrl: proxy ? `${proxy.origin}/sigma/https://api.example.com/v1` : "https://api.example.com/v1" },
         cwd: "/tmp",
     };
 }
@@ -234,58 +234,58 @@ async function waitForTools(pi: FakePi, count: number, timeoutMs = 15000): Promi
 }
 
 test("#535: provider URL rewrites from env manifest applied at load", () => {
-    const prevRewrites = process.env.BILI_PROVIDER_REWRITES;
-    process.env.BILI_PROVIDER_REWRITES = JSON.stringify({
-        glm: "http://127.0.0.1:8787/bili/http://127.0.0.1:8199/v1",
-        other: "http://127.0.0.1:8787/bili/http://example.com",
+    const prevRewrites = process.env.SIGMA_PROVIDER_REWRITES;
+    process.env.SIGMA_PROVIDER_REWRITES = JSON.stringify({
+        glm: "http://127.0.0.1:8787/sigma/http://127.0.0.1:8199/v1",
+        other: "http://127.0.0.1:8787/sigma/http://example.com",
     });
     try {
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         assert.deepEqual(Object.fromEntries(pi.providers), {
-            glm: "http://127.0.0.1:8787/bili/http://127.0.0.1:8199/v1",
-            other: "http://127.0.0.1:8787/bili/http://example.com",
+            glm: "http://127.0.0.1:8787/sigma/http://127.0.0.1:8199/v1",
+            other: "http://127.0.0.1:8787/sigma/http://example.com",
         });
     } finally {
-        if (prevRewrites === undefined) delete process.env.BILI_PROVIDER_REWRITES;
-        else process.env.BILI_PROVIDER_REWRITES = prevRewrites;
+        if (prevRewrites === undefined) delete process.env.SIGMA_PROVIDER_REWRITES;
+        else process.env.SIGMA_PROVIDER_REWRITES = prevRewrites;
     }
 });
 
-test("#535: invalid BILI_PROVIDER_REWRITES JSON → no rewrites applied", () => {
-    const prevRewrites = process.env.BILI_PROVIDER_REWRITES;
-    process.env.BILI_PROVIDER_REWRITES = "{not json";
+test("#535: invalid SIGMA_PROVIDER_REWRITES JSON → no rewrites applied", () => {
+    const prevRewrites = process.env.SIGMA_PROVIDER_REWRITES;
+    process.env.SIGMA_PROVIDER_REWRITES = "{not json";
     try {
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         assert.equal(pi.providers.size, 0);
     } finally {
-        if (prevRewrites === undefined) delete process.env.BILI_PROVIDER_REWRITES;
-        else process.env.BILI_PROVIDER_REWRITES = prevRewrites;
+        if (prevRewrites === undefined) delete process.env.SIGMA_PROVIDER_REWRITES;
+        else process.env.SIGMA_PROVIDER_REWRITES = prevRewrites;
     }
 });
 
 test("#535: non-http(s) manifest entries are dropped", () => {
-    const prevRewrites = process.env.BILI_PROVIDER_REWRITES;
-    process.env.BILI_PROVIDER_REWRITES = JSON.stringify({ good: "http://x.example/v1", bad: "ftp://x.example", bad2: "not-a-url" });
+    const prevRewrites = process.env.SIGMA_PROVIDER_REWRITES;
+    process.env.SIGMA_PROVIDER_REWRITES = JSON.stringify({ good: "http://x.example/v1", bad: "ftp://x.example", bad2: "not-a-url" });
     try {
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         assert.deepEqual(Object.fromEntries(pi.providers), { good: "http://x.example/v1" });
     } finally {
-        if (prevRewrites === undefined) delete process.env.BILI_PROVIDER_REWRITES;
-        else process.env.BILI_PROVIDER_REWRITES = prevRewrites;
+        if (prevRewrites === undefined) delete process.env.SIGMA_PROVIDER_REWRITES;
+        else process.env.SIGMA_PROVIDER_REWRITES = prevRewrites;
     }
 });
 
-test("#535/#851: session_before_compact cancels only auto compaction under bili launch", async () => {
-    const prevProxy = process.env.BILLION_CONTEXT_PROXY;
-    process.env.BILLION_CONTEXT_PROXY = "http://127.0.0.1:8787";
+test("#535/#851: session_before_compact cancels only auto compaction under sigma launch", async () => {
+    const prevProxy = process.env.SIGMA_PROXY;
+    process.env.SIGMA_PROXY = "http://127.0.0.1:8787";
     try {
         const pi = makeFakePi();
-        createBiliPlugin("pi")(pi as never);
+        createSigmaPlugin("pi")(pi as never);
         const handler = pi.events.get("session_before_compact");
-        assert.ok(handler, "pi under bili launch: handler registered");
+        assert.ok(handler, "pi under sigma launch: handler registered");
         assert.deepEqual(await handler({ reason: "threshold" }, undefined), { cancel: true });
         assert.deepEqual(await handler({ reason: "overflow" }, undefined), { cancel: true });
         assert.equal(await handler({ reason: "manual" }, undefined), undefined, "manual /compact stays user-owned");
@@ -295,9 +295,9 @@ test("#535/#851: session_before_compact cancels only auto compaction under bili 
         // the auto_compaction_start announcement instead — only announced
         // (auto) passes are cancelled, manual stays user-owned (#851).
         const omp = makeFakePi();
-        createBiliPlugin("omp")(omp as never);
+        createSigmaPlugin("omp")(omp as never);
         const ompHandler = omp.events.get("session_before_compact");
-        assert.ok(ompHandler, "omp under bili launch: handler registered");
+        assert.ok(ompHandler, "omp under sigma launch: handler registered");
         assert.equal(await ompHandler({}, undefined), undefined, "unannounced (manual) compaction stays user-owned");
         const ompStart = omp.events.get("auto_compaction_start");
         const ompEnd = omp.events.get("auto_compaction_end");
@@ -310,37 +310,37 @@ test("#535/#851: session_before_compact cancels only auto compaction under bili 
         ompEnd({}, undefined);
         assert.equal(await ompHandler({}, undefined), undefined, "aborted auto pass (end before hook) leaves manual unblocked");
     } finally {
-        if (prevProxy === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-        else process.env.BILLION_CONTEXT_PROXY = prevProxy;
+        if (prevProxy === undefined) delete process.env.SIGMA_PROXY;
+        else process.env.SIGMA_PROXY = prevProxy;
     }
 });
 
 test("#535/#519: no proxy at factory time → cancel inert until a proxy appears", async () => {
-    const prevProxy = process.env.BILLION_CONTEXT_PROXY;
-    delete process.env.BILLION_CONTEXT_PROXY;
+    const prevProxy = process.env.SIGMA_PROXY;
+    delete process.env.SIGMA_PROXY;
     try {
         const pi = makeFakePi();
-        createBiliPlugin("pi")(pi as never);
+        createSigmaPlugin("pi")(pi as never);
         const handler = pi.events.get("session_before_compact");
         assert.ok(handler, "handler registered; arming decided at event time");
         assert.equal(await handler({ reason: "threshold" }, undefined), undefined, "no proxy → native compaction untouched");
-        // native mode (#519): BILLION_CONTEXT_PROXY lands only AFTER the factory ran
-        process.env.BILLION_CONTEXT_PROXY = "http://127.0.0.1:8787";
+        // native mode (#519): SIGMA_PROXY lands only AFTER the factory ran
+        process.env.SIGMA_PROXY = "http://127.0.0.1:8787";
         assert.deepEqual(await handler({ reason: "threshold" }, undefined), { cancel: true });
         assert.deepEqual(await handler({ reason: "overflow" }, undefined), { cancel: true });
         assert.equal(await handler({ reason: "manual" }, undefined), undefined, "manual /compact stays user-owned");
-        // /bili/ baseUrl routing (no env at all) arms the cancel too
-        delete process.env.BILLION_CONTEXT_PROXY;
-        const biliCtx = { model: { baseUrl: "http://127.0.0.1:8787/bili/https://api.example.com/v1" } };
+        // /sigma/ baseUrl routing (no env at all) arms the cancel too
+        delete process.env.SIGMA_PROXY;
+        const biliCtx = { model: { baseUrl: "http://127.0.0.1:8787/sigma/https://api.example.com/v1" } };
         assert.deepEqual(await handler({ reason: "threshold" }, biliCtx), { cancel: true });
     } finally {
-        if (prevProxy === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-        else process.env.BILLION_CONTEXT_PROXY = prevProxy;
+        if (prevProxy === undefined) delete process.env.SIGMA_PROXY;
+        else process.env.SIGMA_PROXY = prevProxy;
     }
 });
 
 test("#1382: compaction cancel requires evidence the proxy carries this conversation", async () => {
-    // Native mode sets BILLION_CONTEXT_PROXY for the whole process, but a
+    // Native mode sets SIGMA_PROXY for the whole process, but a
     // provider like pi-claude-bridge runs its own child process against
     // upstream directly (model.baseUrl = literal "claude-bridge") — the proxy
     // never saw this conversation. Cancelling there killed ALL compaction:
@@ -363,9 +363,9 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
     try {
         // (A) The reported repro: non-http(s) provider AND the proxy has no
         // such conversation → threshold/overflow must NOT be cancelled.
-        await withEnv({ BILLION_CONTEXT_PROXY: unknownProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: unknownProxy.origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const handler = pi.events.get("session_before_compact")!;
             assert.equal(await handler({ reason: "threshold" }, bridgeCtx), undefined, "non-http(s) provider + unknown conversation → native compaction proceeds");
             assert.equal(await handler({ reason: "overflow" }, bridgeCtx), undefined, "same for overflow");
@@ -375,18 +375,18 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
         // (B) The veto alone: even if the proxy CONFIRMS the conversation id
         // (stale state from an earlier proxied phase of the same session), a
         // non-http(s) baseUrl means this turn's traffic cannot reach it.
-        await withEnv({ BILLION_CONTEXT_PROXY: knownProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: knownProxy.origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const handler = pi.events.get("session_before_compact")!;
             assert.equal(await handler({ reason: "threshold" }, bridgeCtx), undefined, "non-http(s) baseUrl vetoes even a confirming proxy");
         });
 
         // (C) Positive evidence via the proxy: http provider, fresh instance
         // (no local stamp), proxy confirms it carries the conversation → cancel.
-        await withEnv({ BILLION_CONTEXT_PROXY: knownProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: knownProxy.origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const handler = pi.events.get("session_before_compact")!;
             assert.deepEqual(await handler({ reason: "threshold" }, httpCtx("sess-carried")), { cancel: true }, "proxy confirms carriage → auto compaction cancelled");
         });
@@ -394,9 +394,9 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
         // (D) http provider whose traffic bypasses the proxy (e.g. a custom
         // provider added after launch, never routed through it): no local
         // stamp, proxy has no such conversation → native compaction proceeds.
-        await withEnv({ BILLION_CONTEXT_PROXY: unknownProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: unknownProxy.origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const handler = pi.events.get("session_before_compact")!;
             assert.equal(await handler({ reason: "threshold" }, httpCtx("sess-direct")), undefined, "proxy never saw this conversation → native compaction proceeds");
         });
@@ -405,21 +405,21 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
         await knownProxy.close();
     }
 
-    // (E) Local stamp fast path: x-bili-plugin-conversation stamped for this
+    // (E) Local stamp fast path: x-sigma-plugin-conversation stamped for this
     // sid (tools registered + request routed through the proxy) is evidence
     // on its own — no status round-trip needed, so it holds even when the
     // proxy reports the conversation unknown.
     const stampedProxy = await startFakeProxy({ statusOk: false });
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: stampedProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: stampedProxy.origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const ctx = fakeCtx(stampedProxy, "sess-stamped");
             await pi.events.get("session_start")!({}, ctx);
             await waitForTools(pi, 2);
             const headers: Record<string, string> = {};
             await pi.events.get("before_provider_headers")!({ headers }, ctx);
-            assert.equal(headers["x-bili-plugin-conversation"], "sess-stamped");
+            assert.equal(headers["x-sigma-plugin-conversation"], "sess-stamped");
             const handler = pi.events.get("session_before_compact")!;
             assert.deepEqual(await handler({ reason: "threshold" }, ctx), { cancel: true }, "locally stamped session is carried by construction");
         });
@@ -437,9 +437,9 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
             s.close(() => resolve(port));
         });
     });
-    await withEnv({ BILLION_CONTEXT_PROXY: `http://127.0.0.1:${probePort}` }, async () => {
+    await withEnv({ SIGMA_PROXY: `http://127.0.0.1:${probePort}` }, async () => {
         const pi = makeFakePi();
-        createBiliPlugin("pi")(pi as never);
+        createSigmaPlugin("pi")(pi as never);
         const handler = pi.events.get("session_before_compact")!;
         assert.equal(await handler({ reason: "threshold" }, httpCtx("sess-down")), undefined, "unreachable proxy → no ownership evidence → native compaction proceeds");
     });
@@ -449,9 +449,9 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
     const runOmpCase = async (statusOk: boolean, expectCancel: boolean, label: string): Promise<void> => {
         const proxy = await startFakeProxy({ statusOk });
         try {
-            await withEnv({ BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+            await withEnv({ SIGMA_PROXY: proxy.origin }, async () => {
                 const omp = makeFakePi();
-                createBiliPlugin("omp")(omp as never);
+                createSigmaPlugin("omp")(omp as never);
                 const handler = omp.events.get("session_before_compact")!;
                 omp.events.get("auto_compaction_start")!({}, undefined);
                 const got = await handler({}, ompCtx);
@@ -468,12 +468,12 @@ test("#1382: compaction cancel requires evidence the proxy carries this conversa
     // evidence — the cancel holds even though the proxy reports unknown.
     const identityProxy = await startFakeProxy({ statusOk: false });
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: identityProxy.origin }, async () => {
+        await withEnv({ SIGMA_PROXY: identityProxy.origin }, async () => {
             const omp = makeFakePi();
-            createBiliPlugin("omp")(omp as never);
+            createSigmaPlugin("omp")(omp as never);
             // #1403: pck stamping (the identity signal) only fires for
-            // destinations bili actually processes — route through /bili/.
-            const ctx = { ...httpCtx("sess-omp-id"), model: { contextWindow: 1000000, baseUrl: `${identityProxy.origin}/bili/https://api.example.com/v1` } };
+            // destinations sigma actually processes — route through /sigma/.
+            const ctx = { ...httpCtx("sess-omp-id"), model: { contextWindow: 1000000, baseUrl: `${identityProxy.origin}/sigma/https://api.example.com/v1` } };
             const payload = await omp.events.get("before_provider_request")!({ payload: { messages: [{ role: "user", content: "hi" }] } }, ctx);
             assert.equal((payload as { prompt_cache_key?: string })?.prompt_cache_key, "sess-omp-id", "identity registration completed with the request");
             omp.events.get("auto_compaction_start")!({}, undefined);
@@ -497,9 +497,9 @@ test("pi extension registers manifest tools and stamps headers when proxied", as
         await waitForTools(pi, 2);
         const headers: Record<string, string> = {};
         await pi.events.get("before_provider_headers")!({ headers }, fakeCtx(proxy));
-        assert.equal(headers["x-bili-plugin"], "pi");
-        assert.equal(headers["x-bili-plugin-conversation"], "sess-42");
-        assert.equal(headers["x-bili-plugin-context-window"], "1000000");
+        assert.equal(headers["x-sigma-plugin"], "pi");
+        assert.equal(headers["x-sigma-plugin-conversation"], "sess-42");
+        assert.equal(headers["x-sigma-plugin-context-window"], "1000000");
         assert.equal(pi.tools.length, 2);
         assert.equal(pi.tools[0]!.name, "compress");
         assert.deepEqual(pi.tools[0]!.parameters, { type: "object", properties: { content: { type: "array" } }, required: ["content"] });
@@ -508,7 +508,7 @@ test("pi extension registers manifest tools and stamps headers when proxied", as
         assert.equal(out.isError, undefined);
         assert.deepEqual(proxy.toolCalls, [{ conversationId: "sess-42", tool: "compress", args: { content: [] } }]);
         const errOut = await pi.tools[1]!.execute("call-2", {}, undefined, undefined, fakeCtx(proxy));
-        assert.match(errOut.content[0]!.text, /bili tool error:.*boom/);
+        assert.match(errOut.content[0]!.text, /sigma tool error:.*boom/);
         assert.equal(errOut.isError, true);
     } finally {
         await proxy.close();
@@ -526,14 +526,14 @@ test("#1214: before_provider_headers awaits tool registration — one-shot (-p) 
         // the full plugin-ownership header set on the FIRST fire.
         const headers: Record<string, string> = {};
         await pi.events.get("before_provider_headers")!({ headers }, fakeCtx(proxy));
-        assert.equal(headers["x-bili-plugin"], "pi");
-        assert.equal(headers["x-bili-plugin-conversation"], "sess-42");
-        assert.equal(headers["x-bili-plugin-context-window"], "1000000");
+        assert.equal(headers["x-sigma-plugin"], "pi");
+        assert.equal(headers["x-sigma-plugin-conversation"], "sess-42");
+        assert.equal(headers["x-sigma-plugin-context-window"], "1000000");
         assert.equal(pi.tools.length, 2, "tools registered before the request could leave");
         // Subsequent fires stay stamped (cached registration, no re-fetch).
         const again: Record<string, string> = {};
         await pi.events.get("before_provider_headers")!({ headers: again }, fakeCtx(proxy));
-        assert.equal(again["x-bili-plugin"], "pi");
+        assert.equal(again["x-sigma-plugin"], "pi");
     } finally {
         await proxy.close();
     }
@@ -548,8 +548,8 @@ test("before_provider_headers stamps after a session_start prewarm too", async (
         await waitForTools(pi, 2);
         const late: Record<string, string> = {};
         await pi.events.get("before_provider_headers")!({ headers: late }, fakeCtx(proxy));
-        assert.equal(late["x-bili-plugin"], "pi");
-        assert.equal(late["x-bili-plugin-conversation"], "sess-42");
+        assert.equal(late["x-sigma-plugin"], "pi");
+        assert.equal(late["x-sigma-plugin-conversation"], "sess-42");
     } finally {
         await proxy.close();
     }
@@ -583,9 +583,9 @@ test("#1217: launcher-mode manifest fetch is primed at extension load time", asy
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
         const ctx = { sessionManager: { getSessionId: () => "sess-42" }, model: { contextWindow: 1000000, baseUrl: "https://api.example.com/v1" } };
-        await withEnv({ BILLION_CONTEXT_PROXY: origin }, async () => {
+        await withEnv({ SIGMA_PROXY: origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             const deadline = Date.now() + 5000;
             while (manifestHits === 0 && Date.now() < deadline) await sleep(5);
             assert.ok(manifestHits >= 1, "manifest fetch must already be in flight before any event (load-time prime)");
@@ -593,8 +593,8 @@ test("#1217: launcher-mode manifest fetch is primed at extension load time", asy
             await waitForTools(pi, 2);
             const headers: Record<string, string> = {};
             await pi.events.get("before_provider_headers")!({ headers }, ctx);
-            assert.equal(headers["x-bili-plugin"], "pi");
-            assert.equal(headers["x-bili-plugin-conversation"], "sess-42");
+            assert.equal(headers["x-sigma-plugin"], "pi");
+            assert.equal(headers["x-sigma-plugin-conversation"], "sess-42");
             assert.equal(pi.tools.length, 2);
         });
     } finally {
@@ -633,9 +633,9 @@ test("#1217: a failed manifest prime falls back to the event-time fetch and retr
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
         const ctx = { sessionManager: { getSessionId: () => "sess-42" }, model: { contextWindow: 1000000, baseUrl: "https://api.example.com/v1" } };
-        await withEnv({ BILLION_CONTEXT_PROXY: origin }, async () => {
+        await withEnv({ SIGMA_PROXY: origin }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi", { retryIntervalMs: 500 })(pi as never);
+            createSigmaPlugin("pi", { retryIntervalMs: 500 })(pi as never);
             // Request #1 = the failed load-time prime; request #2 = the
             // event-time fallback fetch kicked off by session_start. Wait
             // until BOTH are observed at the still-failing server, then drain.
@@ -658,11 +658,11 @@ test("#1217: a failed manifest prime falls back to the event-time fetch and retr
             while (!stamped && Date.now() < recoverDeadline) {
                 const h: Record<string, string> = {};
                 await pi.events.get("before_provider_headers")!({ headers: h }, ctx);
-                if (h["x-bili-plugin"] === "pi") stamped = h;
+                if (h["x-sigma-plugin"] === "pi") stamped = h;
                 else await sleep(10);
             }
             assert.ok(stamped !== undefined, "recovery fetch succeeds once the throttle expires");
-            assert.equal(stamped["x-bili-plugin-conversation"], "sess-42");
+            assert.equal(stamped["x-sigma-plugin-conversation"], "sess-42");
             assert.equal(pi.tools.length, 2);
             assert.equal(manifestRequests, 3, "recovery is a single fetch, not a storm");
         });
@@ -687,11 +687,11 @@ test("#1217: kill switch suppresses the load-time manifest prime", async () => {
     await once(server, "listening");
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
-        await withEnv({ BILLION_CONTEXT_PROXY: origin, BILLION_CONTEXT_PLUGIN: "0" }, async () => {
+        await withEnv({ SIGMA_PROXY: origin, SIGMA_PLUGIN: "0" }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("pi")(pi as never);
+            createSigmaPlugin("pi")(pi as never);
             await sleep(50);
-            assert.equal(manifestHits, 0, "BILLION_CONTEXT_PLUGIN=0 must keep the plugin fully inert at load time");
+            assert.equal(manifestHits, 0, "SIGMA_PLUGIN=0 must keep the plugin fully inert at load time");
         });
     } finally {
         server.close();
@@ -731,7 +731,7 @@ test("pi extension survives hostile host shapes without throwing", async () => {
         biliPlugin(pi as never);
         pi.events.get("before_provider_headers")!({}, {});
         pi.events.get("before_provider_headers")!({ headers: null }, fakeCtx(proxy));
-        pi.events.get("before_provider_headers")!({ headers: [] }, { sessionManager: {}, model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` } });
+        pi.events.get("before_provider_headers")!({ headers: [] }, { sessionManager: {}, model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` } });
         await pi.events.get("session_start")!({}, {});
         await waitForTools(pi, 2);
         // proxied baseUrl above intentionally triggers header-fallback registration
@@ -801,7 +801,7 @@ test("/acp command is registered and renders proxy status", async () => {
         const notes: Array<{ msg: string; type?: string }> = [];
         const ctx = {
             sessionManager: { getSessionId: () => "sess-acp" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd!.handler("", ctx);
@@ -818,7 +818,7 @@ test("/acp command is registered and renders proxy status", async () => {
 });
 
 test("/acp command warns when no proxy is detected", async () => {
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined }, async () => {
         const pi = makeFakePi();
         biliPlugin(pi as never);
         const cmd = pi.commands.get("acp")!;
@@ -834,14 +834,14 @@ test("/acp command warns when no proxy is detected", async () => {
         // #788: neutral wording — offers BOTH exits (proxy mode or remove the
         // plugin) instead of assuming proxy intent.
         assert.match(notes[0]!.msg, /no proxy detected/);
-        assert.match(notes[0]!.msg, /run via `bili pi` \(or set a \/bili\/ baseURL\) to use proxy mode/);
-        assert.match(notes[0]!.msg, /`bili plugin remove pi`/);
-        assert.match(notes[0]!.msg, /billion-context-pi/);
+        assert.match(notes[0]!.msg, /run via `sigma pi` \(or set a \/sigma\/ baseURL\) to use proxy mode/);
+        assert.match(notes[0]!.msg, /`sigma plugin remove pi`/);
+        assert.match(notes[0]!.msg, /sigma-pi/);
     });
 });
 
-test("/acp no-proxy warning offers the remove exit for omp without billion-context-pi mention", async () => {
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined }, async () => {
+test("/acp no-proxy warning offers the remove exit for omp without sigma-pi mention", async () => {
+    await withEnv({ SIGMA_PROXY: undefined }, async () => {
         const pi = makeFakePi();
         ompPlugin(pi as never);
         const cmd = pi.commands.get("acp")!;
@@ -855,9 +855,9 @@ test("/acp no-proxy warning offers the remove exit for omp without billion-conte
         assert.equal(notes.length, 1);
         assert.equal(notes[0]!.type, "warning");
         assert.match(notes[0]!.msg, /no proxy detected/);
-        assert.match(notes[0]!.msg, /run via `bili omp`/);
-        assert.match(notes[0]!.msg, /`bili plugin remove omp`/);
-        assert.doesNotMatch(notes[0]!.msg, /billion-context-pi/);
+        assert.match(notes[0]!.msg, /run via `sigma omp`/);
+        assert.match(notes[0]!.msg, /`sigma plugin remove omp`/);
+        assert.doesNotMatch(notes[0]!.msg, /sigma-pi/);
     });
 });
 
@@ -881,7 +881,7 @@ test("/acp command warns when the session is unknown", async () => {
         const notes: Array<{ msg: string; type?: string }> = [];
         const ctx = {
             sessionManager: { getSessionId: () => "sess-unknown" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("", ctx);
@@ -918,13 +918,13 @@ test("/acp shows armed info when the proxy is live but the session is unknown", 
         const notes: Array<{ msg: string; type?: string }> = [];
         const ctx = {
             sessionManager: { getSessionId: () => "sess-fresh" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("", ctx);
         assert.equal(notes.length, 1);
         assert.equal(notes[0]!.type, "info");
-        assert.match(notes[0]!.msg, /billion-context@9\.9\.9/);
+        assert.match(notes[0]!.msg, /sigma@9\.9\.9/);
         assert.match(notes[0]!.msg, /compression armed/);
     } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -952,13 +952,13 @@ test("/acp emits a persistent custom message via pi.sendMessage when available (
         const cmd = pi.commands.get("acp")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-send" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string) => notes.push(msg) },
         };
         await cmd.handler("", ctx);
         assert.equal(sent.length, 1, "one custom message sent");
         assert.equal(notes.length, 0, "notify must not fire when sendMessage is available");
-        assert.equal(sent[0]!.customType, "bili-acp-status");
+        assert.equal(sent[0]!.customType, "sigma-acp-status");
         assert.equal(sent[0]!.display, true);
         assert.equal(sent[0]!.content, "PANEL-BODY");
     } finally {
@@ -986,12 +986,12 @@ test("/acp sends renderAcpStatus fallback content via sendMessage when no panel 
         const cmd = pi.commands.get("acp")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-send2" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: () => { throw new Error("notify must not fire"); } },
         };
         await cmd.handler("", ctx);
         assert.equal(sent.length, 1);
-        assert.equal(sent[0]!.customType, "bili-acp-status");
+        assert.equal(sent[0]!.customType, "sigma-acp-status");
         assert.match(sent[0]!.content, /📊 ACP status/);
     } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -1018,7 +1018,7 @@ test("/acp falls back to notify when pi.sendMessage throws", async () => {
         const cmd = pi.commands.get("acp")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-send3" },
-            model: { baseUrl: `${origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string) => notes.push(msg) },
         };
         await cmd.handler("", ctx);
@@ -1064,12 +1064,12 @@ test("/acp-cache forwards acp_cache and persists the wrapped report via sendMess
         const sent: Array<{ customType: string; content: string; display: boolean }> = [];
         const notes: string[] = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string; content: string; display: boolean }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-cache");
         assert.ok(cmd, "acp-cache command should be registered");
         const ctx = {
             sessionManager: { getSessionId: () => "sess-cache" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string) => notes.push(msg) },
         };
         await cmd!.handler("", ctx);
@@ -1077,7 +1077,7 @@ test("/acp-cache forwards acp_cache and persists the wrapped report via sendMess
         assert.deepEqual(proxy.calls, [{ conversationId: "sess-cache", tool: "acp_cache" }]);
         assert.equal(sent.length, 1, "one custom message sent");
         assert.equal(notes.length, 0, "notify must not fire when sendMessage is available");
-        assert.equal(sent[0]!.customType, "bili-acp-cache");
+        assert.equal(sent[0]!.customType, "sigma-acp-cache");
         assert.equal(sent[0]!.display, true);
         assert.equal(sent[0]!.content, wrapCacheReport("CACHE-REPORT-BODY"));
     } finally {
@@ -1090,11 +1090,11 @@ test("/acp-cache falls back to raw-text notify when the host has no sendMessage 
     try {
         const notes: Array<{ msg: string; type?: string }> = [];
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-cache")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-cache" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("", ctx);
@@ -1109,9 +1109,9 @@ test("/acp-cache falls back to raw-text notify when the host has no sendMessage 
 });
 
 test("/acp-cache warns when no proxy is detected (#800)", async () => {
-    await withEnv({ BILLION_CONTEXT_PROXY: undefined }, async () => {
+    await withEnv({ SIGMA_PROXY: undefined }, async () => {
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-cache")!;
         const notes: Array<{ msg: string; type?: string }> = [];
         const ctx = {
@@ -1131,11 +1131,11 @@ test("/acp-cache reports a proxy-side failure via notify error (#800)", async ()
     try {
         const notes: Array<{ msg: string; type?: string }> = [];
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-cache")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-cache" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("", ctx);
@@ -1183,19 +1183,19 @@ test("/acp-rule forwards acp_rule with empty args and persists the wrapped list 
         const sent: Array<{ customType: string; content: string; display: boolean }> = [];
         const notes: string[] = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string; content: string; display: boolean }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule");
         assert.ok(cmd, "acp-rule command should be registered");
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string) => notes.push(msg) },
         };
         await cmd!.handler("", ctx);
         assert.deepEqual(proxy.calls, [{ conversationId: "sess-rules", tool: "acp_rule", args: {} }], "no-arg list forwards empty args");
         assert.equal(sent.length, 1, "one custom message sent");
         assert.equal(notes.length, 0, "notify must not fire when sendMessage is available");
-        assert.equal(sent[0]!.customType, "bili-acp-rule");
+        assert.equal(sent[0]!.customType, "sigma-acp-rule");
         assert.equal(sent[0]!.display, true);
         assert.equal(sent[0]!.content, wrapRuleReport("rule1: always run typecheck"));
     } finally {
@@ -1208,16 +1208,16 @@ test("/acp-rule forwards the text as { rule } to record a rule (#1251)", async (
     try {
         const sent: Array<{ customType: string; content: string }> = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string; content: string }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-add" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (_msg: string) => {} },
         };
         await cmd.handler("  prefer pnpm  ", ctx);
         assert.deepEqual(proxy.calls, [{ conversationId: "sess-rules-add", tool: "acp_rule", args: { rule: "prefer pnpm" } }], "trimmed text forwarded as { rule }");
-        assert.equal(sent[0]!.customType, "bili-acp-rule");
+        assert.equal(sent[0]!.customType, "sigma-acp-rule");
         assert.equal(sent[0]!.content, wrapRuleReport("Recorded rule2: prefer pnpm"));
     } finally {
         await proxy.close();
@@ -1229,11 +1229,11 @@ test("/acp-rule falls back to raw-text notify when the host has no sendMessage (
     try {
         const notes: string[] = [];
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-notify" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string) => notes.push(msg) },
         };
         await cmd.handler("", ctx);
@@ -1245,16 +1245,16 @@ test("/acp-rule falls back to raw-text notify when the host has no sendMessage (
 });
 
 test("/acp-rule warns with an enablement hint when the proxy reports the feature disabled (#1251)", async () => {
-    const proxy = await startRuleProxy("acp_rule is not enabled on this bili proxy (compress.rules.enabled is not true) — nothing was recorded.");
+    const proxy = await startRuleProxy("acp_rule is not enabled on this sigma proxy (compress.rules.enabled is not true) — nothing was recorded.");
     try {
         const sent: Array<{ customType: string }> = [];
         const notes: Array<{ msg: string; type?: string }> = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-off" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("", ctx);
@@ -1272,16 +1272,16 @@ test("/acp-rule forwards `remove <id>` as { delete } to acp_rule (#1399)", async
     try {
         const sent: Array<{ customType: string; content: string }> = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string; content: string }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-remove" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (_msg: string) => {} },
         };
         await cmd.handler("remove rule1", ctx);
         assert.deepEqual(proxy.calls, [{ conversationId: "sess-rules-remove", tool: "acp_rule", args: { delete: "rule1" } }], "`remove <id>` forwarded as { delete }");
-        assert.equal(sent[0]!.customType, "bili-acp-rule");
+        assert.equal(sent[0]!.customType, "sigma-acp-rule");
         assert.equal(sent[0]!.content, wrapRuleReport("Removed rule1: always run tests first"));
     } finally {
         await proxy.close();
@@ -1293,11 +1293,11 @@ test("/acp-rule forwards bare `clear` as { clear: true } to acp_rule (#1399)", a
     try {
         const sent: Array<{ customType: string; content: string }> = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string; content: string }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-clear" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (_msg: string) => {} },
         };
         await cmd.handler("clear", ctx);
@@ -1313,11 +1313,11 @@ test("/acp-rule bare `remove` warns with usage instead of forwarding (#1399)", a
     try {
         const notes: Array<{ msg: string; type?: string }> = [];
         const pi = makeFakePi();
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-remove-usage" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (msg: string, type?: string) => notes.push({ msg, type }) },
         };
         await cmd.handler("remove", ctx);
@@ -1335,11 +1335,11 @@ test("/acp-rule `clear <text>` records the text instead of wiping (#1399)", asyn
     try {
         const sent: Array<{ customType: string }> = [];
         const pi = { ...makeFakePi(), sendMessage: (m: { customType: string }) => sent.push(m) };
-        createBiliPlugin()(pi as never);
+        createSigmaPlugin()(pi as never);
         const cmd = pi.commands.get("acp-rule")!;
         const ctx = {
             sessionManager: { getSessionId: () => "sess-rules-clear-words" },
-            model: { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` },
+            model: { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` },
             ui: { notify: (_msg: string) => {} },
         };
         await cmd.handler("clear all caches before deploys", ctx);
@@ -1350,36 +1350,36 @@ test("/acp-rule `clear <text>` records the text instead of wiping (#1399)", asyn
     }
 });
 
-test("omp entry reports x-bili-plugin: omp without env vars", async () => {
+test("omp entry reports x-sigma-plugin: omp without env vars", async () => {
     const proxy = await startFakeProxy();
     try {
-        await withEnv({ BILLION_CONTEXT_PLUGIN_AGENT: undefined, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ SIGMA_PLUGIN_AGENT: undefined, SIGMA_PROXY: proxy.origin }, async () => {
             const pi = makeFakePi();
             ompPlugin(pi as never);
             await pi.events.get("session_start")!({}, fakeCtx(undefined));
             await waitForTools(pi, 2);
             const headers: Record<string, string> = {};
             await pi.events.get("before_provider_headers")!({ headers }, fakeCtx(undefined));
-            assert.equal(headers["x-bili-plugin"], "omp");
+            assert.equal(headers["x-sigma-plugin"], "omp");
         });
-        await withEnv({ BILLION_CONTEXT_PLUGIN_AGENT: "omp", BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ SIGMA_PLUGIN_AGENT: "omp", SIGMA_PROXY: proxy.origin }, async () => {
             const pi = makeFakePi();
             biliPlugin(pi as never);
             await pi.events.get("session_start")!({}, fakeCtx(undefined));
             await waitForTools(pi, 2);
             const headers: Record<string, string> = {};
             await pi.events.get("before_provider_headers")!({ headers }, fakeCtx(undefined));
-            assert.equal(headers["x-bili-plugin"], "omp");
+            assert.equal(headers["x-sigma-plugin"], "omp");
         });
-        await withEnv({ BILLION_CONTEXT_PLUGIN_AGENT: undefined }, async () => {
+        await withEnv({ SIGMA_PLUGIN_AGENT: undefined }, async () => {
             const pi = makeFakePi();
-            createBiliPlugin("dsh")(pi as never);
-            const ctx = { sessionManager: { getSessionId: () => "s" }, model: { baseUrl: `${proxy.origin}/bili/https://x` } };
+            createSigmaPlugin("dsh")(pi as never);
+            const ctx = { sessionManager: { getSessionId: () => "s" }, model: { baseUrl: `${proxy.origin}/sigma/https://x` } };
             await pi.events.get("session_start")!({}, ctx);
             await waitForTools(pi, 2);
             const headers: Record<string, string> = {};
             await pi.events.get("before_provider_headers")!({ headers }, ctx);
-            assert.equal(headers["x-bili-plugin"], "dsh");
+            assert.equal(headers["x-sigma-plugin"], "dsh");
         });
     } finally {
         await proxy.close();
@@ -1392,26 +1392,26 @@ function hintEnv(home: string, piAgentDir: string): Record<string, string> {
         CODEX_HOME: home,
         OPENCODE_CONFIG: path.join(home, ".config/opencode/opencode.json"),
         CLAUDE_CONFIG_DIR: home,
-        CLAUDE: "/nonexistent/bili-claude-stub",
-        BILI_MCP_PROXY: "http://127.0.0.1:8787",
+        CLAUDE: "/nonexistent/sigma-claude-stub",
+        SIGMA_MCP_PROXY: "http://127.0.0.1:8787",
     };
 }
 
 test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HOME", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-home-"));
     const piAgentDir = path.join(home, ".pi/agent");
     // #925 pi entry form: npm installs write the pi-managed npm spec
     // (auto-installed at pi startup, upgraded by `pi update`, survives node
     // prefix moves); dev/checkout installs keep the abs root.
     {
-        const devRoot = "/home/x/projects/billion-context";
+        const devRoot = "/home/x/projects/sigma";
         assert.equal(piEntryFor(devRoot), devRoot);
-        const npmRoot = "/home/x/.local/lib/node_modules/billion-context";
+        const npmRoot = "/home/x/.local/lib/node_modules/sigma";
         assert.equal(piEntryFor(npmRoot), PI_NPM_ENTRY);
-        assert.equal(PI_NPM_ENTRY, "npm:billion-context");
+        assert.equal(PI_NPM_ENTRY, "npm:sigma");
         assert.equal(isPiEntry(PI_NPM_ENTRY, devRoot), true);
         assert.equal(isPiEntry(PI_NPM_ENTRY, npmRoot), true);
-        assert.equal(isPiEntry("npm:billion-context@0.1.40", devRoot), true);
+        assert.equal(isPiEntry("npm:sigma@0.1.40", devRoot), true);
     }
     await withEnv(hintEnv(home, piAgentDir), async () => {
         const root = selfPackageRoot();
@@ -1428,16 +1428,16 @@ test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HO
         assert.ok(!(JSON.parse(fs.readFileSync(path.join(piAgentDir, "settings.json"), "utf8")) as { packages: string[] }).packages.includes(root));
         assert.match(pluginRemove("pi"), /not installed/);
 
-        // Legacy entries (old billion-context-pi npm package, a dev checkout
+        // Legacy entries (old sigma-pi npm package, a dev checkout
         // path, backslash Windows paths) must be REPLACED by install so only
-        // one bili plugin stays live.
+        // one sigma plugin stays live.
         fs.writeFileSync(path.join(piAgentDir, "settings.json"), JSON.stringify({
             packages: [
-                "npm:billion-context-pi",
-                "npm:billion-context-pi@0.1.48",
-                "npm:billion-context@0.1.40",
-                "/home/x/projects/billion-context",
-                "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\billion-context-pi",
+                "npm:sigma-pi",
+                "npm:sigma-pi@0.1.48",
+                "npm:sigma@0.1.40",
+                "/home/x/projects/sigma",
+                "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\sigma-pi",
                 "/home/x/other-package",
             ],
             theme: "dark",
@@ -1445,16 +1445,16 @@ test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HO
         const replaceMsg = pluginInstall("pi");
         assert.match(replaceMsg, /installed/);
         // #788: every dropped entry is named in the output — the
-        // billion-context-pi removal in particular must not be silent.
+        // sigma-pi removal in particular must not be silent.
         assert.ok(replaceMsg.includes("replaced existing entries:"));
         // #939: project-scope reminder mirrors the opencode LOCAL-scope note
         assert.match(replaceMsg, /<project>\/\.pi\/settings\.json/);
         for (const gone of [
-            "npm:billion-context-pi",
-            "npm:billion-context-pi@0.1.48",
-            "npm:billion-context@0.1.40",
-            "/home/x/projects/billion-context",
-            "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\billion-context-pi",
+            "npm:sigma-pi",
+            "npm:sigma-pi@0.1.48",
+            "npm:sigma@0.1.40",
+            "/home/x/projects/sigma",
+            "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\sigma-pi",
         ]) {
             assert.ok(replaceMsg.includes(gone), `install output names removed entry ${gone}`);
         }
@@ -1518,33 +1518,33 @@ test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HO
 
         assert.match(pluginInstall("codex"), /installed/);
         const toml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-        assert.match(toml, /\[mcp_servers\.bili\]\ncommand = /);
-        assert.match(toml, /BILI_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
+        assert.match(toml, /\[mcp_servers\.sigma\]\ncommand = /);
+        assert.match(toml, /SIGMA_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
         fs.writeFileSync(path.join(home, "config.toml"), toml + "\n[mcp_servers.other]\ncommand = \"x\"\n");
         assert.match(pluginInstall("codex"), /already installed/);
         fs.writeFileSync(path.join(home, "config.toml"), fs.readFileSync(path.join(home, "config.toml"), "utf8").replace("8787", "9999"));
         assert.match(pluginInstall("codex"), /refreshed/);
-        assert.match(fs.readFileSync(path.join(home, "config.toml"), "utf8"), /BILI_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
+        assert.match(fs.readFileSync(path.join(home, "config.toml"), "utf8"), /SIGMA_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
         assert.match(pluginRemove("codex"), /removed/);
         const tomlAfter = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-        assert.doesNotMatch(tomlAfter, /mcp_servers\.bili/);
+        assert.doesNotMatch(tomlAfter, /mcp_servers\.sigma/);
         assert.match(tomlAfter, /\[mcp_servers\.other\]\ncommand = "x"\n/);
 
-        // Regression: a header-only [mcp_servers.bili] block as the final
+        // Regression: a header-only [mcp_servers.sigma] block as the final
         // line with no trailing newline must be fully removed (previously
         // the header line survived because the next-table search matched
         // the header itself when after.indexOf("\n") was -1).
-        fs.writeFileSync(path.join(home, "config.toml"), "[mcp_servers.other]\ncommand = \"x\"\n[mcp_servers.bili]");
+        fs.writeFileSync(path.join(home, "config.toml"), "[mcp_servers.other]\ncommand = \"x\"\n[mcp_servers.sigma]");
         assert.match(pluginRemove("codex"), /removed/);
         const tomlEdge = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-        assert.doesNotMatch(tomlEdge, /mcp_servers\.bili/);
+        assert.doesNotMatch(tomlEdge, /mcp_servers\.sigma/);
         assert.match(tomlEdge, /\[mcp_servers\.other\]\ncommand = "x"\n/);
 
         // #638: a malformed block (args as string - legal TOML, invalid codex
         // schema) with a matching origin must NOT short-circuit to "already
         // installed"; reinstall must self-heal it to the canonical block.
         const selfRoot = path.dirname(path.dirname(path.resolve("src/plugin-install.ts")));
-        const malformed = `[mcp_servers.other]\ncommand = "x"\n[mcp_servers.bili]\ncommand = "node"\nargs = '[\"${path.join(selfRoot, "dist", "mcp.js")}\"]'\nenv = { BILI_MCP_PROXY = "http://127.0.0.1:8787" }\n`;
+        const malformed = `[mcp_servers.other]\ncommand = "x"\n[mcp_servers.sigma]\ncommand = "node"\nargs = '[\"${path.join(selfRoot, "dist", "mcp.js")}\"]'\nenv = { SIGMA_MCP_PROXY = "http://127.0.0.1:8787" }\n`;
         fs.writeFileSync(path.join(home, "config.toml"), malformed);
         const healedMsg = pluginInstall("codex");
         assert.match(healedMsg, /repaired args: was not an array/);
@@ -1563,27 +1563,27 @@ test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HO
         const ocFile = path.join(home, ".config/opencode/opencode.json");
         fs.mkdirSync(path.dirname(ocFile), { recursive: true });
         fs.writeFileSync(ocFile, JSON.stringify({ $schema: "https://opencode.ai/config.json", compaction: { auto: true, buffer: 100 }, [ocKey]: ["some-other-plugin"] }));
-        const ocPluginDir = path.join(home, ".config/opencode/plugins/billion-context");
+        const ocPluginDir = path.join(home, ".config/opencode/plugins/sigma");
         const ocInstallMsg = pluginInstall("opencode");
         assert.match(ocInstallMsg, /installed/);
-        // #926: default install adds NO mcp.bili (native plugin provides the
-        // tools); --with-mcp opts in and pins only via explicit BILI_MCP_PROXY.
-        assert.match(ocInstallMsg, /mcp\.bili not written/);
+        // #926: default install adds NO mcp.sigma (native plugin provides the
+        // tools); --with-mcp opts in and pins only via explicit SIGMA_MCP_PROXY.
+        assert.match(ocInstallMsg, /mcp\.sigma not written/);
         const ocWithMcp = pluginInstall("opencode", { withMcp: true });
-        assert.match(ocWithMcp, /mcp\.bili written \(BILI_MCP_PROXY=http:\/\/127\.0\.0\.1:8787\)/);
+        assert.match(ocWithMcp, /mcp\.sigma written \(SIGMA_MCP_PROXY=http:\/\/127\.0\.0\.1:8787\)/);
         let oc = JSON.parse(fs.readFileSync(ocFile, "utf8")) as { mcp?: Record<string, { command: string[]; environment?: Record<string, string> }>; compaction?: Record<string, unknown>; $schema?: string } & Record<string, unknown>;
-        assert.equal(oc.mcp?.bili.command[1]!.endsWith(path.join("dist", "mcp.js")), true);
-        assert.equal(oc.mcp?.bili.environment?.BILI_MCP_PROXY, "http://127.0.0.1:8787");
+        assert.equal(oc.mcp?.sigma.command[1]!.endsWith(path.join("dist", "mcp.js")), true);
+        assert.equal(oc.mcp?.sigma.environment?.SIGMA_MCP_PROXY, "http://127.0.0.1:8787");
         assert.deepEqual(oc[ocKey], ["some-other-plugin", ocPluginDir]);
         assert.match(fs.readFileSync(path.join(ocPluginDir, "index.js"), "utf8").replace(/\\+/g, "/"), /agent\/opencode-native\.js/);
         assert.deepEqual(oc.compaction, { auto: false, buffer: 100 });
         const ocAgain = pluginInstall("opencode", { withMcp: true });
-        assert.match(ocAgain, /mcp\.bili present/);
+        assert.match(ocAgain, /mcp\.sigma present/);
         assert.match(ocAgain, new RegExp(`${ocKey} present`));
         assert.match(pluginRemove("opencode"), /removed/);
         oc = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
         assert.equal(oc.mcp, undefined);
-        // only the bili entry is dropped — the user's other plugin survives
+        // only the sigma entry is dropped — the user's other plugin survives
         assert.deepEqual(oc[ocKey], ["some-other-plugin"]);
         assert.deepEqual(oc.compaction, { auto: true, buffer: 100 });
         assert.equal(oc.$schema, "https://opencode.ai/config.json");
@@ -1607,21 +1607,21 @@ test("plugin install/remove roundtrips for pi/omp/codex/opencode under a fake HO
 });
 
 test("plugin install opencode without a live proxy: MCP shell skipped, native plugin still installed (#820)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc-noproxy-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc-noproxy-"));
     const ocFile = path.join(home, ".config/opencode/opencode.json");
     try {
-        await withEnv({ OPENCODE_CONFIG: ocFile, BILI_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
+        await withEnv({ OPENCODE_CONFIG: ocFile, SIGMA_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
             const ocKey = pickPluginKey(detectOpencodeMajor());
             const msg = pluginInstall("opencode");
             assert.match(msg, /installed/);
-            // #926: no mcp.bili by default — with or without a live proxy
-            assert.match(msg, /mcp\.bili not written/);
-            assert.doesNotMatch(msg, /no bili proxy origin found/);
+            // #926: no mcp.sigma by default — with or without a live proxy
+            assert.match(msg, /mcp\.sigma not written/);
+            assert.doesNotMatch(msg, /no sigma proxy origin found/);
             const data = JSON.parse(fs.readFileSync(ocFile, "utf8")) as { mcp?: unknown; compaction?: Record<string, unknown> } & Record<string, unknown>;
             assert.equal(data.mcp, undefined);
-            assert.deepEqual(data[ocKey], [path.join(home, ".config/opencode/plugins/billion-context")]);
+            assert.deepEqual(data[ocKey], [path.join(home, ".config/opencode/plugins/sigma")]);
             assert.deepEqual(data.compaction, { auto: false });
-            assert.ok(fs.existsSync(path.join(home, ".config/opencode/plugins/billion-context/index.js")));
+            assert.ok(fs.existsSync(path.join(home, ".config/opencode/plugins/sigma/index.js")));
             assert.match(pluginRemove("opencode"), /removed/);
             const after = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
             assert.equal(after.mcp, undefined);
@@ -1634,14 +1634,14 @@ test("plugin install opencode without a live proxy: MCP shell skipped, native pl
 });
 
 test("plugin install opencode replaces legacy opencode-acp entries — array and object shapes (#918)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc-acp-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc-acp-"));
     const ocFile = path.join(home, ".config/opencode/opencode.json");
     fs.mkdirSync(path.dirname(ocFile), { recursive: true });
     try {
-        await withEnv({ OPENCODE_CONFIG: ocFile, BILI_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
+        await withEnv({ OPENCODE_CONFIG: ocFile, SIGMA_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
             const ocKey = pickPluginKey(detectOpencodeMajor());
             const otherKey = ocKey === "plugin" ? "plugins" : "plugin";
-            const dir = path.join(home, ".config/opencode/plugins/billion-context");
+            const dir = path.join(home, ".config/opencode/plugins/sigma");
             // array shape: bare name, npm: alias, path (incl. deep entry path), versioned
             fs.writeFileSync(ocFile, JSON.stringify({
                 [ocKey]: ["opencode-acp", "npm:opencode-acp", "/opt/other-plugin", path.join(home, "ext/opencode-acp/index.js"), path.join(home, "ext2/opencode-acp/dist/index.js"), "opencode-acp@stable"],
@@ -1650,7 +1650,7 @@ test("plugin install opencode replaces legacy opencode-acp entries — array and
             assert.match(msg, /replaced opencode-acp plugin entries/);
             let data = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
             assert.deepEqual(data[ocKey], ["/opt/other-plugin", dir]);
-            assert.ok(fs.existsSync(`${ocFile}.bili-bak`));
+            assert.ok(fs.existsSync(`${ocFile}.sigma-bak`));
             pluginRemove("opencode");
 
             // object shape: version-map form (#1002: preserved as a map now —
@@ -1684,24 +1684,24 @@ test("plugin install opencode replaces legacy opencode-acp entries — array and
 });
 
 test("plugin install/remove/status survive a non-object mcp in opencode.json (#809/N4)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc-badmcp-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc-badmcp-"));
     const ocFile = path.join(home, ".config/opencode/opencode.json");
     fs.mkdirSync(path.dirname(ocFile), { recursive: true });
     try {
-        await withEnv({ OPENCODE_CONFIG: ocFile, BILI_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
+        await withEnv({ OPENCODE_CONFIG: ocFile, SIGMA_MCP_PROXY: undefined, XDG_STATE_HOME: path.join(home, "state") }, async () => {
             const ocKey = pickPluginKey(detectOpencodeMajor());
             fs.writeFileSync(ocFile, JSON.stringify({ mcp: "totally-broken-string" }));
             const msg = pluginInstall("opencode");
             assert.match(msg, /installed/);
             let data = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
-            assert.deepEqual(data[ocKey], [path.join(home, ".config/opencode/plugins/billion-context")]);
+            assert.deepEqual(data[ocKey], [path.join(home, ".config/opencode/plugins/sigma")]);
             assert.deepEqual(data.compaction, { auto: false });
             assert.equal(pluginStatusAll().find((r) => r.agent === "opencode")?.status, "installed");
             assert.doesNotThrow(() => pluginRemove("opencode"));
             data = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
             assert.equal(data[ocKey], undefined);
             assert.equal(data.compaction, undefined);
-            assert.ok(!fs.existsSync(path.join(home, ".config/opencode/plugins/billion-context/index.js")));
+            assert.ok(!fs.existsSync(path.join(home, ".config/opencode/plugins/sigma/index.js")));
             assert.equal(pluginStatusAll().find((r) => r.agent === "opencode")?.status, "not installed");
         });
     } finally {
@@ -1710,7 +1710,7 @@ test("plugin install/remove/status survive a non-object mcp in opencode.json (#8
 });
 
 test("omp plugin: scoped matching, existence check, overlay redirect (issue #392)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-omp-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-omp-"));
     const root = selfPackageRoot();
     const ompDistFile = path.join(root, "dist", "agent", "omp-native.js");
     const createdOmpDist = !fs.existsSync(ompDistFile);
@@ -1749,10 +1749,10 @@ test("omp plugin: scoped matching, existence check, overlay redirect (issue #392
                 `extensions:\nother:\n  - ${stale}\nfirstRunComplete: true\n`);
         }
 
-        // (c) PI_CODING_AGENT_DIR pointing at a bili overlay redirects to the real home
+        // (c) PI_CODING_AGENT_DIR pointing at a sigma overlay redirects to the real home
         {
             const realHome = path.join(home, "c", ".omp", "agent");
-            const overlay = realHome + "-bili";
+            const overlay = realHome + "-sigma";
             fs.mkdirSync(realHome, { recursive: true });
             fs.mkdirSync(overlay, { recursive: true });
             fs.writeFileSync(path.join(realHome, "config.yml"), "firstRunComplete: true\n");
@@ -1782,32 +1782,32 @@ test("omp plugin: scoped matching, existence check, overlay redirect (issue #392
 });
 
 test("resolveProxyOrigin discovers the running proxy via the state file", async () => {
-    const state = fs.mkdtempSync(path.join(os.tmpdir(), "bili-state-"));
-    await withEnv({ XDG_STATE_HOME: state, BILI_MCP_PROXY: undefined }, () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-state-"));
+    await withEnv({ XDG_STATE_HOME: state, SIGMA_MCP_PROXY: undefined }, () => {
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8787");
-        fs.mkdirSync(path.join(state, "billion-context"), { recursive: true });
-        fs.writeFileSync(path.join(state, "billion-context", "proxy-origin"), "http://127.0.0.1:8792\n");
+        fs.mkdirSync(path.join(state, "sigma"), { recursive: true });
+        fs.writeFileSync(path.join(state, "sigma", "proxy-origin"), "http://127.0.0.1:8792\n");
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8792");
-        fs.writeFileSync(path.join(state, "billion-context", "proxy-origin"), "ftp://bad\ngarbage");
+        fs.writeFileSync(path.join(state, "sigma", "proxy-origin"), "ftp://bad\ngarbage");
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8787");
     });
-    await withEnv({ XDG_STATE_HOME: state, BILI_MCP_PROXY: "http://10.0.0.5:9000" }, () => {
+    await withEnv({ XDG_STATE_HOME: state, SIGMA_MCP_PROXY: "http://10.0.0.5:9000" }, () => {
         assert.equal(resolveProxyOrigin(), "http://10.0.0.5:9000");
     });
     fs.rmSync(state, { recursive: true, force: true });
 });
 
 test("plugin install refuses to touch broken or non-object configs", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-home-"));
     const piAgentDir = path.join(home, ".pi/agent");
     await withEnv(hintEnv(home, piAgentDir), async () => {
         fs.mkdirSync(piAgentDir, { recursive: true });
         fs.writeFileSync(path.join(piAgentDir, "settings.json"), "{ not json");
         assert.throws(() => pluginInstall("pi"), /not valid JSON/);
-        assert.equal(fs.existsSync(path.join(piAgentDir, "settings.json.bili-bak")), false);
+        assert.equal(fs.existsSync(path.join(piAgentDir, "settings.json.sigma-bak")), false);
         fs.writeFileSync(path.join(piAgentDir, "settings.json"), "[1,2]");
         assert.throws(() => pluginInstall("pi"), /expected a JSON object/);
-        fs.writeFileSync(path.join(piAgentDir, "settings.json"), JSON.stringify({ packages: [`/opt/old/node_modules/billion-context`] }));
+        fs.writeFileSync(path.join(piAgentDir, "settings.json"), JSON.stringify({ packages: [`/opt/old/node_modules/sigma`] }));
         assert.match(pluginInstall("pi"), /installed/);
         const after = JSON.parse(fs.readFileSync(path.join(piAgentDir, "settings.json"), "utf8")) as { packages: string[] };
         assert.equal(after.packages.length, 1);
@@ -1821,11 +1821,11 @@ test("plugin install refuses to touch broken or non-object configs", async () =>
 });
 
 // #836 (found in #809 N4): a non-object `mcp` (e.g. bare string) made
-// `"bili" in mcp` throw — crashing remove (stranding a half-install) and
+// `"sigma" in mcp` throw — crashing remove (stranding a half-install) and
 // surfacing "error:" from status. All three opencode sites must degrade
 // gracefully instead of throwing.
 test("plugin opencode survives a non-object mcp (issue #836 / #809 N4)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-home-"));
     const piAgentDir = path.join(home, ".pi/agent");
     await withEnv(hintEnv(home, piAgentDir), async () => {
         const ocDir = path.join(home, ".config/opencode");
@@ -1844,23 +1844,23 @@ test("plugin opencode survives a non-object mcp (issue #836 / #809 N4)", async (
         // + compaction.auto still land, and sibling keys survive untouched.
         assert.doesNotThrow(() => pluginInstall("opencode"));
         assert.match(pluginInstall("opencode", { withMcp: true }), /skipped/i);
-        assert.match(pluginInstall("opencode"), /mcp\.bili not written/);
+        assert.match(pluginInstall("opencode"), /mcp\.sigma not written/);
         const data = JSON.parse(fs.readFileSync(ocFile, "utf8")) as Record<string, unknown>;
         assert.equal(data.mcp, "bogus-string");
         assert.equal(data.other, 1);
         const ocKey = pickPluginKey(detectOpencodeMajor());
-        assert.deepEqual(data[ocKey], [path.join(ocDir, "plugins", "billion-context")]);
+        assert.deepEqual(data[ocKey], [path.join(ocDir, "plugins", "sigma")]);
         assert.deepEqual(data.compaction, { auto: false });
     });
     fs.rmSync(home, { recursive: true, force: true });
 });
 
 // #839 (found while reviewing #837): same bug class as #836 on the claude side
-// — a non-object `mcpServers` in .claude.json made `"bili" in mcpServers` throw
+// — a non-object `mcpServers` in .claude.json made `"sigma" in mcpServers` throw
 // in claudeStatus(), crashing remove (which calls status first) and surfacing
 // "error:" from status.
 test("plugin claude survives a non-object mcpServers (issue #839)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-home-"));
     const piAgentDir = path.join(home, ".pi/agent");
     await withEnv(hintEnv(home, piAgentDir), async () => {
         const cFile = path.join(home, ".claude.json");
@@ -1876,7 +1876,7 @@ test("plugin claude survives a non-object mcpServers (issue #839)", async () => 
 });
 
 test("plugin list survives a broken host config (per-row error, no crash)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-plugin-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-plugin-home-"));
     const piAgentDir = path.join(home, ".pi/agent");
     await withEnv(hintEnv(home, piAgentDir), async () => {
         fs.writeFileSync(path.join(home, ".claude.json"), "{ broken json");
@@ -1898,7 +1898,7 @@ test("mcp forwardTool times out against a hanging proxy", async () => {
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    await withEnv({ BILI_MCP_PROXY: origin }, async () => {
+    await withEnv({ SIGMA_MCP_PROXY: origin }, async () => {
         await assert.rejects(() => mcpForwardTool("compress", {}, 200), /timed out after 200ms/);
     });
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -1993,7 +1993,7 @@ test("omp identity register failure throttles and retries later", async () => {
     const proxy = await startFakeProxy({ failRegister: 500 });
     try {
         const pi = makeFakePi();
-        createBiliPlugin("omp", { retryIntervalMs: 500 })(pi as never);
+        createSigmaPlugin("omp", { retryIntervalMs: 500 })(pi as never);
         await pi.events.get("session_start")!({}, fakeCtx(proxy, "omp-sess-9"));
         await waitForTools(pi, 2);
         const deadline = Date.now() + 15000;
@@ -2028,7 +2028,7 @@ test("#1362: omp child sessions report parentConversationId in the identity regi
     const proxy = await startFakeProxy();
     try {
         const pi = makeFakePi();
-        createBiliPlugin("omp")(pi as never);
+        createSigmaPlugin("omp")(pi as never);
         // omp fork() records the parent's BARE SESSION ID in the header.
         const headerCtx = { ...fakeCtx(proxy, "omp-sess-child"), sessionManager: { getSessionId: () => "omp-sess-child", getHeader: () => ({ type: "session", id: "omp-sess-child", parentSession: "omp-parent-bare-id" }) } };
         await pi.events.get("session_start")!({}, headerCtx);
@@ -2041,7 +2041,7 @@ test("#1362: omp child sessions report parentConversationId in the identity regi
 
         // A plain omp session (no parentSession) keeps today's exact payload shape.
         const pi2 = makeFakePi();
-        createBiliPlugin("omp")(pi2 as never);
+        createSigmaPlugin("omp")(pi2 as never);
         await pi2.events.get("session_start")!({}, fakeCtx(proxy, "omp-sess-plain"));
         await waitForTools(pi2, 2);
         const deadline2 = Date.now() + 15000;
@@ -2056,9 +2056,9 @@ test("#1362: omp child sessions report parentConversationId in the identity regi
 
 // #266: omp's chat-completions payloads carry NO conversation signal, so the
 // plugin stamps prompt_cache_key with the omp session id. #1403: pck is a
-// bili-internal identity signal, so it is ONLY stamped when the destination
-// will actually reach the proxy (/bili/-rewritten URL, BILLION_CONTEXT_PROXY
-// origin, or BILI_MITM_HOSTS whitelist) — a strict-schema upstream behind a
+// sigma-internal identity signal, so it is ONLY stamped when the destination
+// will actually reach the proxy (/sigma/-rewritten URL, SIGMA_PROXY
+// origin, or SIGMA_MITM_HOSTS whitelist) — a strict-schema upstream behind a
 // blind tunnel would reject the foreign field. The
 // before_provider_request return value REPLACES the whole outgoing payload
 // (omp onPayload chain), so the matrix below drives the real handler and
@@ -2068,16 +2068,16 @@ test("omp before_provider_request stamps prompt_cache_key only for chat-completi
     const sid = "omp-uuid-abc";
     const mk = (): FakePi => {
         const pi = makeFakePi();
-        createBiliPlugin("omp")(pi as never);
+        createSigmaPlugin("omp")(pi as never);
         return pi;
     };
     // #1230: the handler is async (it awaits tool registration); fakeCtx
     // (undefined) keeps registerTools a no-op, so awaiting stays pure. The
-    // ctx carries a /bili/-rewritten baseUrl so the destination counts as
+    // ctx carries a /sigma/-rewritten baseUrl so the destination counts as
     // proxy-routed (#1403).
     const routedCtx = (): Record<string, unknown> => ({
         ...fakeCtx(undefined, sid),
-        model: { contextWindow: 1000000, baseUrl: "http://127.0.0.1:8787/bili/https://api.example.com/v1" },
+        model: { contextWindow: 1000000, baseUrl: "http://127.0.0.1:8787/sigma/https://api.example.com/v1" },
     });
     const handler = async (pi: FakePi, payload: unknown) =>
         pi.events.get("before_provider_request")!({ type: "before_provider_request", payload }, routedCtx());
@@ -2149,35 +2149,35 @@ test("omp before_provider_request stamps prompt_cache_key only for chat-completi
         assert.equal(out, undefined, "external host not routed through the proxy → not stamped (#1403)");
     }
     {
-        const prev = process.env.BILI_MITM_HOSTS;
-        process.env.BILI_MITM_HOSTS = "api.example.com";
+        const prev = process.env.SIGMA_MITM_HOSTS;
+        process.env.SIGMA_MITM_HOSTS = "api.example.com";
         try {
             const pi = mk();
             const out = await pi.events.get("before_provider_request")!({ type: "before_provider_request", payload: { messages: [{ role: "user", content: "hi" }] } }, fakeCtx(undefined, sid)) as Record<string, unknown>;
             assert.equal(out.prompt_cache_key, sid, "MITM-whitelisted external host → stamped (#1403)");
         } finally {
-            if (prev === undefined) delete process.env.BILI_MITM_HOSTS;
-            else process.env.BILI_MITM_HOSTS = prev;
+            if (prev === undefined) delete process.env.SIGMA_MITM_HOSTS;
+            else process.env.SIGMA_MITM_HOSTS = prev;
         }
     }
     {
-        const prev = process.env.BILLION_CONTEXT_PROXY;
-        process.env.BILLION_CONTEXT_PROXY = "http://127.0.0.1:8787";
+        const prev = process.env.SIGMA_PROXY;
+        process.env.SIGMA_PROXY = "http://127.0.0.1:8787";
         try {
             const pi = mk();
             const ctx = { ...fakeCtx(undefined, sid), model: { contextWindow: 1000000, baseUrl: "http://127.0.0.1:8787/v1/messages" } };
             const out = await pi.events.get("before_provider_request")!({ type: "before_provider_request", payload: { messages: [{ role: "user", content: "hi" }] } }, ctx) as Record<string, unknown>;
-            assert.equal(out.prompt_cache_key, sid, "BILLION_CONTEXT_PROXY-matched origin → stamped (#1403)");
+            assert.equal(out.prompt_cache_key, sid, "SIGMA_PROXY-matched origin → stamped (#1403)");
         } finally {
-            if (prev === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-            else process.env.BILLION_CONTEXT_PROXY = prev;
+            if (prev === undefined) delete process.env.SIGMA_PROXY;
+            else process.env.SIGMA_PROXY = prev;
         }
     }
 });
 
 test("pi agent never stamps prompt_cache_key (it stamps headers instead)", async () => {
     const pi = makeFakePi();
-    createBiliPlugin("pi")(pi as never);
+    createSigmaPlugin("pi")(pi as never);
     const out = await pi.events.get("before_provider_request")!({ type: "before_provider_request", payload: { messages: [{ role: "user", content: "hi" }] } }, fakeCtx(undefined, "pi-uuid"));
     assert.equal(out, undefined, "pi agent never stamps the body");
 });
@@ -2195,7 +2195,7 @@ test("#957: omp reports runtime-info via before_provider_request (omp has no hea
     try {
         const pi = makeFakePi();
         ompPlugin(pi as never);
-        const baseModel = { baseUrl: `${proxy.origin}/bili/https://api.example.com/v1` };
+        const baseModel = { baseUrl: `${proxy.origin}/sigma/https://api.example.com/v1` };
         const ctxA = { ...fakeCtx(proxy, "omp-rt-1"), model: { id: "omp-rt-model-a", contextWindow: 200000, maxTokens: 32768, ...baseModel } };
         const ctxB = { ...fakeCtx(proxy, "omp-rt-1"), model: { id: "omp-rt-model-b", contextWindow: 128000, maxTokens: 16384, ...baseModel } };
         await pi.events.get("session_start")!({}, ctxA);
@@ -2210,7 +2210,7 @@ test("#957: omp reports runtime-info via before_provider_request (omp has no hea
             model: "omp-rt-model-a",
             contextWindow: 200000,
             maxOutput: 32768,
-            baseURL: `${proxy.origin}/bili/https://api.example.com/v1`,
+            baseURL: `${proxy.origin}/sigma/https://api.example.com/v1`,
             source: "client-config",
         });
         // same model again → deduped, no second POST
@@ -2225,7 +2225,7 @@ test("#957: omp reports runtime-info via before_provider_request (omp has no hea
             model: "omp-rt-model-b",
             contextWindow: 128000,
             maxOutput: 16384,
-            baseURL: `${proxy.origin}/bili/https://api.example.com/v1`,
+            baseURL: `${proxy.origin}/sigma/https://api.example.com/v1`,
             source: "client-config",
         });
     } finally {

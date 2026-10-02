@@ -6,10 +6,10 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 // Fail fast on the very first 429 instead of the default 3 attempts with
 // exponential backoff — the fail-fast tests below want the error immediately.
-process.env.BILI_REPLAY_RETRY_MAX = "1";
+process.env.SIGMA_REPLAY_RETRY_MAX = "1";
 // Shrink the preflight hold grace so a 1.5s-slow summarization call reliably
 // outlives it (default is 30s — too slow for a test).
-process.env.BILI_PREFLIGHT_HOLD_MS = "300";
+process.env.SIGMA_PREFLIGHT_HOLD_MS = "300";
 
 import { defaultConfig } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -20,7 +20,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 // clients with undici's default 300s headersTimeout aborted mid-compression,
 // the proxy logged "summarization aborted: client disconnected" and never
 // forwarded: a repeating 5-minute death loop. When preflight outlives the
-// hold grace (BILI_PREFLIGHT_HOLD_MS, default 30s) the proxy must commit the
+// hold grace (SIGMA_PREFLIGHT_HOLD_MS, default 30s) the proxy must commit the
 // response early (stream: 200 + SSE comment keep-alives; non-stream: 200 +
 // whitespace) so the client's header timeout can never fire. Late failures
 // then arrive in-band (protocol error event / JSON body) instead of as a
@@ -151,16 +151,16 @@ test("#568: stream + slow preflight → early 200 + SSE keep-alive, then the rea
         // Fresh session, ~13k-token history vs 10k window → preflight fires
         // and its summarization call takes 1.5s ≫ the 300ms grace.
         const r = await timedPost(
-            `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+            `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
             { "content-type": "application/json", "x-acp-session": "hold-stream-ok-sess" },
             JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
         );
         assert.equal(r.status, 200);
         assert.equal(String(r.headers["content-type"]), "text/event-stream");
-        assert.equal(r.headers["x-bili-preflight"], "compressing", "early commit is marked for observability");
+        assert.equal(r.headers["x-sigma-preflight"], "compressing", "early commit is marked for observability");
         assert.ok(r.tHeaderMs < SLOW_MS, `headers arrived before summarization finished (${r.tHeaderMs}ms)`);
         assert.ok(r.tEndMs >= SLOW_MS, `the response waited for the slow preflight (${r.tEndMs}ms) — the hold did real work`);
-        assert.ok(r.body.includes(": bili-preflight"), "an SSE comment keep-alive was sent while compressing");
+        assert.ok(r.body.includes(": sigma-preflight"), "an SSE comment keep-alive was sent while compressing");
         assert.ok(r.body.includes('"text_delta"'), "the real stream content follows the keep-alive");
         assert.ok(r.body.includes("message_stop"), "the stream completed");
 
@@ -210,14 +210,14 @@ test("#568: stream + slow preflight 429 → early-committed 200 carries the erro
 
     try {
         const r = await timedPost(
-            `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+            `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
             { "content-type": "application/json", "x-acp-session": "hold-stream-429-sess" },
             JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: bigConversation() }),
         );
         // The hold already committed 200 before the 429 landed — the client
         // gets the structured error IN-BAND instead of a hang/abort.
         assert.equal(r.status, 200, "status was committed early and cannot become 503 anymore");
-        assert.equal(r.headers["x-bili-preflight"], "compressing");
+        assert.equal(r.headers["x-sigma-preflight"], "compressing");
         assert.ok(r.body.includes("event: error"), "SSE error event delivered in-band");
         assert.ok(r.body.includes("preflight_compress_failed"), "structured error code preserved in-band");
         assert.ok(r.body.includes("rate limited") || r.body.includes("429"), "the cause is named");
@@ -263,7 +263,7 @@ test("#568: Responses protocol + slow preflight 429 → early-committed 200, in-
     try {
         const input = bigConversation().map((m) => ({ type: "message", role: m.role, content: m.content }));
         const r = await timedPost(
-            `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`,
+            `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`,
             { "content-type": "application/json", "x-acp-session": "hold-resp-429-sess" },
             JSON.stringify({ model: "gpt-resp", stream: true, session_id: "hold-resp-429-sess", instructions: "You are the test coding agent.", input }),
         );
@@ -320,13 +320,13 @@ test("#568: non-stream + slow preflight → early 200 + whitespace keep-alive, t
 
     try {
         const r = await timedPost(
-            `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`,
+            `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`,
             { "content-type": "application/json", "x-acp-session": "hold-json-ok-sess" },
             JSON.stringify({ model: "gpt-small", max_tokens: 1024, messages: bigConversation() }),
         );
         assert.equal(r.status, 200);
         assert.equal(String(r.headers["content-type"]), "application/json");
-        assert.equal(r.headers["x-bili-preflight"], "compressing");
+        assert.equal(r.headers["x-sigma-preflight"], "compressing");
         assert.ok(r.tHeaderMs < SLOW_MS, `headers arrived before summarization finished (${r.tHeaderMs}ms)`);
         assert.ok(r.tEndMs >= SLOW_MS, `the response waited for the slow preflight (${r.tEndMs}ms)`);
         assert.ok(r.body.startsWith(" "), "whitespace keep-alive precedes the JSON body");

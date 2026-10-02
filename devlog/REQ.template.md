@@ -1,7 +1,7 @@
 # REQ - <Title>
 
 - Task ID: `<YYYY-MM-DD_short-title>`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: <YYYY-MM-DD>
 - Status: Draft | InProgress | Done | Rollback
 - Priority: P0 | P1 | P2

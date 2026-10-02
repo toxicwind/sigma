@@ -164,5 +164,5 @@ test("acp_status renders the ACTIVE SURFACE line from the session's pack stamp",
     const report = handleAcpStatus({}, stamped);
     const line = report.split("\n").find((l) => l.startsWith("ACTIVE SURFACE:"));
     assert.ok(line, "ACTIVE SURFACE line present once stamped");
-    assert.ok(line!.startsWith("ACTIVE SURFACE: pack=lean | host=billion-context "), `host identity rendered (got: ${line})`);
+    assert.ok(line!.startsWith("ACTIVE SURFACE: pack=lean | host=sigma "), `host identity rendered (got: ${line})`);
 });

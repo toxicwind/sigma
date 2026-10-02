@@ -43,7 +43,7 @@ test("resolveCompressSurface: unknown names fall back to identity", () => {
 });
 
 test("resolveCompressSurface: file packs load from project dir, shadowing builtin", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-pack-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-pack-"));
     try {
         writeFileSync(
             path.join(dir, "lean.json"),
@@ -58,7 +58,7 @@ test("resolveCompressSurface: file packs load from project dir, shadowing builti
 });
 
 test("resolveCompressSurface: nudge/prompt section overrides flow into the kernel builders", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-pack2-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-pack2-"));
     try {
         writeFileSync(
             path.join(dir, "quiet.json"),
@@ -87,7 +87,7 @@ test("resolveCompressSurfaceDetailed: pack identity travels with the surface", (
 });
 
 test("resolveCompressSurfaceDetailed: file pack reports the requested name and its version", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-pack-meta-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-pack-meta-"));
     try {
         writeFileSync(
             path.join(dir, "versioned.json"),

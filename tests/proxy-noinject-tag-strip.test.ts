@@ -134,7 +134,7 @@ function cleanOpenAiContent(raw: string): string {
 test("#460: non-injected anthropic SSE — echoed render tags stripped, prose intact", async () => {
     const h = await startHarness({ injectTool: false, injectNudge: false }, [tagEchoAnthropicScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-anth" },
             body: JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, system: "You are a test assistant.", messages: [{ role: "user", content: "hello" }] }),
@@ -163,7 +163,7 @@ test("#460: non-injected anthropic SSE without tags — byte-identical passthrou
     ];
     const h = await startHarness({ injectTool: false, injectNudge: false }, [script]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-anth-clean" },
             body: JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, system: "s", messages: [{ role: "user", content: "hello" }] }),
@@ -180,7 +180,7 @@ test("#460: non-injected anthropic SSE without tags — byte-identical passthrou
 test("#460: openai title-gen (max_tokens<=200) SSE — echoed render tags stripped, [DONE] intact", async () => {
     const h = await startHarness({ injectTool: true, injectNudge: true }, [tagEchoOpenAiScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-openai-title" },
             body: JSON.stringify({ model: "gpt-test", max_tokens: 100, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -252,7 +252,7 @@ function cleanResponsesScript(): string[] {
 test("#460 residual: native Responses compaction (resetAfterSuccess) SSE — echoed render tags stripped, response.completed intact", async () => {
     const h = await startHarness({ injectTool: true, injectNudge: true }, [tagEchoResponsesScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-resp-compact" },
             body: JSON.stringify({ model: "gpt-test", stream: true, session_id: "noinject-resp-compact", instructions: "You are a test agent.", input: [{ type: "message", role: "user", content: "hello" }, { type: "compaction_trigger" }] }),
@@ -272,7 +272,7 @@ test("#460 residual: native Responses compaction (resetAfterSuccess) SSE — ech
 test("#460 residual: tag-free Responses compaction SSE — byte-identical passthrough", async () => {
     const h = await startHarness({ injectTool: true, injectNudge: true }, [cleanResponsesScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-resp-clean" },
             body: JSON.stringify({ model: "gpt-test", stream: true, session_id: "noinject-resp-clean", instructions: "s", input: [{ type: "message", role: "user", content: "hello" }, { type: "compaction_trigger" }] }),
@@ -291,7 +291,7 @@ test("#460 residual: non-injected NON-STREAMING openai JSON — echoed render ta
     const completion = { id: "chatcmpl_ninj_json", object: "chat.completion", created: 1, model: "gpt-test", choices: [{ index: 0, message: { role: "assistant", content: full }, finish_reason: "stop" }] };
     const h = await startHarness({ injectTool: true, injectNudge: true }, [[JSON.stringify(completion)]], true);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-openai-json" },
             body: JSON.stringify({ model: "gpt-test", max_tokens: 100, stream: false, messages: [{ role: "user", content: "hello" }] }),
@@ -317,7 +317,7 @@ test("#460 residual: non-injected NON-STREAMING responses JSON — echoed render
     const response = { id: "resp_ninj_json", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: full }] }] };
     const h = await startHarness({ injectTool: true, injectNudge: true }, [[JSON.stringify(response)]], true);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/responses`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-resp-json" },
             body: JSON.stringify({ model: "gpt-test", stream: false, session_id: "noinject-resp-json", input: [{ type: "message", role: "user", content: "hello" }] }),
@@ -341,7 +341,7 @@ test("#460 residual: tag-free NON-STREAMING JSON — byte-identical passthrough"
     const completion = { id: "chatcmpl_ninj_clean", object: "chat.completion", created: 1, model: "gpt-test", choices: [{ index: 0, message: { role: "assistant", content: "plain 5 < 6 summary" }, finish_reason: "stop" }] };
     const h = await startHarness({ injectTool: true, injectNudge: true }, [[JSON.stringify(completion)]], true);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-openai-clean" },
             body: JSON.stringify({ model: "gpt-test", max_tokens: 100, stream: false, messages: [{ role: "user", content: "hello" }] }),
@@ -370,7 +370,7 @@ function tagEchoOpenAiSplitScript(): string[] {
 test("#468: openai SSE with the render OPEN tag split across chunks — stripped, not echoed", async () => {
     const h = await startHarness({ injectTool: false, injectNudge: false }, [tagEchoOpenAiSplitScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-openai-split" },
             body: JSON.stringify({ model: "gpt-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -388,10 +388,10 @@ test("#468: openai SSE with the render OPEN tag split across chunks — stripped
 });
 
 test("#475 G3: fake-completion buffering + streaming request answered with JSON — stripped body still delivered", async () => {
-    // With BILI_FAKE_COMPLETION_RETRIES>0 and a streaming request, the #378
+    // With SIGMA_FAKE_COMPLETION_RETRIES>0 and a streaming request, the #378
     // buffering block consumes upstream.body before the ladder; the G3 JSON
     // strip branch must read responseBody, not the drained upstream.body.
-    process.env.BILI_FAKE_COMPLETION_RETRIES = "1";
+    process.env.SIGMA_FAKE_COMPLETION_RETRIES = "1";
     const full = `title: ${TAG("m00009", 12)}summary ok`;
     const completion = { id: "chatcmpl_fc_json", object: "chat.completion", created: 1, model: "gpt-test", choices: [{ index: 0, message: { role: "assistant", content: full }, finish_reason: "stop" }] };
     const h = await startHarness({ injectTool: false, injectNudge: false }, [[JSON.stringify(completion)]], true);
@@ -399,7 +399,7 @@ test("#475 G3: fake-completion buffering + streaming request answered with JSON 
         // Not a side request (budget > 200) so the fake-completion buffering
         // block runs — this test guards against it draining upstream.body
         // before the G3 JSON strip branch reads responseBody.
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "noinject-fc-json" },
             body: JSON.stringify({ model: "gpt-test", max_tokens: 4096, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -411,7 +411,7 @@ test("#475 G3: fake-completion buffering + streaming request answered with JSON 
         assert.equal(parsed.choices?.[0]?.message?.content, "title: summary ok", `unexpected body: ${JSON.stringify(bodyText)}`);
         assert.equal(bodyText.includes(OPEN_MARK), false, "client body leaked a render open tag");
     } finally {
-        delete process.env.BILI_FAKE_COMPLETION_RETRIES;
+        delete process.env.SIGMA_FAKE_COMPLETION_RETRIES;
         await h.close();
     }
 });

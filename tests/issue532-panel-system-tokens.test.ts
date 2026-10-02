@@ -192,12 +192,12 @@ test("#532 anthropic plugin session: panel counts outbound system+tools (SysProm
         const conv = "issue532-anthropic";
         const clientSystem = "S".repeat(80_000);
         const tools = [{ name: "big_tool", description: "D".repeat(40_000), input_schema: { type: "object" } }];
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
             method: "POST",
             headers: {
                 "content-type": "application/json",
-                "x-bili-plugin": "pi-plugin/0.0.1",
-                "x-bili-plugin-conversation": conv,
+                "x-sigma-plugin": "pi-plugin/0.0.1",
+                "x-sigma-plugin-conversation": conv,
             },
             body: JSON.stringify({
                 model: "claude-test",
@@ -233,12 +233,12 @@ test("#532 openai plugin session: panel counts injected system+tools (SysPrompt 
         const conv = "issue532-openai";
         const clientSystem = "O".repeat(80_000);
         const tools = [{ type: "function", function: { name: "big_tool", description: "E".repeat(40_000), parameters: { type: "object" } } }];
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: {
                 "content-type": "application/json",
-                "x-bili-plugin": "pi-plugin/0.0.1",
-                "x-bili-plugin-conversation": conv,
+                "x-sigma-plugin": "pi-plugin/0.0.1",
+                "x-sigma-plugin-conversation": conv,
             },
             body: JSON.stringify({
                 model: "gpt-test",

@@ -16,7 +16,7 @@ import { resolveProxyDecision } from "../src/upstream-proxy.ts";
 
 // Hermetic state dir — the proxy-starting marker (#707) must never touch the
 // developer's real one.
-process.env.XDG_STATE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1012-state-"));
+process.env.XDG_STATE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1012-state-"));
 
 function makeFakeChild(pid: number): SpawnChild {
     const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
@@ -37,7 +37,7 @@ function makeFakeChild(pid: number): SpawnChild {
 
 function withSandboxEnv(mutate: (env: NodeJS.ProcessEnv) => void, run: () => void): void {
     const prev = { ...process.env };
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1012-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1012-home-"));
     process.env.HOME = home;
     process.env.XDG_CONFIG_HOME = path.join(home, ".config");
     process.env.XDG_CACHE_HOME = path.join(home, ".cache");
@@ -51,7 +51,7 @@ function withSandboxEnv(mutate: (env: NodeJS.ProcessEnv) => void, run: () => voi
     }
 }
 
-test("captureInheritedProxyEnv: forwards user proxy vars under BILI_INHERITED_* (upper wins, blanks skipped)", () => {
+test("captureInheritedProxyEnv: forwards user proxy vars under SIGMA_INHERITED_* (upper wins, blanks skipped)", () => {
     const captured = captureInheritedProxyEnv({
         https_proxy: "http://127.0.0.1:7897",
         HTTP_PROXY: "http://upper:8080",
@@ -59,13 +59,13 @@ test("captureInheritedProxyEnv: forwards user proxy vars under BILI_INHERITED_* 
         all_proxy: "   ",
     });
     assert.deepEqual(captured, {
-        BILI_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
-        BILI_INHERITED_HTTP_PROXY: "http://upper:8080",
+        SIGMA_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
+        SIGMA_INHERITED_HTTP_PROXY: "http://upper:8080",
     });
     assert.deepEqual(captureInheritedProxyEnv({}), {});
 });
 
-test("ensureProxyRunning: proxy child gets BILI_INHERITED_* but NOT the raw proxy vars (#1012)", async () => {
+test("ensureProxyRunning: proxy child gets SIGMA_INHERITED_* but NOT the raw proxy vars (#1012)", async () => {
     let spawnedEnv: NodeJS.ProcessEnv | undefined;
     let spawned = false;
     const spawnImpl: SpawnFn = (_cmd, _args, options) => {
@@ -100,8 +100,8 @@ test("ensureProxyRunning: proxy child gets BILI_INHERITED_* but NOT the raw prox
                 spawnImpl,
                 fetchImpl: async () => ({ ok: true }),
                 readInstanceFile: () =>
-                    spawned && spawnedEnv?.BILI_LAUNCH_TOKEN
-                        ? instance(String(spawnedEnv.BILI_LAUNCH_TOKEN))
+                    spawned && spawnedEnv?.SIGMA_LAUNCH_TOKEN
+                        ? instance(String(spawnedEnv.SIGMA_LAUNCH_TOKEN))
                         : undefined,
                 sleep: () => Promise.resolve(),
             },
@@ -109,8 +109,8 @@ test("ensureProxyRunning: proxy child gets BILI_INHERITED_* but NOT the raw prox
         assert.ok(handle.origin.includes("42422"));
         assert.ok(spawnedEnv, "proxy child was spawned");
         // forwarded for aux egress...
-        assert.equal(spawnedEnv.BILI_INHERITED_HTTPS_PROXY, "http://127.0.0.1:7897");
-        assert.equal(spawnedEnv.BILI_INHERITED_NO_PROXY, "localhost,.corp");
+        assert.equal(spawnedEnv.SIGMA_INHERITED_HTTPS_PROXY, "http://127.0.0.1:7897");
+        assert.equal(spawnedEnv.SIGMA_INHERITED_NO_PROXY, "localhost,.corp");
         // ...while the strip still holds for the child itself (e1c6c92)
         assert.equal(spawnedEnv.https_proxy, undefined);
         assert.equal(spawnedEnv.HTTPS_PROXY, undefined);
@@ -121,12 +121,12 @@ test("ensureProxyRunning: proxy child gets BILI_INHERITED_* but NOT the raw prox
     }
 });
 
-test("loadOptions: BILI_INHERITED_* fills auxProxyFallback only, own env tier still wins", () => {
+test("loadOptions: SIGMA_INHERITED_* fills auxProxyFallback only, own env tier still wins", () => {
     withSandboxEnv(() => {}, () => {
         const opts = loadOptions({
             ACP_PORT: "42422",
-            BILI_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
-            BILI_INHERITED_NO_PROXY: "localhost,.corp",
+            SIGMA_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
+            SIGMA_INHERITED_NO_PROXY: "localhost,.corp",
         });
         // model-egress fallback keeps the clean-env semantics (e1c6c92)
         assert.equal(opts.proxyFallback?.httpsProxy, undefined);
@@ -140,12 +140,12 @@ test("loadOptions: BILI_INHERITED_* fills auxProxyFallback only, own env tier st
     withSandboxEnv((env) => {
         env.HTTPS_PROXY = "http://own-env:1";
     }, () => {
-        // own env wins over inherited for the aux tier too (manual `bili start`
+        // own env wins over inherited for the aux tier too (manual `sigma start`
         // in a proxy shell keeps today's behavior; inherited is launcher-only)
         const opts = loadOptions({
             ACP_PORT: "42422",
             HTTPS_PROXY: "http://own-env:1",
-            BILI_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
+            SIGMA_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
         });
         assert.equal(opts.proxyFallback?.httpsProxy, "http://own-env:1");
         assert.equal(opts.auxProxyFallback?.httpsProxy, "http://own-env:1");
@@ -158,7 +158,7 @@ test("default config (unset mode) keeps the inherited aux tier reachable — exp
     withSandboxEnv(() => {}, () => {
         const opts = loadOptions({
             ACP_PORT: "42422",
-            BILI_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
+            SIGMA_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
         });
         assert.equal(opts.proxy, "");
         assert.equal(opts.proxyFallback?.explicitDirect, true); // model path: default-direct unchanged
@@ -174,8 +174,8 @@ test("default config (unset mode) keeps the inherited aux tier reachable — exp
     withSandboxEnv(() => {}, () => {
         const opts = loadOptions({
             ACP_PORT: "42422",
-            BILI_UPSTREAM_PROXY_MODE: "direct",
-            BILI_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
+            SIGMA_UPSTREAM_PROXY_MODE: "direct",
+            SIGMA_INHERITED_HTTPS_PROXY: "http://127.0.0.1:7897",
         });
         const aux = resolveProxyDecision({}, opts.proxy, "https://chatgpt.com/backend-api/ps/mcp", opts.auxProxyFallback);
         assert.equal(aux.source, "direct");
@@ -209,7 +209,7 @@ test("resolveProxyDecision: inherited tier routes blind-tunnel aux traffic, mode
     const direct = resolveProxyDecision({}, "", target, { ...auxProxyFallback, explicitDirect: true });
     assert.equal(direct.source, "direct");
 
-    // a value pointing at bili's own port is dropped (loop guard), not used
+    // a value pointing at sigma's own port is dropped (loop guard), not used
     const loop = resolveProxyDecision({}, undefined, target, {
         ...proxyFallback,
         httpsProxy: "http://127.0.0.1:42422",

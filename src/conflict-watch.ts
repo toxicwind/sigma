@@ -41,7 +41,7 @@ function fmtTime(at: number): string {
 
 export function formatConflictSection(events: ConflictEvent[]): string[] {
     const lines: string[] = [];
-    lines.push(`COMPRESSION CONFLICTS — ${events.length} event(s) in this session. Two compressors on one conversation (bili + a third-party compression plugin or client native compaction) double-compress and corrupt message refs:`);
+    lines.push(`COMPRESSION CONFLICTS — ${events.length} event(s) in this session. Two compressors on one conversation (sigma + a third-party compression plugin or client native compaction) double-compress and corrupt message refs:`);
     for (const e of events.slice(-10)) {
         lines.push(`  [${fmtTime(e.at)}] ${e.kind} — ${e.detail}`);
     }

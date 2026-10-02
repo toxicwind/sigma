@@ -6,7 +6,7 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 
 import { createCore, createInitialState, defaultConfig, defaultCountTokens, type CoreMessage } from "acp-kernel";
-import { anthropicToCore, coreToAnthropic, type AnthropicRequestBody, type BiliMessage } from "acp-kernel/wire";
+import { anthropicToCore, coreToAnthropic, type AnthropicRequestBody, type SigmaMessage } from "acp-kernel/wire";
 import { startServer, countSystemAndToolsTokens, projectThinkingMass, type ProxyOptions } from "../src/server.ts";
 import { estimateCoreMessages } from "../src/preflight.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
@@ -24,15 +24,15 @@ import { _resetPluginStateForTest } from "../src/plugin.ts";
 // ---- unit: projection arithmetic -------------------------------------------
 
 let seq = 0;
-function sigOnly(sigLen: number): BiliMessage {
+function sigOnly(sigLen: number): SigmaMessage {
     seq++;
     return { id: `sig-${seq}`, role: "assistant", contentType: "reasoning", thinkingSignature: "s".repeat(sigLen) };
 }
-function visibleThinking(textLen: number): BiliMessage {
+function visibleThinking(textLen: number): SigmaMessage {
     seq++;
     return { id: `vis-${seq}`, role: "assistant", contentType: "reasoning", text: "t".repeat(textLen), thinkingSignature: "s".repeat(500) };
 }
-function textMsg(textLen: number): BiliMessage {
+function textMsg(textLen: number): SigmaMessage {
     seq++;
     return { id: `txt-${seq}`, role: "user", contentType: "text", text: "x".repeat(textLen) };
 }
@@ -289,12 +289,12 @@ test("#1320 pipeline: provider-measured thinking mass reaches the context gauge"
         const system = "S".repeat(20_000);
         const tools = [{ name: "bash", description: "D".repeat(4000), input_schema: { type: "object" } }];
         const post = async (body: Record<string, unknown>): Promise<void> => {
-            const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+            const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
-                    "x-bili-plugin": "pi-plugin/0.0.1",
-                    "x-bili-plugin-conversation": conv,
+                    "x-sigma-plugin": "pi-plugin/0.0.1",
+                    "x-sigma-plugin-conversation": conv,
                 },
                 body: JSON.stringify(body),
             });

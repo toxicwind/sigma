@@ -21,11 +21,11 @@ import {
 // ensureProxyRunning coordinates across processes via <state>/proxy-starting (#707)
 // — point the state dir at a throwaway so these tests never touch the real one.
 const prevXdgState = process.env.XDG_STATE_HOME;
-process.env.XDG_STATE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1292-state-"));
+process.env.XDG_STATE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1292-state-"));
 
 const inheritedLaunchVars = [
-    "BILI_CLIENT_BIN",
-    "BILLION_CONTEXT_PROXY",
+    "SIGMA_CLIENT_BIN",
+    "SIGMA_PROXY",
     "NODE_EXTRA_CA_CERTS",
     "SSL_CERT_FILE",
     "HTTPS_PROXY",
@@ -49,7 +49,7 @@ function makeFakeChild(pid: number): SpawnChild {
     };
 }
 
-const MANAGED_BASE_URL = "http://127.0.0.1:8788/bili/https://api.anthropic.com";
+const MANAGED_BASE_URL = "http://127.0.0.1:8788/sigma/https://api.anthropic.com";
 
 test("#1292 buildClaudeSettingsArg: non-win32 keeps the inline JSON (pre-fix behavior preserved)", () => {
     for (const platform of ["linux", "darwin", "freebsd"] as const) {
@@ -91,11 +91,11 @@ function writeNativeInstallHome(home: string): void {
 }
 
 test("#1292 runLaunch claude simulated win32: --settings crosses the .cmd shim boundary as a parseable-JSON file", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1292-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1292-home-"));
     const prevHome = process.env.HOME;
     const prevUserProfile = process.env.USERPROFILE;
     const prevComspec = process.env.COMSPEC;
-    const prevPlugin = process.env.BILI_LAUNCHER_PLUGIN;
+    const prevPlugin = process.env.SIGMA_LAUNCHER_PLUGIN;
     const prevExit = process.exit;
 
     writeNativeInstallHome(home);
@@ -103,9 +103,9 @@ test("#1292 runLaunch claude simulated win32: --settings crosses the .cmd shim b
     fs.writeFileSync(fakeClaude, "");
     process.env.HOME = home;
     if (prevUserProfile !== undefined) process.env.USERPROFILE = home;
-    process.env.BILI_CLIENT_BIN = fakeClaude;
+    process.env.SIGMA_CLIENT_BIN = fakeClaude;
     process.env.COMSPEC = "C:\\Windows\\System32\\cmd.exe";
-    process.env.BILI_LAUNCHER_PLUGIN = "0";
+    process.env.SIGMA_LAUNCHER_PLUGIN = "0";
     process.exit = (() => undefined) as typeof process.exit;
 
     const seen: ShimSpawnCapture[] = [];
@@ -143,7 +143,7 @@ test("#1292 runLaunch claude simulated win32: --settings crosses the .cmd shim b
         assert.equal(seen.length, 1, "exactly one client spawn through comspec");
         const cap = seen[0];
         assert.equal(cap.env.ANTHROPIC_BASE_URL?.startsWith("http://127.0.0.1:"), true, JSON.stringify(cap.env.ANTHROPIC_BASE_URL));
-        assert.match(cap.env.ANTHROPIC_BASE_URL ?? "", /^http:\/\/127\.0\.0\.1:\d+\/bili\/https:\/\/api\.anthropic\.com$/);
+        assert.match(cap.env.ANTHROPIC_BASE_URL ?? "", /^http:\/\/127\.0\.0\.1:\d+\/sigma\/https:\/\/api\.anthropic\.com$/);
         assert.ok(cap.line.includes(fakeClaude), `shim path in comspec line: ${cap.line}`);
         assert.ok(cap.line.startsWith('"') && cap.line.endsWith('"'), "outer pair for cmd /s");
         assert.ok(cap.settingsMatch, `comspec line carries --settings: ${cap.line}`);
@@ -161,8 +161,8 @@ test("#1292 runLaunch claude simulated win32: --settings crosses the .cmd shim b
         else process.env.USERPROFILE = prevUserProfile;
         if (prevComspec === undefined) delete process.env.COMSPEC;
         else process.env.COMSPEC = prevComspec;
-        if (prevPlugin === undefined) delete process.env.BILI_LAUNCHER_PLUGIN;
-        else process.env.BILI_LAUNCHER_PLUGIN = prevPlugin;
+        if (prevPlugin === undefined) delete process.env.SIGMA_LAUNCHER_PLUGIN;
+        else process.env.SIGMA_LAUNCHER_PLUGIN = prevPlugin;
         if (prevXdgState === undefined) delete process.env.XDG_STATE_HOME;
         else process.env.XDG_STATE_HOME = prevXdgState;
         fs.rmSync(home, { recursive: true, force: true });
@@ -170,10 +170,10 @@ test("#1292 runLaunch claude simulated win32: --settings crosses the .cmd shim b
 });
 
 test("#1292 runLaunch claude posix: --settings stays inline JSON, no temp file created", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1292-posix-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1292-posix-"));
     const prevHome = process.env.HOME;
     const prevUserProfile = process.env.USERPROFILE;
-    const prevPlugin = process.env.BILI_LAUNCHER_PLUGIN;
+    const prevPlugin = process.env.SIGMA_LAUNCHER_PLUGIN;
     const prevExit = process.exit;
 
     writeNativeInstallHome(home);
@@ -181,8 +181,8 @@ test("#1292 runLaunch claude posix: --settings stays inline JSON, no temp file c
     fs.writeFileSync(fakeClaude, "");
     process.env.HOME = home;
     if (prevUserProfile !== undefined) process.env.USERPROFILE = home;
-    process.env.BILI_CLIENT_BIN = fakeClaude;
-    process.env.BILI_LAUNCHER_PLUGIN = "0";
+    process.env.SIGMA_CLIENT_BIN = fakeClaude;
+    process.env.SIGMA_LAUNCHER_PLUGIN = "0";
     process.exit = (() => undefined) as typeof process.exit;
 
     const seen: { args: string[]; env: NodeJS.ProcessEnv }[] = [];
@@ -203,7 +203,7 @@ test("#1292 runLaunch claude posix: --settings stays inline JSON, no temp file c
         return makeFakeChild(42422);
     };
 
-    const tmpBefore = new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("bili-claude-settings-")));
+    const tmpBefore = new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("sigma-claude-settings-")));
     try {
         await runLaunch(
             { client: "claude", clientArgs: [], overrides: {} },
@@ -216,15 +216,15 @@ test("#1292 runLaunch claude posix: --settings stays inline JSON, no temp file c
         const v = args[i + 1];
         assert.ok(v.startsWith('{"env"'), `inline JSON preserved on posix: ${v}`);
         assert.deepEqual(JSON.parse(v), { env: { ANTHROPIC_BASE_URL: env.ANTHROPIC_BASE_URL } });
-        const tmpAfter = new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("bili-claude-settings-")));
+        const tmpAfter = new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith("sigma-claude-settings-")));
         for (const f of tmpAfter) assert.ok(tmpBefore.has(f), `no settings temp file created on posix: ${f}`);
     } finally {
         process.exit = prevExit;
         process.env.HOME = prevHome;
         if (prevUserProfile === undefined) delete process.env.USERPROFILE;
         else process.env.USERPROFILE = prevUserProfile;
-        if (prevPlugin === undefined) delete process.env.BILI_LAUNCHER_PLUGIN;
-        else process.env.BILI_LAUNCHER_PLUGIN = prevPlugin;
+        if (prevPlugin === undefined) delete process.env.SIGMA_LAUNCHER_PLUGIN;
+        else process.env.SIGMA_LAUNCHER_PLUGIN = prevPlugin;
         if (prevXdgState === undefined) delete process.env.XDG_STATE_HOME;
         else process.env.XDG_STATE_HOME = prevXdgState;
         fs.rmSync(home, { recursive: true, force: true });
@@ -232,7 +232,7 @@ test("#1292 runLaunch claude posix: --settings stays inline JSON, no temp file c
 });
 
 test("#1292 real win32: settings file path survives the actual cmd.exe + batch shim round-trip", { skip: process.platform !== "win32" }, async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "bili-1292-wt-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-1292-wt-"));
     try {
         const shimDir = path.join(root, "bin dir");
         fs.mkdirSync(shimDir, { recursive: true });

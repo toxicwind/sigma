@@ -26,7 +26,7 @@ import { pluginInstall } from "../src/plugin-install.ts";
 import { setLogCapture } from "../src/logger.ts";
 
 function tmpStateDir(): { dir: string; restore: () => void } {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-inst-state-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-inst-state-"));
     const prev = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = dir;
     return {
@@ -119,7 +119,7 @@ test("starting marker: claim is exclusive, read validates, clear is token-checke
 test("starting marker: garbage file reads as absent but still blocks a claim (#707)", () => {
     const st = tmpStateDir();
     try {
-        fs.mkdirSync(path.join(st.dir, "billion-context"), { recursive: true });
+        fs.mkdirSync(path.join(st.dir, "sigma"), { recursive: true });
         fs.writeFileSync(startingMarkerPath(), "{{{garbage");
         assert.equal(readStartingMarker(), undefined);
         fs.writeFileSync(startingMarkerPath(), JSON.stringify({ token: "", pid: 1, startedAt: 1 }));
@@ -136,11 +136,11 @@ test("starting marker: garbage file reads as absent but still blocks a claim (#7
 
 test("resolveProxyOrigin: env wins, JSON file parsed, default fallback", () => {
     const st = tmpStateDir();
-    const prevEnv = process.env.BILI_MCP_PROXY;
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
     try {
-        process.env.BILI_MCP_PROXY = "http://10.1.1.1:1";
+        process.env.SIGMA_MCP_PROXY = "http://10.1.1.1:1";
         assert.equal(resolveProxyOrigin(), "http://10.1.1.1:1");
-        delete process.env.BILI_MCP_PROXY;
+        delete process.env.SIGMA_MCP_PROXY;
         atomicWriteInstanceFile(sampleInstance({ origin: "http://127.0.0.1:4242" }));
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:4242");
         fs.writeFileSync(instanceFilePath(), "http://127.0.0.1:7777");
@@ -148,15 +148,15 @@ test("resolveProxyOrigin: env wins, JSON file parsed, default fallback", () => {
         fs.writeFileSync(instanceFilePath(), "garbage");
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8787");
     } finally {
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
         st.restore();
     }
 });
 
 test("resolveProxyOrigin: dead-pid record falls back to default origin, live pid and pid 0 trusted (#405)", () => {
     const st = tmpStateDir();
-    const prevEnv = process.env.BILI_MCP_PROXY;
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
     const origStderrWrite = process.stderr.write;
     const stderrOut: string[] = [];
     process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -164,14 +164,14 @@ test("resolveProxyOrigin: dead-pid record falls back to default origin, live pid
         return true;
     }) as typeof process.stderr.write;
     try {
-        delete process.env.BILI_MCP_PROXY;
+        delete process.env.SIGMA_MCP_PROXY;
 
         atomicWriteInstanceFile(sampleInstance({ origin: "http://127.0.0.1:4242", pid: deadPid() }));
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8787", "dead-pid record skipped");
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:8787", "re-resolves on every call");
         const notes = stderrOut.filter((l) => l.includes("is not running"));
         assert.equal(notes.length, 1, "one-time stderr note");
-        assert.match(notes[0], /BILI_MCP_PROXY/);
+        assert.match(notes[0], /SIGMA_MCP_PROXY/);
 
         atomicWriteInstanceFile(sampleInstance({ origin: "http://127.0.0.1:4242" }));
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:4242", "live pid trusted");
@@ -180,8 +180,8 @@ test("resolveProxyOrigin: dead-pid record falls back to default origin, live pid
         assert.equal(resolveProxyOrigin(), "http://127.0.0.1:4242", "pid 0 makes no liveness claim");
     } finally {
         process.stderr.write = origStderrWrite;
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
         st.restore();
     }
 });
@@ -208,8 +208,8 @@ test("instance registry: registers, warns on a second live instance, prunes dead
             (msg) => warnings.push(msg),
         );
         assert.equal(warnings.length, 1);
-        assert.match(warnings[0], /another bili instance is running/);
-        const regDir = path.join(st.dir, "billion-context", "instances");
+        assert.match(warnings[0], /another sigma instance is running/);
+        const regDir = path.join(st.dir, "sigma", "instances");
         const markerNames = () => fs.readdirSync(regDir).filter((n) => n.endsWith(".json")).sort();
         assert.deepEqual(markerNames(), ["a.json", "b.json"]);
 
@@ -241,7 +241,7 @@ test("instance registry: #394 warning is lane-aware — cross-lane silent, same-
             (msg) => warnings.push(msg),
         );
         assert.equal(warnings.length, 1, "same-lane coexistence warns once (against a)");
-        assert.match(warnings[0], /another bili instance is running/);
+        assert.match(warnings[0], /another sigma instance is running/);
         assert.match(warnings[0], /lane "pi"/);
         registerInstanceAndWarn(
             { instanceId: "d", pid: process.pid, port: 4, origin: "http://127.0.0.1:4", startedAt: 4 },
@@ -259,7 +259,7 @@ test("instance registry folds a live legacy instances.json entry read-only (no r
     const warnings: string[] = [];
     setLogCapture((_level, msg) => warnings.push(msg));
     try {
-        const stateRoot = path.join(st.dir, "billion-context");
+        const stateRoot = path.join(st.dir, "sigma");
         fs.mkdirSync(stateRoot, { recursive: true });
         fs.writeFileSync(
             path.join(stateRoot, "instances.json"),
@@ -270,7 +270,7 @@ test("instance registry folds a live legacy instances.json entry read-only (no r
             (msg) => warnings.push(msg),
         );
         assert.equal(warnings.length, 1);
-        assert.match(warnings[0], /another bili instance is running/);
+        assert.match(warnings[0], /another sigma instance is running/);
         assert.ok(fs.existsSync(path.join(stateRoot, "instances", "new.json")));
         const legacyAfter = JSON.parse(fs.readFileSync(path.join(stateRoot, "instances.json"), "utf8")) as { instances: { instanceId: string }[] };
         assert.deepEqual(legacyAfter.instances.map((e) => e.instanceId), ["legacy"]);
@@ -285,7 +285,7 @@ test("plugin-conversations: clean state does not rewrite the file; corrupt file 
     const logged: string[] = [];
     setLogCapture((_level, msg) => logged.push(msg));
     try {
-        const file = () => path.join(st.dir, "billion-context", "plugin-conversations.json");
+        const file = () => path.join(st.dir, "sigma", "plugin-conversations.json");
         fs.mkdirSync(path.dirname(file()), { recursive: true });
         fs.writeFileSync(file(), JSON.stringify({ "c1": { sessionId: "s1", lastSeen: 5 } }));
         loadConversations();
@@ -311,7 +311,7 @@ test("plugin-conversations: clean state does not rewrite the file; corrupt file 
 });
 
 test("unpackDeadProxyUrlsInFile: dead-origin wraps unpacked, live-origin wraps kept", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-unpack-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-unpack-"));
     const st = tmpStateDir();
     try {
         const models = path.join(dir, "models.yml");
@@ -320,9 +320,9 @@ test("unpackDeadProxyUrlsInFile: dead-origin wraps unpacked, live-origin wraps k
             [
                 "providers:",
                 "  relay:",
-                "    baseUrl: http://127.0.0.1:8787/bili/https://ps.air-outer.com/v1",
+                "    baseUrl: http://127.0.0.1:8787/sigma/https://ps.air-outer.com/v1",
                 "  live:",
-                "    baseUrl: http://127.0.0.1:9001/bili/https://keep.example.com/v1",
+                "    baseUrl: http://127.0.0.1:9001/sigma/https://keep.example.com/v1",
                 "",
             ].join("\n"),
         );
@@ -334,7 +334,7 @@ test("unpackDeadProxyUrlsInFile: dead-origin wraps unpacked, live-origin wraps k
         assert.equal(changed, 1);
         const out = fs.readFileSync(models, "utf8");
         assert.match(out, /baseUrl: https:\/\/ps\.air-outer\.com\/v1/, "dead-origin wrap unpacked");
-        assert.match(out, /baseUrl: http:\/\/127\.0\.0\.1:9001\/bili\/https:\/\/keep\.example\.com\/v1/, "live-origin wrap kept");
+        assert.match(out, /baseUrl: http:\/\/127\.0\.0\.1:9001\/sigma\/https:\/\/keep\.example\.com\/v1/, "live-origin wrap kept");
     } finally {
         st.restore();
         fs.rmSync(dir, { recursive: true, force: true });
@@ -342,12 +342,12 @@ test("unpackDeadProxyUrlsInFile: dead-origin wraps unpacked, live-origin wraps k
 });
 
 test("dsh overlay: nested generated settings.yaml is never promoted into the real home (#410)", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-nest-"));
-    const overlay = `${home}-bili`;
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-nest-"));
+    const overlay = `${home}-sigma`;
     fs.writeFileSync(path.join(home, "settings.yaml"), ["llm-pi-ai:", "  providers:", "    a:", "      baseURL: http://example.com/v1"].join("\n"));
     fs.mkdirSync(path.join(home, "sessions"), { recursive: true });
     fs.mkdirSync(path.join(overlay, "sessions"), { recursive: true });
-    fs.writeFileSync(path.join(overlay, "sessions", "settings.yaml"), "llm-pi-ai:\n  providers:\n    poisoned:\n      baseURL: http://127.0.0.1:8787/bili/http://evil.example.com/v1\n");
+    fs.writeFileSync(path.join(overlay, "sessions", "settings.yaml"), "llm-pi-ai:\n  providers:\n    poisoned:\n      baseURL: http://127.0.0.1:8787/sigma/http://evil.example.com/v1\n");
     let tmp: string | undefined;
     try {
         tmp = prepareDshHome(home, "http://127.0.0.1:8787", [{ key: "dsh-1", realUpstream: "http://example.com/v1" }]);
@@ -367,12 +367,12 @@ test("dsh overlay: nested generated settings.yaml is never promoted into the rea
 test("plugin install: refuses to freeze a dead or missing proxy origin (#403)", () => {
     const st = tmpStateDir();
     const prevCodex = process.env.CODEX_HOME;
-    const prevEnv = process.env.BILI_MCP_PROXY;
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-codex-home-"));
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-codex-home-"));
     process.env.CODEX_HOME = home;
-    delete process.env.BILI_MCP_PROXY;
+    delete process.env.SIGMA_MCP_PROXY;
     try {
-        assert.throws(() => pluginInstall("codex"), /no bili proxy origin found/);
+        assert.throws(() => pluginInstall("codex"), /no sigma proxy origin found/);
         atomicWriteInstanceFile(sampleInstance({ pid: deadPid() }));
         assert.throws(() => pluginInstall("codex"), /is not running/);
 
@@ -380,11 +380,11 @@ test("plugin install: refuses to freeze a dead or missing proxy origin (#403)", 
         const msg = pluginInstall("codex");
         assert.match(msg, /codex:/);
         const toml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-        assert.match(toml, /BILI_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
+        assert.match(toml, /SIGMA_MCP_PROXY = "http:\/\/127\.0\.0\.1:8787"/);
     } finally {
         if (prevCodex === undefined) delete process.env.CODEX_HOME;
         else process.env.CODEX_HOME = prevCodex;
-        if (prevEnv !== undefined) process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv !== undefined) process.env.SIGMA_MCP_PROXY = prevEnv;
         st.restore();
         fs.rmSync(home, { recursive: true, force: true });
     }

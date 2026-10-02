@@ -3,16 +3,16 @@
 ## Topology
 
 ```
-bili claude / bili codex (launcher, direct-URL mode)
+sigma claude / sigma codex (launcher, direct-URL mode)
   ├─ ensure proxy (spawn/reuse 127.0.0.1:8787)
-  ├─ claude: env ANTHROPIC_BASE_URL=http://<proxy>/bili/<upstream>
-  │          --mcp-config <tmp json> {mcpServers.bili → node dist/mcp.js}
-  ├─ codex:  -c mcp_servers.bili.command/args/env (inline TOML overrides)
-  └─ (BILI_LAUNCHER_MITM=1 → old transparent-MITM route instead)
+  ├─ claude: env ANTHROPIC_BASE_URL=http://<proxy>/sigma/<upstream>
+  │          --mcp-config <tmp json> {mcpServers.sigma → node dist/mcp.js}
+  ├─ codex:  -c mcp_servers.sigma.command/args/env (inline TOML overrides)
+  └─ (SIGMA_LAUNCHER_MITM=1 → old transparent-MITM route instead)
         ↓ exec host
 host (claude/codex)
-  ├─ LLM traffic   → proxy /bili/<upstream> (data channel)
-  └─ MCP "bili"    → dist/mcp.js stdio
+  ├─ LLM traffic   → proxy /sigma/<upstream> (data channel)
+  └─ MCP "sigma"    → dist/mcp.js stdio
         ├─ GET  /__bili/plugin/manifest  (schemas, zero drift)
         ├─ POST /__bili/plugin/register  (bind BEFORE first model request)
         └─ POST /__bili/plugin/tool      (execute under session lock)
@@ -40,11 +40,11 @@ session from eating a registration it can never claim by identity.
 
 ## Direct-URL vs MITM
 
-Direct URL is now the default for `bili claude` / `bili codex`: the host talks
-to the proxy via the `/bili/` prefix in its base URL — no MITM, no CA trust.
+Direct URL is now the default for `sigma claude` / `sigma codex`: the host talks
+to the proxy via the `/sigma/` prefix in its base URL — no MITM, no CA trust.
 Claude's base URL rides on spawn env (ANTHROPIC_BASE_URL), codex's on
 `-c model_providers.*.base_url` (user config already covers routing; the
-launcher only adds the mcp_servers.bili.* overrides). `BILI_LAUNCHER_MITM=1`
+launcher only adds the mcp_servers.sigma.* overrides). `SIGMA_LAUNCHER_MITM=1`
 restores the old transparent route for OAuth-subscription traffic.
 
 ## Verification notes
@@ -52,9 +52,9 @@ restores the old transparent route for OAuth-subscription traffic.
 - claude 2.1.227 passes `CLAUDE_CODE_SESSION_ID` to MCP children (env probe)
   and `x-claude-code-session-id` on every request (socket capture) — the two
   are equal, which is what makes identity binding race-free.
-- codex 0.147.0 accepts `-c mcp_servers.bili.command="node"` style overrides
+- codex 0.147.0 accepts `-c mcp_servers.sigma.command="node"` style overrides
   (config parse error disappears; only provider routing failed our e2e because
   the local relay lacks a Responses endpoint — unrelated to the MCP surface).
-- Real e2e: `bili claude -p "call the bili acp_status tool"` through a bailian
+- Real e2e: `sigma claude -p "call the sigma acp_status tool"` through a bailian
   anthropic endpoint — proxy log shows `[plugin] tool acp_status executed via
   plugin`, i.e. the native MCP path, not wire injection.

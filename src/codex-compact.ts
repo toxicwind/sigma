@@ -3,7 +3,7 @@ import type { CompressionBlock } from "acp-kernel";
 import type { Session } from "./session.js";
 
 export const CODEX_COMPACT_ID_PREFIX = "fc_bili_";
-export const CODEX_COMPACT_SENTINEL = "bili:acp:";
+export const CODEX_COMPACT_SENTINEL = "sigma:acp:";
 
 const CODEX_UA_PREFIXES = ["codex_cli_rs/", "codex_exec/", "codex desktop/"];
 
@@ -12,7 +12,7 @@ export type CodexCompactMode = "intercept" | "pass";
 // Read per-request (not cached at startup) so a running proxy can flip the
 // kill-switch without a restart.
 export function codexCompactMode(): CodexCompactMode {
-    const v = process.env.BILI_CODEX_COMPACT?.trim().toLowerCase();
+    const v = process.env.SIGMA_CODEX_COMPACT?.trim().toLowerCase();
     return v === "pass" ? "pass" : "intercept";
 }
 
@@ -46,7 +46,7 @@ export function hasCompactionTrigger(input: unknown): boolean {
 // Codex echoes it back in the next request; stripping it keeps the summary
 // sourced from state (no double-count). Real OpenAI blobs carry neither marker,
 // so they are left untouched.
-export function isBiliCompactionItem(item: unknown): boolean {
+export function isSigmaCompactionItem(item: unknown): boolean {
     const it = item as { type?: unknown; id?: unknown; encrypted_content?: unknown } | null;
     if (!it || it.type !== "compaction") return false;
     if (typeof it.id === "string" && it.id.startsWith(CODEX_COMPACT_ID_PREFIX)) return true;
@@ -54,12 +54,12 @@ export function isBiliCompactionItem(item: unknown): boolean {
     return false;
 }
 
-export function stripBiliCompactionItems<T>(input: T[]): T[] {
-    return input.filter((item) => !isBiliCompactionItem(item));
+export function stripSigmaCompactionItems<T>(input: T[]): T[] {
+    return input.filter((item) => !isSigmaCompactionItem(item));
 }
 
 // The summary text a forged blob carries (sentinel-prefixed plaintext).
-export function extractBiliSummary(item: unknown): string | undefined {
+export function extractSigmaSummary(item: unknown): string | undefined {
     const it = item as { encrypted_content?: unknown } | null;
     if (!it || typeof it.encrypted_content !== "string") return undefined;
     if (!it.encrypted_content.startsWith(CODEX_COMPACT_SENTINEL)) return undefined;
@@ -74,16 +74,16 @@ export function extractBiliSummary(item: unknown): string | undefined {
 // data loss. Marker items without an extractable blob (id-prefix-only, e.g.
 // minted by an older build) are still dropped; real OpenAI blobs pass through
 // untouched.
-export function replaceBiliCompactionItems<T>(input: T[]): { items: T[]; replaced: number; dropped: number } {
+export function replaceSigmaCompactionItems<T>(input: T[]): { items: T[]; replaced: number; dropped: number } {
     const items: T[] = [];
     let replaced = 0;
     let dropped = 0;
     for (const item of input) {
-        if (!isBiliCompactionItem(item)) {
+        if (!isSigmaCompactionItem(item)) {
             items.push(item);
             continue;
         }
-        const summary = extractBiliSummary(item);
+        const summary = extractSigmaSummary(item);
         if (summary === undefined) {
             dropped++;
             continue;
@@ -91,7 +91,7 @@ export function replaceBiliCompactionItems<T>(input: T[]): { items: T[]; replace
         items.push({
             type: "message",
             role: "user",
-            content: [{ type: "input_text", text: `[bili] context summary after compaction:\n${summary}` }],
+            content: [{ type: "input_text", text: `[sigma] context summary after compaction:\n${summary}` }],
         } as T);
         replaced++;
     }

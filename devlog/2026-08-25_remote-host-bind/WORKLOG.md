@@ -2,7 +2,7 @@
 
 Model: qwen3.8-27b (vllm)
 
-1. Reproduced live: `--host 0.0.0.0` — `/bili/` + health already reachable
+1. Reproduced live: `--host 0.0.0.0` — `/sigma/` + health already reachable
    via LAN IP; CONNECT (MITM) hard-403 for non-loopback clients (#77 gate in
    src/mitm.ts). `/__bili/` 403 for remote is intentional (DNS-rebinding
    guard) and stays.

@@ -1,7 +1,7 @@
 # DESIGN - <Title>
 
 - Task ID: `<YYYY-MM-DD_short-title>`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: <YYYY-MM-DD>
 - Status: Draft | Accepted | Superseded
 

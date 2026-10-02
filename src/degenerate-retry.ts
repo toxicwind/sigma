@@ -17,7 +17,7 @@ import { appendTrailingUserText } from "./wire-body.js";
 // state, so the nudge is neither persisted nor replayed on the client's next
 // request.
 export const DEGENERATE_RETRY_NUDGE =
-    "[billion-context] Your previous response ended with no visible text and no tool call. Continue now: take your next concrete action.";
+    "[sigma] Your previous response ended with no visible text and no tool call. Continue now: take your next concrete action.";
 
 /** The retry body: the forwarded body with the continuation nudge appended as a
  *  trailing user turn. Null when the body cannot carry one. */

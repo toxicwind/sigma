@@ -28,7 +28,7 @@ window in the provider config on their side, was rejected).
 - While rewriting the client config, the launcher already reads the per-model `contextWindow`:
   pi's models.json, omp's models.yml, opencode's `models.<id>.limit`, and codex's
   `model` + `model_context_window`.
-- Pass that to the spawned proxy via `BILI_LAUNCHER_MODEL_WINDOWS` (JSON). The proxy inserts it into
+- Pass that to the spawned proxy via `SIGMA_LAUNCHER_MODEL_WINDOWS` (JSON). The proxy inserts it into
   the native chain (plugin report > launcher > registry > routes/table).
 - Zero user configuration. Only the launcher sets this env var (so the headless-spoofing risk surface
   does not exist).

@@ -1,17 +1,17 @@
 # WORKLOG - Cross-platform (Windows) CI regression
 
 - Task ID: `2026-08-13_windows-regression-ci`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done (Windows test failures fixed)
 - Updated: 2026-08-14 01:20
 
 ## 1. Summary
 
 - **What was done**: Added `ubuntu-latest + windows-latest` OS matrix (Node 22/24,
-  `fail-fast: false`) to billion-context's CI, and introduced a `devlog/`
+  `fail-fast: false`) to sigma's CI, and introduced a `devlog/`
   structure (README + REQ/WORKLOG/DESIGN templates + this entry).
-- **Why**: dog/billion-context-pi#32 asked billion-context to gain the same
-  Windows / cross-OS regression and devlog convention that billion-context-pi
+- **Why**: dog/sigma-pi#32 asked sigma to gain the same
+  Windows / cross-OS regression and devlog convention that sigma-pi
   already has. The proxy was ubuntu-only; Windows users hit platform bugs CI
   could not catch.
 - **Behavior / compatibility changes**: No runtime code change. Two Windows-only
@@ -27,9 +27,9 @@
   with `matrix.os = [ubuntu-latest, windows-latest]` (+`fail-fast: false`,
   `runs-on: ${{ matrix.os }}`, `cache: npm`). `version-guard` job unchanged.
 - `devlog/README.md` — purpose, naming convention, required/optional files,
-  rules, npm-packaging note, directory layout (adapted from billion-context-pi).
+  rules, npm-packaging note, directory layout (adapted from sigma-pi).
 - `devlog/REQ.template.md`, `devlog/WORKLOG.template.md`, `devlog/DESIGN.template.md`
-  — copied from billion-context-pi and adapted (Home Repo = `billion-context`;
+  — copied from sigma-pi and adapted (Home Repo = `sigma`;
   build/test commands match this repo: `tsup`, `tsc --noEmit --project tsconfig.build.json`).
 - `devlog/2026-08-13_windows-regression-ci/{REQ,WORKLOG}.md` — this entry (dogfooding).
 - `tests/launcher.test.ts:380-386` — `resolveClientCommand` fallback test: compare
@@ -53,13 +53,13 @@
 
 ## 3. Design & Implementation Notes
 
-- **Why not a separate e2e.yml?** billion-context's e2e
+- **Why not a separate e2e.yml?** sigma's e2e
   (`tests/e2e-proxy-smoke.test.ts`) is a fast, in-process Node test (starts the
   HTTP server, captures upstream requests, asserts on SSE). It already runs under
   `npm test`, so the ci.yml OS matrix exercises cross-OS e2e regression directly.
-  billion-context-pi needs a separate e2e.yml because its e2e drives a real `pi`
+  sigma-pi needs a separate e2e.yml because its e2e drives a real `pi`
   host (slow, separate timeout) — not the case here.
-- **Why ubuntu+windows, not macOS?** Matches billion-context-pi; covers the two
+- **Why ubuntu+windows, not macOS?** Matches sigma-pi; covers the two
   platforms that matter; macOS runners are ~10× costlier.
 
 ## 4. Testing & Verification

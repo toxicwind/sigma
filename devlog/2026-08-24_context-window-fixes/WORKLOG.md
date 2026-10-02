@@ -1,7 +1,7 @@
 # WORKLOG - Context window fixes
 
 - Task ID: `2026-08-24_context-window-fixes`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-08-24 18:25
 
@@ -62,14 +62,14 @@ upstream proxy when one exists — `proxyDispatcher(env https_proxy|HTTPS_PROXY
 |http_proxy|HTTP_PROXY)` (cached undici ProxyAgent, same infrastructure the
 model traffic uses) — and falls back to a direct attempt when no proxy is
 configured or the proxied attempt fails. Reuses `fetchWithTimeout` (15s).
-Self-loop safety: a proxy URL pointing at bili itself results in a CONNECT
+Self-loop safety: a proxy URL pointing at sigma itself results in a CONNECT
 blind-tunnel that fails once, then the direct fallback runs — no recursion.
 
 Verification (real machine):
 - node one-liner via ProxyAgent(20172): status 200, 355 models
 - rebuilt dist → `start --port 8961` → one deepseek chat request →
   `[acp-registry] loaded models.dev (355 models, via proxy)`
-- `~/.cache/billion-context/models-dev.json` written (288KB);
+- `~/.cache/sigma/models-dev.json` written (288KB);
   deepseek-chat → 1,000,000; MiniMax-M2.1 → 204,800
 - typecheck ✅ · 542/542 ✅
 

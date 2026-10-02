@@ -1,5 +1,5 @@
 import type { CoreMessage } from "acp-kernel";
-import { coreToResponses, patchResponsesInput, responsesToCore, type BiliMessage, type ResponseContentPart, type ResponseInputItem, type ResponsesProjection, type ResponsesRequestBody } from "acp-kernel/wire";
+import { coreToResponses, patchResponsesInput, responsesToCore, type SigmaMessage, type ResponseContentPart, type ResponseInputItem, type ResponsesProjection, type ResponsesRequestBody } from "acp-kernel/wire";
 
 export function responsesToolImageParts(item: unknown): ResponseContentPart[] | undefined {
     if (typeof item !== "object" || item === null) return undefined;
@@ -36,7 +36,7 @@ export function responsesToCoreWithToolImages(body: ResponsesRequestBody): Respo
 
 function rebuildToolImages(message: CoreMessage): ResponseInputItem | undefined {
     if (message.role !== "tool" || message.contentType !== "tool-result") return undefined;
-    const raw = (message as BiliMessage).rawResponsesItem as ResponseInputItem | undefined;
+    const raw = (message as SigmaMessage).rawResponsesItem as ResponseInputItem | undefined;
     const parts = responsesToolImageParts(raw);
     if (!raw || !parts) return undefined;
     const text = message.text ?? "";
@@ -60,7 +60,7 @@ export function patchResponsesInputWithToolImages(projection: ResponsesProjectio
     for (const message of messages) {
         const rebuilt = rebuildToolImages(message);
         if (!rebuilt) continue;
-        byOriginal.set((message as BiliMessage).rawResponsesItem, rebuilt);
+        byOriginal.set((message as SigmaMessage).rawResponsesItem, rebuilt);
         byCall.set(`${rebuilt.type}:${message.toolCallId ?? ""}`, rebuilt);
     }
     return input.map((item) => byOriginal.get(item) ?? byCall.get(`${item.type}:${item.call_id ?? ""}`) ?? item);

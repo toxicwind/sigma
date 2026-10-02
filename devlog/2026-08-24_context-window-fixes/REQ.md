@@ -4,7 +4,7 @@
 
 User feedback on issue #212 (comment by stirp):
 
-1. After an npm install, `~/.config/billion-context/billion-context.json` appeared to be overwritten (custom fields lost).
+1. After an npm install, `~/.config/sigma/sigma.json` appeared to be overwritten (custom fields lost).
 2. Default DeepSeek context seemed to be only 64K — out of the box, sessions hit emergency compression constantly.
 3. MiniMax model sizes were missing entirely.
 
@@ -42,4 +42,4 @@ No `/^minimax/i` table entry AND no `api.minimax.chat` / `api.minimaxi.com` mapp
 
 ## Relations
 
-- Issue: https://github.com/ranxianglei/billion-context/issues/212 (comment feedback)
+- Issue: https://github.com/ranxianglei/sigma/issues/212 (comment feedback)

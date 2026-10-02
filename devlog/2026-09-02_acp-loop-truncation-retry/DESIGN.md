@@ -40,7 +40,7 @@ the retried attempt's tokens.
 
 Mechanics: the parse loop is wrapped in an inner `for (;;)` attempt loop.
 On a qualifying truncation the loop calls `fetchUpstream(roundBody)` (the
-hoisted `fetchWithRetry` wrapper — same backoff, same `BILI_REPLAY_RETRY_*`
+hoisted `fetchWithRetry` wrapper — same backoff, same `SIGMA_REPLAY_RETRY_*`
 env knobs, same #189 rejection logging) and `continue`s; the outer round
 number is unchanged, so a round-1 retry re-parses as round 1 and its
 `message_start` is forwarded exactly once (attempt 1 forwarded nothing).

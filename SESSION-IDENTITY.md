@@ -1,6 +1,6 @@
 # Session identity for anonymous requests
 
-Design record for how billion-context decides which session an **anonymous**
+Design record for how sigma decides which session an **anonymous**
 request (no `session_id` header or body field, no `prompt_cache_key`) belongs
 to. Written as future reference after the tail-window reattach removal
 (#1115). Implementation: `src/prefix-affinity.ts`; behavior tests:

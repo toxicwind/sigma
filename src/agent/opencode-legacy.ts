@@ -1,19 +1,19 @@
 // opencode-acp absorption for LEGACY V1 sessions (#920).
 //
 // Users migrating from the standalone `opencode-acp` extension (DCP protocol,
-// its own ref space + block store) to `bili plugin install opencode` still
+// its own ref space + block store) to `sigma plugin install opencode` still
 // need their OLD sessions to work: those sessions' history is annotated with
-// `<dcp-message-id>` tags and their refs live in acp's store — bili's kernel
+// `<dcp-message-id>` tags and their refs live in acp's store — sigma's kernel
 // cannot serve them. Routing requirement: legacy sessions keep running
-// through opencode-acp, new sessions go through bili.
+// through opencode-acp, new sessions go through sigma.
 //
 // Probed facts (opencode-acp 1.18.x, ~/projects/opencode-acp):
 //   - package exports ONLY `default server` (index.ts); `server(ctx)` returns
-//     `{}` immediately when BILLION_CONTEXT_PROXY is set — the env is checked
+//     `{}` immediately when SIGMA_PROXY is set — the env is checked
 //     ONLY there (index.ts:38); executors never re-check it, so calling
 //     `server(ctx)` with the env temporarily unset yields the armed hooks.
 //   - its `config` hook self-disables the whole plugin when any provider
-//     baseURL contains `/bili/` (findBiliProxyProviders) AND denies the tools
+//     baseURL contains `/sigma/` (findSigmaProxyProviders) AND denies the tools
 //     via permission.deny — so we call it with `provider` hidden and merge
 //     back only the keys it legitimately owns (permission / command /
 //     experimental.primary_tools / agent snapshot side effects).
@@ -38,7 +38,7 @@
 //     executor, new → forwardTool to the proxy (plugin-mode carrier).
 //
 // Degradation: package not found / import fails / unexpected shape → the
-// caller falls back to bili's own V1 tools (current behavior); legacy
+// caller falls back to sigma's own V1 tools (current behavior); legacy
 // sessions then degrade as documented (read-only archives).
 
 import { accessSync, existsSync, readdirSync } from "node:fs";
@@ -66,7 +66,7 @@ export interface LegacyAcpModule {
 }
 
 /** Candidate `opencode-acp/dist/index.js` paths, most specific first:
- *  the launcher's `BILI_OPENCODE_ACP_SPEC` hint when its cache slot exists
+ *  the launcher's `SIGMA_OPENCODE_ACP_SPEC` hint when its cache slot exists
  *  (#920 launcher path — the launcher knows exactly which entry it stripped
  *  from the temp config), then project plugin scope, plain project
  *  node_modules, opencode's v1 package cache (`opencode plugin opencode-acp`
@@ -87,7 +87,7 @@ export function legacyAcpCandidates(cwd: string | undefined): string[] {
     for (const d of dirs) pushDir(d);
     const cacheHome = process.env.XDG_CACHE_HOME ?? path.join(homedir(), ".cache");
     const packages = path.join(cacheHome, "opencode", "packages");
-    const spec = process.env.BILI_OPENCODE_ACP_SPEC;
+    const spec = process.env.SIGMA_OPENCODE_ACP_SPEC;
     if (spec !== undefined && spec.length > 0) {
         // the spec is the package-cache slot name ("opencode-acp@1.18.1");
         // authoritative when present — avoid guessing among cache versions.
@@ -142,17 +142,17 @@ export async function loadLegacyAcp(ctx: { directory?: string; client?: unknown 
         }
     }
     if (found === undefined) return undefined;
-    // acp's server() refuses to arm when BILLION_CONTEXT_PROXY is set; the
+    // acp's server() refuses to arm when SIGMA_PROXY is set; the
     // check runs only at entry, so it is unset strictly around the call and
     // restored in finally. Concurrent readers on this event loop see either
     // value only across our own awaits here.
-    const prev = process.env.BILLION_CONTEXT_PROXY;
+    const prev = process.env.SIGMA_PROXY;
     try {
-        if (prev !== undefined) delete process.env.BILLION_CONTEXT_PROXY;
+        if (prev !== undefined) delete process.env.SIGMA_PROXY;
         const mod = (await import(pathToFileURL(found).href)) as { default?: unknown };
         const server = mod.default;
         if (typeof server !== "function") {
-            log(`[bili-opencode-native] legacy: ${found} exports no server function — ignored`);
+            log(`[sigma-opencode-native] legacy: ${found} exports no server function — ignored`);
             return undefined;
         }
         const hooks = (await (server as (c: unknown) => Promise<Record<string, unknown>>)(ctx)) ?? {};
@@ -160,24 +160,24 @@ export async function loadLegacyAcp(ctx: { directory?: string; client?: unknown 
         const toolsRaw = hooks.tool;
         const tools = toolsRaw !== null && typeof toolsRaw === "object" && !Array.isArray(toolsRaw) ? (toolsRaw as Record<string, LegacyAcpToolDef>) : {};
         if (Object.keys(tools).length === 0) {
-            log(`[bili-opencode-native] legacy: ${found} armed but registered no tools (acp disabled by its own config?) — ignored`);
+            log(`[sigma-opencode-native] legacy: ${found} armed but registered no tools (acp disabled by its own config?) — ignored`);
             return undefined;
         }
         const configHook = typeof hooks.config === "function" ? (hooks.config as LegacyAcpModule["configHook"]) : undefined;
         const commandHook = typeof hooks["command.execute.before"] === "function" ? (hooks["command.execute.before"] as LegacyAcpModule["commandHook"]) : undefined;
-        log(`[bili-opencode-native] legacy opencode-acp absorbed from ${found} (tools: ${Object.keys(tools).join(", ")})`);
+        log(`[sigma-opencode-native] legacy opencode-acp absorbed from ${found} (tools: ${Object.keys(tools).join(", ")})`);
         return { hooks, tools, configHook, commandHook, source: found };
     } catch (err) {
-        log(`[bili-opencode-native] legacy: failed to load ${found}: ${String(err)} — legacy sessions degrade to read-only`);
+        log(`[sigma-opencode-native] legacy: failed to load ${found}: ${String(err)} — legacy sessions degrade to read-only`);
         return undefined;
     } finally {
-        if (prev === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-        else process.env.BILLION_CONTEXT_PROXY = prev;
+        if (prev === undefined) delete process.env.SIGMA_PROXY;
+        else process.env.SIGMA_PROXY = prev;
     }
 }
 
 /** Call acp's config hook without letting it see (and self-disable on) the
- *  /bili/-wrapped provider URLs, then merge back the top-level keys it may
+ *  /sigma/-wrapped provider URLs, then merge back the top-level keys it may
  *  have replaced on the shadow copy (it writes via `??=`/spread-replace, so a
  *  reference change marks an owned write; in-place mutations already hit the
  *  real object). */

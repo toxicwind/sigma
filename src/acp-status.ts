@@ -48,7 +48,7 @@ export function handleAcpStatus(args: Record<string, unknown>, ctx: AcpStatusCtx
         limit,
         meta: {
             pack: ctx.session.meta.activePack ?? "default",
-            host: `billion-context ${VERSION}`,
+            host: `sigma ${VERSION}`,
         },
     });
     if (scope) return base;
@@ -148,7 +148,7 @@ export function handleAcpStatus(args: Record<string, unknown>, ctx: AcpStatusCtx
             .map(([h, n]) => `${h}×${n}`)
             .join(", ");
         extra.push("");
-        extra.push(`UNDECRYPTED TRAFFIC (instance-level): ${blind.total} CONNECT tunnel(s) to host(s) outside the MITM whitelist were blind-relayed since instance start — that traffic was never decrypted, so it never entered any session and CANNOT be compressed (${hosts}). To compress such a client: add its model domain to "mitm".domains in billion-context.json, restart bili, and make the client trust bili's root CA. Exact counts: GET /__bili/stats → blindTunnels.`);
+        extra.push(`UNDECRYPTED TRAFFIC (instance-level): ${blind.total} CONNECT tunnel(s) to host(s) outside the MITM whitelist were blind-relayed since instance start — that traffic was never decrypted, so it never entered any session and CANNOT be compressed (${hosts}). To compress such a client: add its model domain to "mitm".domains in sigma.json, restart sigma, and make the client trust sigma's root CA. Exact counts: GET /__bili/stats → blindTunnels.`);
     }
     const unrec = getUnrecognizedPathStats();
     if (unrec.total > 0) {
@@ -161,7 +161,7 @@ export function handleAcpStatus(args: Record<string, unknown>, ctx: AcpStatusCtx
             .map(([p, n]) => `${p}×${n}`)
             .join(", ");
         extra.push("");
-        extra.push(`UNRECOGNIZED PATHS (instance-level): ${unrec.total} request(s) to ${Object.keys(unrec.paths).length} path(s) matched no known protocol (/chat/completions, /llm_raw_chat, /v1/messages, /responses, …) since instance start — they were relayed byte-for-byte and CANNOT be compressed (${top}). If you expected compression here, that endpoint's path is not in bili's protocol table. Exact counts: GET /__bili/stats → unrecognizedPaths.`);
+        extra.push(`UNRECOGNIZED PATHS (instance-level): ${unrec.total} request(s) to ${Object.keys(unrec.paths).length} path(s) matched no known protocol (/chat/completions, /llm_raw_chat, /v1/messages, /responses, …) since instance start — they were relayed byte-for-byte and CANNOT be compressed (${top}). If you expected compression here, that endpoint's path is not in sigma's protocol table. Exact counts: GET /__bili/stats → unrecognizedPaths.`);
     }
     return extra.length > 0 ? `${base}\n${extra.join("\n")}` : base;
 }

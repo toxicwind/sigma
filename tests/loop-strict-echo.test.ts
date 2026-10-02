@@ -90,7 +90,7 @@ async function startHarnessLoop(handler: (bodyText: string, res: http.ServerResp
 }
 
 async function postStreamChat(proxyPort: number, upstreamPort: number): Promise<Response> {
-    return fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+    return fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": "reloop-1" },
         body: JSON.stringify({
@@ -109,7 +109,7 @@ function tcC1(bodyText: string): Record<string, unknown> | undefined {
 test("#762: loop re-request carries the blank strict-echo repair", async () => {
     const captured: Captured[] = [];
     setLogCapture((level, msg) => captured.push({ level, msg }));
-    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-reloop-"));
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-reloop-"));
     process.env.XDG_STATE_HOME = stateDir;
     _setStoreForTest(new SessionStore({ enabled: false }));
     const seenBodies: string[] = [];

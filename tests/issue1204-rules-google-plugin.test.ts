@@ -76,13 +76,13 @@ async function startHarness(routeCompress?: Record<string, unknown>): Promise<Ha
 }
 
 async function sendGoogleTurn(h: Harness, conversationId: string): Promise<void> {
-    const url = `http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
+    const url = `http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
     const res = await fetch(url, {
         method: "POST",
         headers: {
             "content-type": "application/json",
-            "x-bili-plugin": "omp",
-            "x-bili-plugin-conversation": conversationId,
+            "x-sigma-plugin": "omp",
+            "x-sigma-plugin-conversation": conversationId,
         },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hello" }] }], generationConfig: { maxOutputTokens: 4096 } }),
     });
@@ -120,7 +120,7 @@ test("#1204 google wire + rules explicitly disabled: plugin tool acp_rule stays 
         await sendGoogleTurn(h, conv);
         const { status, body } = await callRuleTool(h, conv);
         assert.equal(status, 200, `acp_rule must stay gated (got ${status}: ${JSON.stringify(body)})`);
-        assert.match(body.result ?? "", /is not enabled on this bili proxy \(compress\.rules\.enabled is not true\)/);
+        assert.match(body.result ?? "", /is not enabled on this sigma proxy \(compress\.rules\.enabled is not true\)/);
     } finally {
         await h.close();
     }

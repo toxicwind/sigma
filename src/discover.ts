@@ -10,8 +10,8 @@ const TTL_MS = 2000;
 // Local copy of launcher.ts's unwrapUpstream: importing it from launcher.ts
 // would close the discover → launcher → mitm → discover cycle.
 function unwrapUpstream(url: string): string {
-    const idx = url.indexOf("/bili/");
-    return idx >= 0 ? url.slice(idx + "/bili/".length) : url;
+    const idx = url.indexOf("/sigma/");
+    return idx >= 0 ? url.slice(idx + "/sigma/".length) : url;
 }
 
 export function extractHttpsHosts(config: ClientConfig): string[] {

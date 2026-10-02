@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
- * `bili` — billion-context proxy CLI.
+ * `sigma` — sigma proxy CLI.
  *
  * Usage:
- *   bili                          start the proxy (default command)
- *   bili start                    start the proxy (explicit)
- *   bili start --port 9000        override listen port
- *   bili start --host 0.0.0.0     override listen host
- *   bili start --debug            verbose logging
- *   bili start --config FILE      path to config file (default: XDG)
- *   bili start --passthrough      forward without compression
- *   bili pi/codex/claude/omp [args]   start a proxy + launch a client via cert-MITM
- *   bili export [id] [--full]     export a persisted session as a handoff doc
- *   bili acp-cache diff <dir>     attribute cache breaks from ACP_DUMP_BODY dumps
- *   bili test pi                  non-polluting pi smoke test
- *   bili --version
- *   bili --help
+ *   sigma                          start the proxy (default command)
+ *   sigma start                    start the proxy (explicit)
+ *   sigma start --port 9000        override listen port
+ *   sigma start --host 0.0.0.0     override listen host
+ *   sigma start --debug            verbose logging
+ *   sigma start --config FILE      path to config file (default: XDG)
+ *   sigma start --passthrough      forward without compression
+ *   sigma pi/codex/claude/omp [args]   start a proxy + launch a client via cert-MITM
+ *   sigma export [id] [--full]     export a persisted session as a handoff doc
+ *   sigma acp-cache diff <dir>     attribute cache breaks from ACP_DUMP_BODY dumps
+ *   sigma test pi                  non-polluting pi smoke test
+ *   sigma --version
+ *   sigma --help
  *
  * Flags override values from the config file / env. See README §Configuration
  * for the full config-file schema (which also supports `debug`, `port`, etc.
@@ -36,93 +36,93 @@ import { renderJson, renderText, runDiff } from "./acp-cache-diff.js";
 import { renderDoctorReport, runDoctor } from "./doctor.js";
 import { VERSION, PACKAGE_NAME } from "./version.js";
 
-const HELP = `bili ${VERSION} — billion-context proxy
+const HELP = `sigma ${VERSION} — sigma proxy
 
 Usage:
-  bili [start] [options]           start the proxy (default: reads ${defaultConfigFile()})
-  bili pi [opts --] [args]         start a proxy + launch pi against it (cert-MITM)
-  bili pi-test [opts --] [args]    like bili pi but injects --no-extensions (clean test)
-  bili codex [opts --] [args]      start a proxy + launch codex against it (cert-MITM)
-  bili claude [opts --] [args]     start a proxy + launch claude against it (cert-MITM)
-  bili omp [opts --] [args]        start a proxy + launch omp against it (cert-MITM)
-  bili opencode [opts --] [args]   start a proxy + launch opencode against it (cert-MITM)
-  bili hermes [opts --] [args]     start a proxy + launch hermes-agent against it (/bili/ rewrite)
-  bili dsh [opts --] [args]        start a proxy + launch deepseek-harness against it (/bili/ rewrite)
-  bili codebuddy [opts --] [args]  start a proxy + launch codebuddy against it (/bili/ rewrite)
-  bili qoder [opts --] [args]      start a proxy + launch qoder against it (cert-MITM)
-  bili trae [opts --] [args]       start a proxy + launch Trae CLI against it (cert-MITM)
-  bili jcode [opts --] [args]      start a proxy + launch jcode against it (cert-MITM)
-  bili kimi [opts --] [args]       start a proxy + launch Kimi Code against it (cert-MITM)
-  bili gemini [opts --] [args]     start a proxy + launch Gemini CLI against it (GOOGLE_GEMINI_BASE_URL /bili/ rewrite)
-  bili iflow [opts --] [args]      start a proxy + launch iFlow CLI against it (IFLOW_BASE_URL /bili/ rewrite)
-  bili qwen [opts --] [args]       start a proxy + launch Qwen Code against it (cert-MITM)
-  bili mcode [opts --] [args]      start a proxy + launch MiniMax Code against it (cert-MITM)
-  bili aider [opts --] [args]      start a proxy + launch aider against it (cert-MITM)
-  bili copilot [opts --] [args]    start a proxy + launch Copilot CLI against it (cert-MITM)
-  bili amp [opts --] [args]        start a proxy + launch Amp against it (cert-MITM)
-  bili goose [opts --] [args]      start a proxy + launch Goose against it (base-URL redirect)
-  bili test pi                     non-polluting pi smoke test through the proxy
-  bili export [session] [--full]   list sessions / export one as a Markdown handoff
+  sigma [start] [options]           start the proxy (default: reads ${defaultConfigFile()})
+  sigma pi [opts --] [args]         start a proxy + launch pi against it (cert-MITM)
+  sigma pi-test [opts --] [args]    like sigma pi but injects --no-extensions (clean test)
+  sigma codex [opts --] [args]      start a proxy + launch codex against it (cert-MITM)
+  sigma claude [opts --] [args]     start a proxy + launch claude against it (cert-MITM)
+  sigma omp [opts --] [args]        start a proxy + launch omp against it (cert-MITM)
+  sigma opencode [opts --] [args]   start a proxy + launch opencode against it (cert-MITM)
+  sigma hermes [opts --] [args]     start a proxy + launch hermes-agent against it (/sigma/ rewrite)
+  sigma dsh [opts --] [args]        start a proxy + launch deepseek-harness against it (/sigma/ rewrite)
+  sigma codebuddy [opts --] [args]  start a proxy + launch codebuddy against it (/sigma/ rewrite)
+  sigma qoder [opts --] [args]      start a proxy + launch qoder against it (cert-MITM)
+  sigma trae [opts --] [args]       start a proxy + launch Trae CLI against it (cert-MITM)
+  sigma jcode [opts --] [args]      start a proxy + launch jcode against it (cert-MITM)
+  sigma kimi [opts --] [args]       start a proxy + launch Kimi Code against it (cert-MITM)
+  sigma gemini [opts --] [args]     start a proxy + launch Gemini CLI against it (GOOGLE_GEMINI_BASE_URL /sigma/ rewrite)
+  sigma iflow [opts --] [args]      start a proxy + launch iFlow CLI against it (IFLOW_BASE_URL /sigma/ rewrite)
+  sigma qwen [opts --] [args]       start a proxy + launch Qwen Code against it (cert-MITM)
+  sigma mcode [opts --] [args]      start a proxy + launch MiniMax Code against it (cert-MITM)
+  sigma aider [opts --] [args]      start a proxy + launch aider against it (cert-MITM)
+  sigma copilot [opts --] [args]    start a proxy + launch Copilot CLI against it (cert-MITM)
+  sigma amp [opts --] [args]        start a proxy + launch Amp against it (cert-MITM)
+  sigma goose [opts --] [args]      start a proxy + launch Goose against it (base-URL redirect)
+  sigma test pi                     non-polluting pi smoke test through the proxy
+  sigma export [session] [--full]   list sessions / export one as a Markdown handoff
                                     (--full includes original messages; --output FILE)
-  bili acp-cache diff <dir>        offline prefix-diff attribution over ACP_DUMP_BODY
+  sigma acp-cache diff <dir>        offline prefix-diff attribution over ACP_DUMP_BODY
                                    dumps: pairs adjacent requests per session and classifies
                                    each (pure-append / mid-stream-rewrite / prefix-stable-miss);
                                    --json machine output, --log FILE correlates [acp-usage]
-                                   lines (default <dir>/bili.log), --no-log skips, --session SID filters
-  bili update                      check for & install a newer version now
-  bili doctor                      audit every install lane: versions, owners,
+                                   lines (default <dir>/sigma.log), --no-log skips, --session SID filters
+  sigma update                      check for & install a newer version now
+  sigma doctor                      audit every install lane: versions, owners,
                                     freshness vs registry, running proxy processes
                                     (read-only; --json for machine-readable output)
-  bili plugin install <agent>      install the thin plugin into a host (pi/omp/
+  sigma plugin install <agent>      install the thin plugin into a host (pi/omp/
                                     claude/codex/opencode/dsh/kimi; original backed up once)
-                                    --with-mcp (opencode only) also adds the mcp.bili
+                                    --with-mcp (opencode only) also adds the mcp.sigma
                                     MCP face; default is the native plugin tools only
-  bili plugin remove <agent>       remove it again
-  bili plugin update [agent]      update each lane's bili presence through its
+  sigma plugin remove <agent>       remove it again
+  sigma plugin update [agent]      update each lane's sigma presence through its
                                     own owner (#991): reference lanes follow the
                                     global install, dsh bundles refresh through
                                     dsh's channel, host-owned copies are pointed
                                     at their host's updater — never overwritten
-  bili plugin list                 show install status for every host
-  bili mcp                         run the bili MCP server standalone (stdio)
-  bili plugin-register <id>        pre-bind a conversation to the plugin mode
+  sigma plugin list                 show install status for every host
+  sigma mcp                         run the sigma MCP server standalone (stdio)
+  sigma plugin-register <id>        pre-bind a conversation to the plugin mode
                                     (--origin URL, --agent name)
-  bili --version                   print version
-  bili --help                      show this help
+  sigma --version                   print version
+  sigma --help                      show this help
 
-Launcher (bili pi / bili codex / bili claude / bili omp / bili opencode / bili hermes / bili dsh / bili codebuddy / bili qoder / bili trae / bili jcode / bili kimi / bili gemini / bili iflow / bili qwen / bili mcode / bili aider / bili copilot / bili amp / bili goose):
+Launcher (sigma pi / sigma codex / sigma claude / sigma omp / sigma opencode / sigma hermes / sigma dsh / sigma codebuddy / sigma qoder / sigma trae / sigma jcode / sigma kimi / sigma gemini / sigma iflow / sigma qwen / sigma mcode / sigma aider / sigma copilot / sigma amp / sigma goose):
   Brings up a proxy on an independent port (a fresh instance every launch), then runs the client pointed at it via HTTPS_PROXY + the proxy's
   MITM CA — no config-file edits. Discovered HTTPS upstream domains are
   auto-whitelisted for MITM so the proxy TLS-terminates exactly the hosts the
   client uses; HTTP / localhost providers go direct. pi/claude/qoder trust the CA
   via NODE_EXTRA_CA_CERTS, codex/trae/jcode/aider/copilot/amp via SSL_CERT_FILE
   (aider also REQUESTS_CA_BUNDLE). Goose trusts neither (rustls), so it is redirected per-endpoint instead. Proxy killed on client exit.
-  bili flags (-F, --mitm-domain, --port, ...) must precede the client name;
+  sigma flags (-F, --mitm-domain, --port, ...) must precede the client name;
   everything after the client name is passed through to the client.
-    bili pi                               # launch pi through the proxy
-    bili pi -- print "hi"                 # args after the client are passed through
-    bili pi-test                          # pi through the proxy with extensions off (proxy owns compression)
-    bili codex                            # launch codex through the proxy
-    bili claude                           # launch claude through the proxy
-    bili omp                              # launch omp through the proxy (pi-based; /bili/ rewrite)
-    bili hermes                           # launch hermes-agent through the proxy (/bili/ rewrite of ~/.hermes/config.yaml)
-    bili dsh --profile web "task"         # launch deepseek-harness through the proxy (/bili/ rewrite of ~/.dsh/settings.yaml)
-    bili codebuddy                        # launch codebuddy through the proxy (CODEBUDDY_BASE_URL /bili/ rewrite)
-    bili qoder                            # launch qoder through the proxy (cert-MITM; model endpoint is hardcoded https, so no /bili/ rewrite)
-    bili trae                             # launch Trae CLI through the proxy (cert-MITM; model host via TRAE_CLI_API_HOST or --mitm-domain)
-    bili jcode                            # launch jcode through the proxy (cert-MITM; zai leg whitelisted by default)
-    bili kimi                             # launch Kimi Code through the proxy (cert-MITM; provider/model hosts from ~/.kimi-code/config.toml or the managed OAuth endpoints)
-    bili gemini                           # launch Gemini CLI through the proxy (GOOGLE_GEMINI_BASE_URL /bili/ rewrite; API-key & gateway auth)
-    bili iflow                            # launch iFlow CLI through the proxy (IFLOW_BASE_URL /bili/ rewrite of apis.iflow.cn/v1)
-    bili qwen                             # launch Qwen Code through the proxy (cert-MITM; DashScope/Qwen gateways whitelisted by default, custom relays via --mitm-domain)
-    bili mcode                            # launch MiniMax Code through the proxy (cert-MITM; provider hosts from ~/.minimax*/config.yaml or the official agent.minimax.* endpoints)
-    bili aider                            # launch aider through the proxy (cert-MITM; endpoint from OPENAI_API_BASE/--openai-api-base/.aider.conf.yml or api.openai.com+api.anthropic.com by default)
-    bili copilot                          # launch Copilot CLI through the proxy (cert-MITM; api.githubcopilot.com + plan subdomains whitelisted by default)
-    bili amp                              # launch Amp through the proxy (cert-MITM; ampcode.com whitelisted by default)
-    bili goose                            # launch Goose through the proxy (openai/anthropic legs via *_HOST envs, custom providers via a regenerated config overlay — real config untouched)
-    bili test pi                          # quick end-to-end check of the pi path
-    bili --mitm-domain api.foo.com pi     # add a domain to the MITM whitelist (flags precede the client)
-    bili -F http://127.0.0.1:7897 codex   # route bili's upstream through a proxy (gost-style -F)
+    sigma pi                               # launch pi through the proxy
+    sigma pi -- print "hi"                 # args after the client are passed through
+    sigma pi-test                          # pi through the proxy with extensions off (proxy owns compression)
+    sigma codex                            # launch codex through the proxy
+    sigma claude                           # launch claude through the proxy
+    sigma omp                              # launch omp through the proxy (pi-based; /sigma/ rewrite)
+    sigma hermes                           # launch hermes-agent through the proxy (/sigma/ rewrite of ~/.hermes/config.yaml)
+    sigma dsh --profile web "task"         # launch deepseek-harness through the proxy (/sigma/ rewrite of ~/.dsh/settings.yaml)
+    sigma codebuddy                        # launch codebuddy through the proxy (CODEBUDDY_BASE_URL /sigma/ rewrite)
+    sigma qoder                            # launch qoder through the proxy (cert-MITM; model endpoint is hardcoded https, so no /sigma/ rewrite)
+    sigma trae                             # launch Trae CLI through the proxy (cert-MITM; model host via TRAE_CLI_API_HOST or --mitm-domain)
+    sigma jcode                            # launch jcode through the proxy (cert-MITM; zai leg whitelisted by default)
+    sigma kimi                             # launch Kimi Code through the proxy (cert-MITM; provider/model hosts from ~/.kimi-code/config.toml or the managed OAuth endpoints)
+    sigma gemini                           # launch Gemini CLI through the proxy (GOOGLE_GEMINI_BASE_URL /sigma/ rewrite; API-key & gateway auth)
+    sigma iflow                            # launch iFlow CLI through the proxy (IFLOW_BASE_URL /sigma/ rewrite of apis.iflow.cn/v1)
+    sigma qwen                             # launch Qwen Code through the proxy (cert-MITM; DashScope/Qwen gateways whitelisted by default, custom relays via --mitm-domain)
+    sigma mcode                            # launch MiniMax Code through the proxy (cert-MITM; provider hosts from ~/.minimax*/config.yaml or the official agent.minimax.* endpoints)
+    sigma aider                            # launch aider through the proxy (cert-MITM; endpoint from OPENAI_API_BASE/--openai-api-base/.aider.conf.yml or api.openai.com+api.anthropic.com by default)
+    sigma copilot                          # launch Copilot CLI through the proxy (cert-MITM; api.githubcopilot.com + plan subdomains whitelisted by default)
+    sigma amp                              # launch Amp through the proxy (cert-MITM; ampcode.com whitelisted by default)
+    sigma goose                            # launch Goose through the proxy (openai/anthropic legs via *_HOST envs, custom providers via a regenerated config overlay — real config untouched)
+    sigma test pi                          # quick end-to-end check of the pi path
+    sigma --mitm-domain api.foo.com pi     # add a domain to the MITM whitelist (flags precede the client)
+    sigma -F http://127.0.0.1:7897 codex   # route sigma's upstream through a proxy (gost-style -F)
 
 Options (override config file / env):
   -F <url>                         upstream proxy to forward through (gost-style;
@@ -139,9 +139,9 @@ Options (override config file / env):
 
 Config: ${defaultConfigFile()}
   Set port/host/debug/providers/compress/autoUpdate there. See README §Configuration.
-  Env vars (ACP_*, BILI_*) also work and override the file; CLI flags win.
+  Env vars (ACP_*, SIGMA_*) also work and override the file; CLI flags win.
 
-Docs: https://github.com/ranxianglei/billion-context
+Docs: https://github.com/ranxianglei/sigma
 `;
 
 type Parsed = {
@@ -191,7 +191,7 @@ export function parseArgs(argv: string[]): Parsed {
         if (!client && positional.length === 0 && isLaunchClient(a)) {
             client = a;
             const rest = argv.slice(i + 1);
-            // Consume a leading "--" separator (documented form: `bili <client> [opts --] [args]`)
+            // Consume a leading "--" separator (documented form: `sigma <client> [opts --] [args]`)
             // so it is never forwarded to the client (clap-style parsers treat everything
             // after "--" as positionals).
             clientArgs = rest[0] === "--" ? rest.slice(1) : rest;
@@ -224,7 +224,7 @@ export function parseArgs(argv: string[]): Parsed {
             case "--mitm-domain": {
                 const val = argv[++i];
                 if (val === undefined) {
-                    console.error(`bili: ${a} requires a value`);
+                    console.error(`sigma: ${a} requires a value`);
                     process.exit(2);
                 }
                 mitmDomains.push(val);
@@ -236,7 +236,7 @@ export function parseArgs(argv: string[]): Parsed {
             case "--output": {
                 const val = argv[++i];
                 if (val === undefined) {
-                    console.error(`bili: ${a} requires a value`);
+                    console.error(`sigma: ${a} requires a value`);
                     process.exit(2);
                 }
                 exportOutput = val;
@@ -255,7 +255,7 @@ export function parseArgs(argv: string[]): Parsed {
             case "--log": {
                 const val = argv[++i];
                 if (val === undefined) {
-                    console.error(`bili: ${a} requires a value`);
+                    console.error(`sigma: ${a} requires a value`);
                     process.exit(2);
                 }
                 acpCacheLog = val;
@@ -264,7 +264,7 @@ export function parseArgs(argv: string[]): Parsed {
             case "--session": {
                 const val = argv[++i];
                 if (val === undefined) {
-                    console.error(`bili: ${a} requires a value`);
+                    console.error(`sigma: ${a} requires a value`);
                     process.exit(2);
                 }
                 acpCacheSession = val;
@@ -279,16 +279,16 @@ export function parseArgs(argv: string[]): Parsed {
             case "--bin": {
                 const val = argv[++i];
                 if (val === undefined || val.length === 0) {
-                    console.error(`bili: ${a} requires a non-empty value`);
+                    console.error(`sigma: ${a} requires a non-empty value`);
                     process.exit(2);
                 }
                 if (a === "--port") overrides.ACP_PORT = val;
                 else if (a === "--host") overrides.ACP_HOST = val;
-                else if (a === "--config") overrides.BILI_CONFIG_FILE = val;
-                else if (a === "--origin") overrides.BILI_MCP_PROXY = val;
-                else if (a === "--bin") process.env.BILI_CLIENT_BIN = val;
-                else if (a === "-F") overrides.BILI_UPSTREAM_PROXY = val;
-                else overrides.BILI_PLUGIN_AGENT = val;
+                else if (a === "--config") overrides.SIGMA_CONFIG_FILE = val;
+                else if (a === "--origin") overrides.SIGMA_MCP_PROXY = val;
+                else if (a === "--bin") process.env.SIGMA_CLIENT_BIN = val;
+                else if (a === "-F") overrides.SIGMA_UPSTREAM_PROXY = val;
+                else overrides.SIGMA_PLUGIN_AGENT = val;
                 break;
             }
             default:
@@ -300,7 +300,7 @@ export function parseArgs(argv: string[]): Parsed {
                         i--;
                         break;
                     }
-                    console.error(`bili: unknown option ${a}`);
+                    console.error(`sigma: unknown option ${a}`);
                     process.exit(2);
                 }
                 positional.push(a);
@@ -333,19 +333,19 @@ export function parseArgs(argv: string[]): Parsed {
             if (action === "install" || action === "remove" || action === "update" || action === "list") {
                 pluginAction = action;
             } else {
-                console.error(`bili plugin: unknown action "${action ?? ""}" (try "bili plugin install|remove|update|list <agent>")`);
+                console.error(`sigma plugin: unknown action "${action ?? ""}" (try "sigma plugin install|remove|update|list <agent>")`);
                 process.exit(2);
             }
             const agent = positional[2];
             if (agent !== undefined) {
                 if (!isPluginAgent(agent)) {
-                    console.error(`bili plugin: unknown agent "${agent}" (try one of: ${PLUGIN_AGENTS.join(", ")})`);
+                    console.error(`sigma plugin: unknown agent "${agent}" (try one of: ${PLUGIN_AGENTS.join(", ")})`);
                     process.exit(2);
                 }
                 pluginAgent = agent;
             }
             if (pluginAction !== "list" && pluginAction !== "update" && pluginAgent === undefined) {
-                console.error(`bili plugin ${pluginAction}: agent is required (try one of: ${PLUGIN_AGENTS.join(", ")})`);
+                console.error(`sigma plugin ${pluginAction}: agent is required (try one of: ${PLUGIN_AGENTS.join(", ")})`);
                 process.exit(2);
             }
         } else if (cmd === "test") {
@@ -354,23 +354,23 @@ export function parseArgs(argv: string[]): Parsed {
                 command = "test";
                 client = target;
             } else {
-                console.error(`bili test: unknown client "${target ?? ""}" (try "bili test pi")`);
+                console.error(`sigma test: unknown client "${target ?? ""}" (try "sigma test pi")`);
                 process.exit(2);
             }
         } else if (cmd === "acp-cache") {
             command = "acp-cache";
             const action = positional[1];
             if (action !== "diff") {
-                console.error(`bili acp-cache: unknown action "${action ?? ""}" (try "bili acp-cache diff <dump-dir>")`);
+                console.error(`sigma acp-cache: unknown action "${action ?? ""}" (try "sigma acp-cache diff <dump-dir>")`);
                 process.exit(2);
             }
             acpCacheDir = positional[2];
             if (!acpCacheDir) {
-                console.error("bili acp-cache diff: dump-dir is required");
+                console.error("sigma acp-cache diff: dump-dir is required");
                 process.exit(2);
             }
         } else {
-            console.error(`bili: unknown command "${cmd}" (try "bili --help")`);
+            console.error(`sigma: unknown command "${cmd}" (try "sigma --help")`);
             process.exit(2);
         }
     }
@@ -393,7 +393,7 @@ export async function main(): Promise<void> {
             const report = runDiff(acpCacheDir!, { logFile: acpCacheLog, noLog: acpCacheNoLog, session: acpCacheSession });
             process.stdout.write(jsonOutput ? renderJson(report) : renderText(report));
         } catch (error) {
-            console.error(`bili acp-cache: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`sigma acp-cache: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
         }
         return;
@@ -401,11 +401,11 @@ export async function main(): Promise<void> {
     if (command === "plugin-register") {
         const conversationId = registerConversationId?.trim();
         if (!conversationId) {
-            console.error('bili plugin-register: conversation id is required (e.g. bili plugin-register "$CLAUDE_SESSION_ID" --origin http://127.0.0.1:8787 --agent claude)');
+            console.error('sigma plugin-register: conversation id is required (e.g. sigma plugin-register "$CLAUDE_SESSION_ID" --origin http://127.0.0.1:8787 --agent claude)');
             process.exit(2);
         }
-        const agent = (overrides.BILI_PLUGIN_AGENT ?? process.env.BILI_PLUGIN_AGENT ?? "claude").trim() || "claude";
-        const origin = (overrides.BILI_MCP_PROXY ?? process.env.BILI_MCP_PROXY ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+        const agent = (overrides.SIGMA_PLUGIN_AGENT ?? process.env.SIGMA_PLUGIN_AGENT ?? "claude").trim() || "claude";
+        const origin = (overrides.SIGMA_MCP_PROXY ?? process.env.SIGMA_MCP_PROXY ?? "http://127.0.0.1:8787").replace(/\/$/, "");
         try {
             const res = await fetch(`${origin}/__bili/plugin/register`, {
                 method: "POST",
@@ -416,7 +416,7 @@ export async function main(): Promise<void> {
             const data = (await res.json()) as { ok?: boolean; error?: string };
             if (!res.ok || !data.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
         } catch (error) {
-            console.error(`bili plugin-register: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`sigma plugin-register: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
         }
         return;
@@ -429,9 +429,9 @@ export async function main(): Promise<void> {
         // Installers read resolveProxyOrigin() (env first) at dispatch time.
         // Apply --origin BEFORE handling the subcommand: the generic env
         // merge further down runs only on the server path, which this
-        // branch returns ahead of — without this, a stale ~/.bili/
+        // branch returns ahead of — without this, a stale ~/.sigma/
         // proxy-origin discovery file would silently win over the flag.
-        if (overrides.BILI_MCP_PROXY !== undefined) process.env.BILI_MCP_PROXY = overrides.BILI_MCP_PROXY;
+        if (overrides.SIGMA_MCP_PROXY !== undefined) process.env.SIGMA_MCP_PROXY = overrides.SIGMA_MCP_PROXY;
         if (pluginAction === "list") {
             for (const row of pluginStatusAll()) {
                 const channel = row.status === "not installed" || row.status.startsWith("error") ? "" : ` | updates via ${row.channel}`;
@@ -440,7 +440,7 @@ export async function main(): Promise<void> {
             return;
         }
         if (pluginAction === "update") {
-            // Same updater egress/channel wiring as `bili update` (#609): the
+            // Same updater egress/channel wiring as `sigma update` (#609): the
             // dsh lane resolves the latest registry version and the global
             // check downloads through the same proxy decision as model
             // traffic.
@@ -466,7 +466,7 @@ export async function main(): Promise<void> {
                 });
                 for (const line of lines) console.log(line);
             } catch (error) {
-                console.error(`bili plugin: ${error instanceof Error ? error.message : String(error)}`);
+                console.error(`sigma plugin: ${error instanceof Error ? error.message : String(error)}`);
                 process.exit(1);
             }
             return;
@@ -475,7 +475,7 @@ export async function main(): Promise<void> {
             try {
                 console.log(pluginInstall(pluginAgent!, { withMcp: pluginWithMcp }));
             } catch (error) {
-                console.error(`bili plugin: ${error instanceof Error ? error.message : String(error)}`);
+                console.error(`sigma plugin: ${error instanceof Error ? error.message : String(error)}`);
                 process.exit(1);
             }
             return;
@@ -484,7 +484,7 @@ export async function main(): Promise<void> {
             try {
                 console.log(pluginRemove(pluginAgent!));
             } catch (error) {
-                console.error(`bili plugin: ${error instanceof Error ? error.message : String(error)}`);
+                console.error(`sigma plugin: ${error instanceof Error ? error.message : String(error)}`);
                 process.exit(1);
             }
             return;
@@ -495,13 +495,13 @@ export async function main(): Promise<void> {
             const text = await exportSession(exportSelector, { output: exportOutput, full: exportFull });
             process.stdout.write(text + "\n");
         } catch (error) {
-            console.error(`bili export: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`sigma export: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
         }
         return;
     }
     if (command === "doctor") {
-        // Read-only lane audit (#1235). Same egress/channel wiring as `bili
+        // Read-only lane audit (#1235). Same egress/channel wiring as `sigma
         // update` so the registry freshness check honors -F and updateTag.
         for (const [k, v] of Object.entries(overrides)) {
             if (v !== undefined) process.env[k] = v;
@@ -519,7 +519,7 @@ export async function main(): Promise<void> {
             const report = await runDoctor({ packageName: PACKAGE_NAME, runningVersion: VERSION, resolveProxy: updaterResolveProxy, updateTag });
             process.stdout.write(doctorJson ? JSON.stringify(report, null, 2) + "\n" : renderDoctorReport(report));
         } catch (error) {
-            console.error(`bili doctor: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`sigma doctor: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
         }
         return;
@@ -529,7 +529,7 @@ export async function main(): Promise<void> {
         // overrides first so `-F <proxy>` reaches loadOptions; the registry
         // and tarball egress then honor the same upstream-proxy decision as
         // model traffic (#609), and the configured channel (updateTag) so
-        // `bili update` follows the same dist-tag as the background
+        // `sigma update` follows the same dist-tag as the background
         // auto-updater.
         for (const [k, v] of Object.entries(overrides)) {
             if (v !== undefined) process.env[k] = v;
@@ -541,7 +541,7 @@ export async function main(): Promise<void> {
             updaterResolveProxy = (url) => resolveProxy(o.routes, o.proxy, url, o.proxyFallback);
             updateTag = o.updateTag;
         } catch (e) {
-            console.error(`bili update: config load failed (${String(e)}); updater egress goes direct`);
+            console.error(`sigma update: config load failed (${String(e)}); updater egress goes direct`);
         }
         await checkForUpdate(
             { packageName: PACKAGE_NAME, currentVersion: VERSION, autoUpdate: true, resolveProxy: updaterResolveProxy, updateTag },
@@ -554,7 +554,7 @@ export async function main(): Promise<void> {
             await runTestPi({ overrides, mitmDomains });
             return;
         }
-        console.error("bili test: only 'pi' supported for now");
+        console.error("sigma test: only 'pi' supported for now");
         process.exit(2);
     }
     if (command === "launch") {

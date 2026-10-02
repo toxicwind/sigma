@@ -4,19 +4,19 @@
 2026-08-23
 
 ## Background
-`bili opencode` launch support was added (a349e34: launch client + `--bin` flag;
-320b2fa: OPENCODE_CONFIG `/bili/` rewrite for plaintext HTTP upstreams). Two gaps
+`sigma opencode` launch support was added (a349e34: launch client + `--bin` flag;
+320b2fa: OPENCODE_CONFIG `/sigma/` rewrite for plaintext HTTP upstreams). Two gaps
 remained:
 
 1. With opencode-acp self-disabled (upstream PR ranxianglei/opencode-acp#335),
    the user lost the `/acp` status command — the proxy's wire injection covers
    the model-facing tools, but nothing rendered a status panel.
-2. Session binding: opencode cannot stamp `x-bili-plugin-*` headers from a
+2. Session binding: opencode cannot stamp `x-sigma-plugin-*` headers from a
    plugin, so `handlePluginStatus` could not resolve the conversation to a
    proxy session.
 
 ## Requirements
-1. `bili opencode` must surface an `/acp`-equivalent status panel with zero
+1. `sigma opencode` must surface an `/acp`-equivalent status panel with zero
    install steps and zero edits to the user's real `~/.config/opencode/opencode.json`.
 2. The proxy's 4 wire-injected ACP tools must keep flowing to the model
    (compress/decompress/search_context/acp_status appended after opencode's
@@ -29,7 +29,7 @@ remained:
   (`dist/agent/opencode.js`): registers the `acp` command (config hook +
   `command.execute.before`), fetches the proxy status panel, renders it via an
   ignored no-reply chat message (`client.session.prompt` + `parts[].ignored`,
-  same mechanism opencode-acp uses). No-op unless `BILLION_CONTEXT_PROXY` is set.
+  same mechanism opencode-acp uses). No-op unless `SIGMA_PROXY` is set.
 - `prepareOpencodeHttpRewrite` takes an optional `pluginPath` and appends the
   absolute path of `dist/agent/opencode.js` to the temp config's `plugin`
   array (deduped; temp config is now emitted even when only a plugin rides
@@ -47,7 +47,7 @@ remained:
   fallback is correct for the single-session interactive flow).
 
 ## References
-- Issue: bili opencode "can't see acp anymore" (user report filed after
+- Issue: sigma opencode "can't see acp anymore" (user report filed after
   opencode-acp's self-disable landed)
 - Upstream: https://github.com/ranxianglei/opencode-acp/pull/335 (self-disable)
 - Plugin API: `command.execute.before` + `config` hooks, `session.prompt`

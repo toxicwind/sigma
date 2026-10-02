@@ -14,22 +14,22 @@ export function nativeProxyScriptPath(fromUrl: string = import.meta.url): string
 }
 
 /** Common gate for host-native bootstraps: off when the global plugin kill
- *  switch or the per-host opt-out key is set, or when a `bili` launch already
- *  owns a proxy (MITM transparent sets BILLION_CONTEXT_PROXY; /bili/ rewrite
- *  mode sets BILI_PROVIDER_REWRITES). */
+ *  switch or the per-host opt-out key is set, or when a `sigma` launch already
+ *  owns a proxy (MITM transparent sets SIGMA_PROXY; /sigma/ rewrite
+ *  mode sets SIGMA_PROVIDER_REWRITES). */
 export function nativeBootstrapGate(env: NodeJS.ProcessEnv, optOutKey: string): boolean {
-    if (env.BILLION_CONTEXT_PLUGIN === "0") return false;
+    if (env.SIGMA_PLUGIN === "0") return false;
     if (env[optOutKey] === "0") return false;
-    if (env.BILLION_CONTEXT_PROXY !== undefined && env.BILLION_CONTEXT_PROXY.trim().length > 0) return false;
-    if (env.BILI_PROVIDER_REWRITES !== undefined) return false;
+    if (env.SIGMA_PROXY !== undefined && env.SIGMA_PROXY.trim().length > 0) return false;
+    if (env.SIGMA_PROVIDER_REWRITES !== undefined) return false;
     return true;
 }
 
-/** Normalize a preset BILLION_CONTEXT_PROXY value (http/https, trailing
+/** Normalize a preset SIGMA_PROXY value (http/https, trailing
  *  slashes stripped) for attach-style routing. Returns undefined when unset,
  *  blank, or not a valid http(s) origin. */
 export function proxyEnvOrigin(env: NodeJS.ProcessEnv): string | undefined {
-    const raw = env.BILLION_CONTEXT_PROXY;
+    const raw = env.SIGMA_PROXY;
     if (raw === undefined) return undefined;
     const url = raw.trim();
     if (url.length === 0 || !/^https?:\/\//i.test(url)) return undefined;
@@ -41,13 +41,13 @@ export function proxyEnvOrigin(env: NodeJS.ProcessEnv): string | undefined {
     return url.replace(/\/+$/, "");
 }
 
-/** External-proxy attach signal (#809): when BILLION_CONTEXT_ATTACH holds a
+/** External-proxy attach signal (#809): when SIGMA_ATTACH holds a
  *  valid http(s) origin, a host-native entry routes model traffic THROUGH that
  *  pre-existing proxy instead of spawning its own — no ownership, no respawn,
  *  fail-closed on its death. Returns the normalized origin (trailing slash
  *  stripped) or undefined when unset/blank/malformed/non-http(s). */
 export function nativeAttachOrigin(env: NodeJS.ProcessEnv): string | undefined {
-    const raw = env.BILLION_CONTEXT_ATTACH;
+    const raw = env.SIGMA_ATTACH;
     if (raw === undefined) return undefined;
     const url = raw.trim();
     if (url.length === 0 || !/^https?:\/\//i.test(url)) return undefined;
@@ -69,28 +69,28 @@ export function envMillis(env: NodeJS.ProcessEnv, name: string, fallback: number
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-/** Coexistence marker (#820): tells standalone in-process bili extensions
- *  (billion-context-pi / opencode-acp) that a host-native entry owns THIS
+/** Coexistence marker (#820): tells standalone in-process sigma extensions
+ *  (sigma-pi / opencode-acp) that a host-native entry owns THIS
  *  process so they back off instead of double-compressing. Set synchronously
  *  at module evaluation — before any await — because those extensions check
- *  BILLION_CONTEXT_PROXY at load time (our bootstrap writes it only after the
- *  proxy is up) and their /bili/ baseUrl check never sees our fetch-layer
+ *  SIGMA_PROXY at load time (our bootstrap writes it only after the
+ *  proxy is up) and their /sigma/ baseUrl check never sees our fetch-layer
  *  rewrite. First writer wins: one process hosts one native entry. Callers
- *  gate on their own shouldBootstrap*() so opt-outs and launches where a bili
+ *  gate on their own shouldBootstrap*() so opt-outs and launches where a sigma
  *  launcher already manages the proxy leave the marker unset. */
 export function markNativeHost(env: NodeJS.ProcessEnv, host: string): void {
-    if (env.BILLION_CONTEXT_NATIVE === undefined || env.BILLION_CONTEXT_NATIVE.length === 0) {
-        env.BILLION_CONTEXT_NATIVE = host;
+    if (env.SIGMA_NATIVE === undefined || env.SIGMA_NATIVE.length === 0) {
+        env.SIGMA_NATIVE = host;
     }
 }
 
 /** True when a pi/opencode packages[] entry loads the LEGACY standalone
- *  billion-context-pi extension (#939): npm spec (bare or versioned), or any
- *  path whose segments contain billion-context-pi (node_modules install, git
+ *  sigma-pi extension (#939): npm spec (bare or versioned), or any
+ *  path whose segments contain sigma-pi (node_modules install, git
  *  spec or checkout path). That extension compresses IN-PROCESS, and versions
- *  without the BILLION_CONTEXT_NATIVE stand-down (billion-context-pi#461,
+ *  without the SIGMA_NATIVE stand-down (sigma-pi#461,
  *  unreleased at 0.1.71) cannot see the proxy their entry spawns — their
- *  BILLION_CONTEXT_PROXY check runs at factory time, before our async
+ *  SIGMA_PROXY check runs at factory time, before our async
  *  bootstrap writes it, and the fetch-layer rewrite keeps the baseUrl clean.
  *  Co-resident = every request compressed twice, silently. Shared between the
  *  pi host entry's co-residence net and the #1206 third-party scan because
@@ -98,9 +98,9 @@ export function markNativeHost(env: NodeJS.ProcessEnv, host: string): void {
 export function isLegacyBcpEntry(entry: string): boolean {
     const e = entry.trim();
     const bare = e.replace(/^npm:/, "");
-    return bare === "billion-context-pi"
-        || /^billion-context-pi@/.test(bare)
-        || /(^|[/\\])billion-context-pi([/\\]|$)/.test(e);
+    return bare === "sigma-pi"
+        || /^sigma-pi@/.test(bare)
+        || /(^|[/\\])sigma-pi([/\\]|$)/.test(e);
 }
 
 /** Concurrent callers share one in-flight bootstrap — a burst of failures
@@ -121,7 +121,7 @@ export function singleFlight(fn: () => Promise<string | undefined>): () => Promi
 // ———— Native-origin waiter (#1243) ——————————————————————————————————
 // Native entries spawn the proxy asynchronously and publish its origin via
 // NativeInterceptState; the shared factory's before_provider_headers reads
-// BILLION_CONTEXT_PROXY, which bootstrap() writes only after the spawn. A
+// SIGMA_PROXY, which bootstrap() writes only after the spawn. A
 // one-shot's single header event can fire inside that window, so the reader
 // awaits the writer through this channel instead of racing it. Hosts without
 // a native entry register no waiter — awaitNativeProxyOrigin() resolves

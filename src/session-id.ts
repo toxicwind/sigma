@@ -43,12 +43,12 @@ export function clientConversationHeader(headers: Record<string, string | string
  *  won — needed by callers whose trust decision depends on the signal's origin
  *  (#1102), not just its value. */
 export function conversationHeaderSource(headers: Record<string, string | string[] | undefined>): { name: string; value: string } | undefined {
-    // x-bili-plugin-conversation first: a cooperative plugin's explicit
+    // x-sigma-plugin-conversation first: a cooperative plugin's explicit
     // statement of which conversation it is driving (see src/plugin.ts).
     // It outranks every other signal — the plugin owns the session identity
     // in plugin mode (this is what fixes pi's content-fingerprint collision
     // risk for plugin-equipped agents). Honored ONLY when the plugin marker
-    // header x-bili-plugin is present: the protocol always sends both
+    // header x-sigma-plugin is present: the protocol always sends both
     // together, and trusting a plugin-protocol header from any client would
     // let an unauthenticated LAN client steer the proxy's session identity.
     // x-claude-code-session-id next: the CLI's true per-session UUID — the
@@ -65,10 +65,10 @@ export function conversationHeaderSource(headers: Record<string, string | string
     // x-mavis-session-id: MiniMax Code (mcode) stamps its per-conversation id
     // on every model request (#1050). Client-specific name — same trust class
     // as the claude/grok headers above.
-    const pluginMarker = typeof headers["x-bili-plugin"] === "string";
-    const names = ["x-bili-plugin-conversation", "x-claude-code-session-id", "x-grok-session-id", "x-grok-conv-id", "x-mavis-session-id", "x-session-affinity", "x-acp-session", "x-session-id", "x-opencode-session", "session-id", "session_id"];
+    const pluginMarker = typeof headers["x-sigma-plugin"] === "string";
+    const names = ["x-sigma-plugin-conversation", "x-claude-code-session-id", "x-grok-session-id", "x-grok-conv-id", "x-mavis-session-id", "x-session-affinity", "x-acp-session", "x-session-id", "x-opencode-session", "session-id", "session_id"];
     for (const name of names) {
-        if (name === "x-bili-plugin-conversation" && !pluginMarker) continue;
+        if (name === "x-sigma-plugin-conversation" && !pluginMarker) continue;
         const v = headers[name];
         if (typeof v === "string" && v.trim().length > 0) return { name, value: v.trim() };
     }
@@ -99,7 +99,7 @@ export function conversationHeaderSource(headers: Record<string, string | string
  * resets all compression state for no defending bug. opencode (persona-scoped
  * ses_ ids, #1102/#1104), grok/mcode (per-session ids by their own source),
  * plugin conversation ids, and generic x-session-id / body session_id all
- * stay on the verbatim path now. The x-bili-plugin-instructions-mutable
+ * stay on the verbatim path now. The x-sigma-plugin-instructions-mutable
  * declaration (#1104) is vestigial: exempt is the default; hosts keep
  * stamping it for protocol compatibility with older proxies.
  *
@@ -122,7 +122,7 @@ export function instructionsFingerprintApplies(headers: Record<string, string | 
 
 /**
  * Return only an identity the client already supplied. Generated identities
- * remain proxy-internal so billion-context does not invent upstream headers.
+ * remain proxy-internal so sigma does not invent upstream headers.
  */
 export function affinityToken(identity: ConversationIdentity): string | undefined {
     return identity.clientProvided ? identity.value : undefined;
@@ -171,7 +171,7 @@ export function preferPromptCacheKeyIdentity<T extends ConversationIdentity>(
  *   - "user"     → undefined (validated, but the id resolves through the
  *                  legacy precedence chain — binding the session-id header
  *                  directly would leapfrog stronger headers such as
- *                  x-bili-plugin-conversation and flip the identity when a
+ *                  x-sigma-plugin-conversation and flip the identity when a
  *                  wrapper adds/drops the metadata mid-session; the legacy
  *                  chain reads the same session-id header for plain codex
  *                  traffic, so the root value is unchanged)
@@ -214,7 +214,7 @@ export function codexTurnIdentity(headers: Record<string, string | string[] | un
         // A root turn's headers are validated (the pair cross-checks), but the
         // session id still resolves through the legacy precedence chain:
         // binding directly to the session-id header here would leapfrog
-        // stronger headers (e.g. x-bili-plugin-conversation) and flip the
+        // stronger headers (e.g. x-sigma-plugin-conversation) and flip the
         // identity when a wrapper adds or drops the metadata mid-session. The
         // legacy chain reads the same session-id header for plain codex
         // traffic, so the root value is unchanged.

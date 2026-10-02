@@ -163,7 +163,7 @@ test("e2e: fork/fresh session (lastInputTokens=0) with dense history that estima
         // id, lastInputTokens = 0, full raw history replayed). The optimistic
         // estimate (~12k) is under the 40k window, so the old code forwarded
         // raw and the mock answered 400.
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages: denseConversation() }),
@@ -256,7 +256,7 @@ test("e2e: fresh session whose history genuinely fits the window → no prefligh
         // Small ANONYMOUS fresh session: both the optimistic estimate AND the
         // conservative char-count upper bound are far under the window, so the
         // trigger must stay quiet even in the conservative regime.
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({

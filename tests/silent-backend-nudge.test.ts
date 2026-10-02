@@ -189,7 +189,7 @@ async function runCase(opts: { inputTokens: number | null; sessionId?: string; t
 
     try {
         const post = async (messages: TurnMsg[]): Promise<number> => {
-            const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+            const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
                 method: "POST",
                 headers: { "content-type": "application/json", "x-acp-session": opts.sessionId ?? "silent-backend-sess" },
                 body: JSON.stringify({ model: "claude-small", max_tokens: 1024, stream: true, messages }),

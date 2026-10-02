@@ -14,7 +14,7 @@ import { _resetPluginStateForTest } from "../src/plugin.ts";
 import { buildClaudePluginEnv, buildCodexMcpArgs, buildMcpConfig, isPrivateUpstreamHost, launcherDirectUrl, launcherInjectMcp } from "../src/launcher.ts";
 
 // Launcher mode (#162): hosts that cannot attach per-request headers
-// (claude/codex spawned by `bili claude` / `bili codex`) bind into plugin mode
+// (claude/codex spawned by `sigma claude` / `sigma codex`) bind into plugin mode
 // via POST /__bili/plugin/register. Two binding strategies, both covered:
 //   1. identity-driven (claude code): every model request carries
 //      x-claude-code-session-id === the CLAUDE_CODE_SESSION_ID the MCP shell
@@ -97,7 +97,7 @@ async function startRig(): Promise<Rig> {
         proxyPort,
         upstreamPort,
         proxyUrl: (path) => `http://127.0.0.1:${proxyPort}${path}`,
-        modelUrl: () => `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+        modelUrl: () => `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
         upstreamBodies,
         closeAll: async () => {
             await close(proxy);
@@ -192,7 +192,7 @@ test("launcher identity binding survives model switches (one conversation, multi
     await listen(upstream2);
     try {
         const port2 = (upstream2.address() as { port: number }).port;
-        const postUpstream2 = (): Promise<Response> => fetch(`http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${port2}/v1/messages`, {
+        const postUpstream2 = (): Promise<Response> => fetch(`http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${port2}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-claude-code-session-id": "sess-switch" },
             body: JSON.stringify({ model: "l162-model", max_tokens: 8192, stream: true, messages: [{ role: "user", content: "hello" }] }),
@@ -227,12 +227,12 @@ test("launcher identity binding does not leak onto other sessions", async () => 
 
 test("launcher injection builders: direct-URL env, MCP config JSON, codex -c args", () => {
     assert.equal(launcherDirectUrl({}), false, "transparent-MITM route is the default (existing launcher compatibility)");
-    assert.equal(launcherDirectUrl({ BILI_LAUNCHER_DIRECT: "1" }), true, "direct URL is opt-in");
-    assert.equal(launcherDirectUrl({ BILI_LAUNCHER_DIRECT: "0" }), false, "explicit opt-out honored");
+    assert.equal(launcherDirectUrl({ SIGMA_LAUNCHER_DIRECT: "1" }), true, "direct URL is opt-in");
+    assert.equal(launcherDirectUrl({ SIGMA_LAUNCHER_DIRECT: "0" }), false, "explicit opt-out honored");
 
     // MCP injection is ON by default for claude/codex (#290): zero-config
     // native tools, mirroring the pi/omp/opencode auto-injection.
-    // BILI_LAUNCHER_PLUGIN=0 is the kill switch back to pure wire mode for
+    // SIGMA_LAUNCHER_PLUGIN=0 is the kill switch back to pure wire mode for
     // hosts older than the verified builds (claude 2.1.227, codex 0.147.0).
     assert.equal(launcherInjectMcp({}, "claude"), true, "plugin injection on by default (claude)");
     assert.equal(launcherInjectMcp({}, "codex"), true, "plugin injection on by default (codex)");
@@ -243,8 +243,8 @@ test("launcher injection builders: direct-URL env, MCP config JSON, codex -c arg
     assert.equal(launcherInjectMcp({}, "codex", "http://[::1]:8080/v1"), false, "IPv6 loopback falls back");
     assert.equal(launcherInjectMcp({}, "codex", "http://[fd00::1]:8080/v1"), false, "IPv6 ULA falls back");
     assert.equal(launcherInjectMcp({}, "codex", "http://mybox.local:8000/v1"), false, "mDNS name falls back");
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "1" }, "codex", "http://127.0.0.1:8199/v1"), true, "explicit opt-in overrides the local-upstream fallback");
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "0" }, "codex", "http://127.0.0.1:8199/v1"), false, "explicit opt-out still honored");
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "1" }, "codex", "http://127.0.0.1:8199/v1"), true, "explicit opt-in overrides the local-upstream fallback");
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "0" }, "codex", "http://127.0.0.1:8199/v1"), false, "explicit opt-out still honored");
     assert.equal(launcherInjectMcp({}, "codex", "https://api.openai.com/v1"), true, "public codex upstream keeps MCP tools");
     assert.equal(launcherInjectMcp({}, "codex", "https://gwv1701.comfly.org/v1"), true, "public relay keeps MCP tools");
     assert.equal(launcherInjectMcp({}, "codex", "not a url"), true, "unparseable upstream: keep MCP tools (conservative)");
@@ -256,39 +256,39 @@ test("launcher injection builders: direct-URL env, MCP config JSON, codex -c arg
     assert.equal(isPrivateUpstreamHost("http://8.8.8.8/v1"), false);
     assert.equal(isPrivateUpstreamHost("http://[::ffff:10.1.2.3]:9/v1"), true, "IPv4-mapped IPv6");
     assert.equal(isPrivateUpstreamHost("http://[2001:db8::1]:9/v1"), false, "global IPv6");
-    assert.equal(isPrivateUpstreamHost(""), false, "empty string unparseable");    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "0" }, "claude"), false, "explicit opt-out honored (claude)");
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "0" }, "codex"), false, "explicit opt-out honored (codex)");
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "1" }, "claude"), true, "explicit opt-in still works");
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "1" }, "pi"), false, "pi always excluded (native extension #154)");
+    assert.equal(isPrivateUpstreamHost(""), false, "empty string unparseable");    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "0" }, "claude"), false, "explicit opt-out honored (claude)");
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "0" }, "codex"), false, "explicit opt-out honored (codex)");
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "1" }, "claude"), true, "explicit opt-in still works");
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "1" }, "pi"), false, "pi always excluded (native extension #154)");
 
     const env = buildClaudePluginEnv("http://127.0.0.1:8787", true, { HOME: "/h" });
-    assert.equal(env.ANTHROPIC_BASE_URL, "http://127.0.0.1:8787/bili/https://api.anthropic.com");
+    assert.equal(env.ANTHROPIC_BASE_URL, "http://127.0.0.1:8787/sigma/https://api.anthropic.com");
     assert.equal(env.HOME, "/h", "base env preserved");
     assert.equal(buildClaudePluginEnv("http://127.0.0.1:8787", false, { HOME: "/h" }).ANTHROPIC_BASE_URL, undefined, "MITM mode leaves the base URL alone");
 
     const mcp = buildMcpConfig("http://127.0.0.1:8787");
-    assert.equal(mcp.mcpServers.bili.command, process.execPath);
-    assert.match(mcp.mcpServers.bili.args[0]!, /mcp\.js$/);
-    assert.equal(mcp.mcpServers.bili.env.BILI_MCP_PROXY, "http://127.0.0.1:8787");
+    assert.equal(mcp.mcpServers.sigma.command, process.execPath);
+    assert.match(mcp.mcpServers.sigma.args[0]!, /mcp\.js$/);
+    assert.equal(mcp.mcpServers.sigma.env.SIGMA_MCP_PROXY, "http://127.0.0.1:8787");
 
     const codexConvId = "11111111-2222-4333-8444-555555555555";
     const args = buildCodexMcpArgs("http://127.0.0.1:8787", codexConvId);
     assert.deepEqual(args[0], "-c");
-    assert.match(args[1]!, /^mcp_servers\.bili\.command=/);
-    assert.match(args[3]!, /^mcp_servers\.bili\.args=/);
-    assert.match(args[5]!, /^mcp_servers\.bili\.env\.BILI_MCP_PROXY=/);
+    assert.match(args[1]!, /^mcp_servers\.sigma\.command=/);
+    assert.match(args[3]!, /^mcp_servers\.sigma\.args=/);
+    assert.match(args[5]!, /^mcp_servers\.sigma\.env\.SIGMA_MCP_PROXY=/);
     // codex-cli parses these -c values as TOML: args MUST be a TOML array,
     // not a JSON-encoded string — a double-encoded value makes codex refuse
     // to start ("invalid type: string ..., expected a sequence").
-    const argsValue = args[3]!.slice("mcp_servers.bili.args=".length);
+    const argsValue = args[3]!.slice("mcp_servers.sigma.args=".length);
     assert.match(argsValue, /^\[.*\]$/, "args is a TOML array, not a stringified array");
     const parsedArgs = JSON.parse(argsValue) as unknown[];
     assert.ok(Array.isArray(parsedArgs) && parsedArgs.length === 1, "exactly one argument");
     assert.ok(String(parsedArgs[0]).endsWith("mcp.js"), "argument is the mcp script path");
     // codex passes no session id to MCP children, so the launcher injects a
     // per-spawn conversation id for the shell's headless self-registration.
-    assert.match(args[7]!, /^mcp_servers\.bili\.env\.BILI_CONVERSATION_ID=/);
-    assert.equal(args[7]!.slice("mcp_servers.bili.env.BILI_CONVERSATION_ID=".length), JSON.stringify(codexConvId));
+    assert.match(args[7]!, /^mcp_servers\.sigma\.env\.SIGMA_CONVERSATION_ID=/);
+    assert.equal(args[7]!.slice("mcp_servers.sigma.env.SIGMA_CONVERSATION_ID=".length), JSON.stringify(codexConvId));
 });
 
 test("mcp stdio shell: manifest → tools/list → tools/call forwards to the plugin tool endpoint", async () => {
@@ -300,8 +300,8 @@ test("mcp stdio shell: manifest → tools/list → tools/call forwards to the pl
     const shell = spawn(process.execPath, ["--import", "tsx", "src/mcp.ts"], {
         env: {
             ...process.env,
-            BILI_MCP_PROXY: rig.proxyUrl(""),
-            BILI_CONVERSATION_ID: "mcp-shell-conv",
+            SIGMA_MCP_PROXY: rig.proxyUrl(""),
+            SIGMA_CONVERSATION_ID: "mcp-shell-conv",
         },
         stdio: ["pipe", "pipe", "pipe"],
     });
@@ -338,7 +338,7 @@ test("mcp stdio shell: manifest → tools/list → tools/call forwards to the pl
     const byId = (n: number): Record<string, unknown> => JSON.parse(out.find((l) => (JSON.parse(l) as { id?: number }).id === n) ?? "{}");
 
     const init = byId(1) as { result?: { serverInfo?: { name?: string } } };
-    assert.equal(init.result?.serverInfo?.name, "bili");
+    assert.equal(init.result?.serverInfo?.name, "sigma");
     const tools = byId(2) as { result?: { tools?: { name: string }[] } };
     assert.deepEqual(tools.result?.tools?.map((t) => t.name).sort(), ["acp_cache", "acp_status", "compress", "decompress", "search_context"]);
     const call = byId(3) as { result?: { content?: { text?: string }[]; isError?: boolean } };
@@ -346,9 +346,9 @@ test("mcp stdio shell: manifest → tools/list → tools/call forwards to the pl
     assert.match(call.result?.content?.[0]?.text ?? "", /CONTEXT BREAKDOWN/, "acp_status result forwarded verbatim");
 });
 
-test("mcp stdio shell (codex style): BILI_CONVERSATION_ID self-register → headless binding → tools/call", async () => {
-    // The exact flow `bili codex` now produces (default MITM route): the
-    // launcher passes BILI_CONVERSATION_ID, the shell self-registers
+test("mcp stdio shell (codex style): SIGMA_CONVERSATION_ID self-register → headless binding → tools/call", async () => {
+    // The exact flow `sigma codex` now produces (default MITM route): the
+    // launcher passes SIGMA_CONVERSATION_ID, the shell self-registers
     // headlessly on initialize (no manual register, no identity header), the
     // first NEW-session model request consumes the pending registration, and
     // tool calls through the shell resolve.
@@ -359,8 +359,8 @@ test("mcp stdio shell (codex style): BILI_CONVERSATION_ID self-register → head
     const shell = spawn(process.execPath, ["--import", "tsx", "src/mcp.ts"], {
         env: {
             ...process.env,
-            BILI_MCP_PROXY: rig.proxyUrl(""),
-            BILI_CONVERSATION_ID: conv,
+            SIGMA_MCP_PROXY: rig.proxyUrl(""),
+            SIGMA_CONVERSATION_ID: conv,
             // deliberately NO CLAUDE_CODE_SESSION_ID — codex passes none.
         },
         stdio: ["pipe", "pipe", "pipe"],

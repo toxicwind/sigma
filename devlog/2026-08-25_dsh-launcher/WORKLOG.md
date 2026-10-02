@@ -9,7 +9,7 @@
    `--dump-config` revealed that agent-default-model is pinned to `deepseek-official`. Garbage
    settings crash hard, which proves settings are read from DSH_HOME.
 3. The `dsh-llm-deepseek` source: `config.baseURL ?? env.DEEPSEEK_BASE_URL ?? PUBLIC_BASE_URL`.
-4. The whole chain: dsh → bili (with the /bili/ prefix) → mock, with the compression tools injected
+4. The whole chain: dsh → sigma (with the /sigma/ prefix) → mock, with the compression tools injected
    (tools=[...,compress,decompress,search_context,acp_status]) and two sessions tracked
    independently.
 
@@ -19,7 +19,7 @@
   loadClientConfig attaching `config.dsh`.
 - src/launcher.ts: dsh added to LAUNCH_CLIENTS/BaseClientName, a dsh branch in discoverRoutes
   (baseUrls → httpRewrites), `prepareDshHome` (an overlay rewrite, the sibling of the hermes one),
-  a dsh branch in runLaunch (BILLION_CONTEXT_PROXY + DEEPSEEK_BASE_URL + the DSH_HOME overlay +
+  a dsh branch in runLaunch (SIGMA_PROXY + DEEPSEEK_BASE_URL + the DSH_HOME overlay +
   a three-state warning), dsh excluded from launcherInjectMcp, and a re-export of the three new
   symbols.
 - src/loop/adapter-openai.ts: `?? 0` fallbacks on the numeric fields of the emitCompletion usage
@@ -72,10 +72,10 @@ JSON). Requested parity with pi/omp/codex/claude — a real native command.
 - `src/agent/dsh-acp.ts` (tsup entry → `dist/agent/dsh-acp.js`): registers
   `/acp`; outcome chain = proxyBaseFromEnv → fetchStatusLatest (panel text)
   → fetchProxyVersion (armed-but-idle info, PR#235 wording) → unreachable
-  error. No-env case hints `bili dsh`.
+  error. No-env case hints `sigma dsh`.
 - `src/agent/shared.ts`: +`fetchStatusLatest` — status endpoint rejects an
   EMPTY conversationId, so the URL carries `conversationId=dsh&fallback=latest`.
-- `src/launcher.ts`: +`writeDshAcpPatch` (writes `~/.dsh-bili/.bili-acp.patch.yml`
+- `src/launcher.ts`: +`writeDshAcpPatch` (writes `~/.dsh-sigma/.sigma-acp.patch.yml`
   with `- insert:\n    - name: file://…/dsh-acp.js\n`; independent of the
   settings rewrite so it exists with zero custom providers) and
   `dshArgsWithPatch` (three-shape splice: prepend / after-`web` / skip).
@@ -89,7 +89,7 @@ handler()` — restoring synchronously raced ahead of the first actual fetch
 call and a live proxy on 127.0.0.1:8787 answered instead.
 
 **e2e (real vllm)**: `--dump-config` shows our insert row; headless one-shot
-through `bili dsh` returns ACP-E2E-OK with no loader errors (plugin loads and
+through `sigma dsh` returns ACP-E2E-OK with no loader errors (plugin loads and
 registers); `dsh web` boots clean; `status?conversationId=dsh&fallback=latest`
 on a live proxy returns the rendered panel.
 

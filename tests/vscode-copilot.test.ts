@@ -98,7 +98,7 @@ test("vscode-copilot #177 (1): OpenAI streaming final chunk carries total_tokens
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
 
     try {
         const resp = await fetch(url, {
@@ -192,7 +192,7 @@ test("vscode-copilot #177 (2): client cancel aborts upstream and frees the sessi
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
 
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
     const sessionHeader = { "x-acp-session": "vscode-cancel-test" };
     const body = {
         model: "deepseek-v4-flash",

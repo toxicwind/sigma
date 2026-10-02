@@ -58,16 +58,16 @@ async function deadOrigin(): Promise<string> {
 
 test("planNativeZcode resolves kill-switches > attach > spawn", () => {
     assert.deepEqual(planNativeZcode({}), { mode: "spawn" });
-    assert.deepEqual(planNativeZcode({ BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeZcode({ BILI_NATIVE_ZCODE: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeZcode({ BILI_PROVIDER_REWRITES: "" }), { mode: "off" });
-    assert.deepEqual(planNativeZcode({ BILLION_CONTEXT_ATTACH: "http://127.0.0.1:9999/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:9999" });
-    assert.deepEqual(planNativeZcode({ BILLION_CONTEXT_PROXY: "https://127.0.0.1:8787" }), { mode: "attach", attachOrigin: "https://127.0.0.1:8787" });
+    assert.deepEqual(planNativeZcode({ SIGMA_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeZcode({ SIGMA_NATIVE_ZCODE: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeZcode({ SIGMA_PROVIDER_REWRITES: "" }), { mode: "off" });
+    assert.deepEqual(planNativeZcode({ SIGMA_ATTACH: "http://127.0.0.1:9999/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:9999" });
+    assert.deepEqual(planNativeZcode({ SIGMA_PROXY: "https://127.0.0.1:8787" }), { mode: "attach", attachOrigin: "https://127.0.0.1:8787" });
     assert.deepEqual(
-        planNativeZcode({ BILLION_CONTEXT_ATTACH: "http://127.0.0.1:9999", BILLION_CONTEXT_PROXY: "https://127.0.0.1:8787" }),
+        planNativeZcode({ SIGMA_ATTACH: "http://127.0.0.1:9999", SIGMA_PROXY: "https://127.0.0.1:8787" }),
         { mode: "attach", attachOrigin: "http://127.0.0.1:9999" },
     );
-    assert.deepEqual(planNativeZcode({ BILLION_CONTEXT_ATTACH: "not-a-url" }), { mode: "spawn" });
+    assert.deepEqual(planNativeZcode({ SIGMA_ATTACH: "not-a-url" }), { mode: "spawn" });
 });
 
 test("probeProxyHealth accepts any live proxy answer and rejects failures", async () => {
@@ -90,7 +90,7 @@ test("probeProxyHealth accepts any live proxy answer and rejects failures", asyn
     }
 });
 
-test("routeZcodeConfig wraps the store and snapshots pre-bili state once", async () => {
+test("routeZcodeConfig wraps the store and snapshots pre-sigma state once", async () => {
     const dir = dataDir();
     try {
         const original = readFileSync(zcodeStoreCandidates(dir, "legacy", {})[0], "utf8");
@@ -101,13 +101,13 @@ test("routeZcodeConfig wraps the store and snapshots pre-bili state once", async
         assert.equal(applied.port, 18787);
         assert.equal(applied.upstream, UPSTREAM);
         assert.deepEqual(applied.wrapped, [{ id: "builtin:bigmodel-coding-plan", upstream: UPSTREAM }]);
-        assert.match(readFileSync(applied.file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/bili\//);
-        assert.equal(readFileSync(`${applied.file}.bili-bak`, "utf8"), original);
+        assert.match(readFileSync(applied.file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/sigma\//);
+        assert.equal(readFileSync(`${applied.file}.sigma-bak`, "utf8"), original);
 
         const rerouted = await routeZcodeConfig({ origin: "http://127.0.0.1:28787", dataDir: dir, log: (m) => logs.push(m) });
         assert.ok(rerouted);
-        assert.match(readFileSync(rerouted.file, "utf8"), /http:\/\/127\.0\.0\.1:28787\/bili\//);
-        assert.equal(readFileSync(`${rerouted.file}.bili-bak`, "utf8"), original);
+        assert.match(readFileSync(rerouted.file, "utf8"), /http:\/\/127\.0\.0\.1:28787\/sigma\//);
+        assert.equal(readFileSync(`${rerouted.file}.sigma-bak`, "utf8"), original);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -121,7 +121,7 @@ test("routeZcodeConfig re-snapshots user edits made while native mode is active"
         const userEdited = JSON.stringify({ provider: { "builtin:bigmodel-coding-plan": { options: {} }, note: "user edit" } }) + "\n";
         writeFileSync(file, userEdited);
         await routeZcodeConfig({ origin: "http://127.0.0.1:18787", dataDir: dir, log: () => {} });
-        assert.equal(readFileSync(`${file}.bili-bak`, "utf8"), userEdited);
+        assert.equal(readFileSync(`${file}.sigma-bak`, "utf8"), userEdited);
         const restored = restoreZcodeBackup({ dataDir: dir, log: () => {} });
         assert.deepEqual(restored, { restored: true });
         assert.equal(readFileSync(file, "utf8"), userEdited);
@@ -153,7 +153,7 @@ test("activateZcodePluginMode stamps the header into the routed entries", async 
         assert.ok(applied);
         await activateZcodePluginMode(applied, { dataDir: dir, log: () => {} });
         const parsed = JSON.parse(readFileSync(applied.file, "utf8")) as { provider: Record<string, { options: { headers?: Record<string, string> } }> };
-        assert.equal(parsed.provider["builtin:bigmodel-coding-plan"].options.headers?.["x-bili-plugin"], "zcode");
+        assert.equal(parsed.provider["builtin:bigmodel-coding-plan"].options.headers?.["x-sigma-plugin"], "zcode");
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -167,8 +167,8 @@ test("unrouteZcode strips wrappers in place and drops snapshots", async () => {
         unrouteZcode({ dataDir: dir, log: () => {} });
         const parsed = JSON.parse(readFileSync(file, "utf8")) as { provider: Record<string, { options: { baseURL: string } }> };
         assert.equal(parsed.provider["builtin:bigmodel-coding-plan"].options.baseURL, UPSTREAM);
-        assert.equal(existsSync(`${file}.bili-bak`), false);
-        assert.equal(existsSync(`${file}.bili-last`), false);
+        assert.equal(existsSync(`${file}.sigma-bak`), false);
+        assert.equal(existsSync(`${file}.sigma-last`), false);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -179,7 +179,7 @@ test("bootstrapZcodeNative honors the off plan without touching the proxy", asyn
     try {
         let called = false;
         const out = await bootstrapZcodeNative({
-            env: { BILI_NATIVE_ZCODE: "0" },
+            env: { SIGMA_NATIVE_ZCODE: "0" },
             dataDir: dir,
             ensureProxy: async () => {
                 called = true;
@@ -197,7 +197,7 @@ test("bootstrapZcodeNative attaches to a healthy proxy and routes", async () => 
     const dir = dataDir();
     try {
         await withHealthServer(async (origin) => {
-            const out = await bootstrapZcodeNative({ env: { BILLION_CONTEXT_ATTACH: origin }, dataDir: dir, log: () => {} });
+            const out = await bootstrapZcodeNative({ env: { SIGMA_ATTACH: origin }, dataDir: dir, log: () => {} });
             assert.equal(out.mode, "active");
             if (out.mode !== "active") return;
             assert.equal(out.attached, true);
@@ -214,7 +214,7 @@ test("bootstrapZcodeNative fails closed on an unhealthy attach target", async ()
     try {
         const origin = await deadOrigin();
         await assert.rejects(
-            bootstrapZcodeNative({ env: { BILLION_CONTEXT_ATTACH: origin }, dataDir: dir, log: () => {}, healthDeadlineMs: 300 }),
+            bootstrapZcodeNative({ env: { SIGMA_ATTACH: origin }, dataDir: dir, log: () => {}, healthDeadlineMs: 300 }),
             /not healthy/,
         );
     } finally {
@@ -253,9 +253,9 @@ test("bootstrap honors upstream env relocation: ZCODE_DATA_BASE_DIR is a base di
         const applied = await routeZcodeConfig({ origin: "http://127.0.0.1:18787", env: { ZCODE_DATA_BASE_DIR: base }, log: () => {} });
         assert.ok(applied);
         assert.equal(applied.file, file);
-        assert.match(readFileSync(file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/bili\//);
+        assert.match(readFileSync(file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/sigma\//);
         assert.ok(restoreZcodeBackup({ env: { ZCODE_DATA_BASE_DIR: base }, log: () => {} }).restored);
-        assert.doesNotMatch(readFileSync(file, "utf8"), /\/bili\//);
+        assert.doesNotMatch(readFileSync(file, "utf8"), /\/sigma\//);
     } finally {
         rmSync(base, { recursive: true, force: true });
     }
@@ -275,8 +275,8 @@ test("bootstrap honors ZCODE_PERSONAL_PROVIDER_CONFIG_FILE overrides (#1151)", a
         assert.ok(applied);
         assert.equal(applied.kind, "new");
         assert.equal(applied.file, file);
-        assert.match(readFileSync(file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/bili\//);
-        assert.doesNotMatch(readFileSync(zcodeStoreCandidates(dir, "legacy", {})[0], "utf8"), /\/bili\//);
+        assert.match(readFileSync(file, "utf8"), /http:\/\/127\.0\.0\.1:18787\/sigma\//);
+        assert.doesNotMatch(readFileSync(zcodeStoreCandidates(dir, "legacy", {})[0], "utf8"), /\/sigma\//);
     } finally {
         rmSync(dir, { recursive: true, force: true });
         rmSync(alt, { recursive: true, force: true });

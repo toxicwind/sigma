@@ -164,13 +164,13 @@ async function callPluginAnthropic(
     messages: AnthropicMessage[],
     opts: { tools?: unknown[]; stream?: boolean; contextWindow?: number } = {},
 ): Promise<{ raw: string; events: SseEvent[]; json: Record<string, unknown> | undefined }> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: {
             "content-type": "application/json",
-            "x-bili-plugin": "pi-plugin/0.0.1",
-            "x-bili-plugin-conversation": conversationId,
-            ...(opts.contextWindow !== undefined ? { "x-bili-plugin-context-window": String(opts.contextWindow) } : {}),
+            "x-sigma-plugin": "pi-plugin/0.0.1",
+            "x-sigma-plugin-conversation": conversationId,
+            ...(opts.contextWindow !== undefined ? { "x-sigma-plugin-context-window": String(opts.contextWindow) } : {}),
         },
         body: JSON.stringify({
             model: "claude-test",
@@ -194,7 +194,7 @@ async function callPluginAnthropic(
 }
 
 async function claudeIdentityRequest(h: Harness, sessionId: string, messages: AnthropicMessage[]): Promise<number> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: {
             "content-type": "application/json",
@@ -251,8 +251,8 @@ test("plugin manifest serves the exact wire tool schemas, headers and version", 
         assert.match(String(openaiProps?.conversation_id?.description), /historical pfa-\*/);
         const responsesProps = ((searchEntry("responses")?.parameters ?? {}) as { properties?: Record<string, unknown> }).properties;
         assert.match(String(responsesProps?.conversation_id?.description), /historical pfa-\*/);
-        assert.equal(manifest.headers.agent, "x-bili-plugin");
-        assert.equal(manifest.headers.conversation, "x-bili-plugin-conversation");
+        assert.equal(manifest.headers.agent, "x-sigma-plugin");
+        assert.equal(manifest.headers.conversation, "x-sigma-plugin-conversation");
         assert.equal(manifest.toolEndpoint, "/__bili/plugin/tool");
     } finally {
         await h.close();
@@ -666,39 +666,39 @@ test("plugin mode: non-streaming JSON response passes through and usage is sniff
     }
 });
 
-test("plugin-protocol headers are honored only from requests announcing x-bili-plugin", () => {
-    // x-bili-plugin-context-window: a plain client must not be able to
+test("plugin-protocol headers are honored only from requests announcing x-sigma-plugin", () => {
+    // x-sigma-plugin-context-window: a plain client must not be able to
     // rewrite the nudge denominator by sending a plugin-protocol header.
     assert.equal(
-        pluginReportedContextWindow({ "x-bili-plugin-context-window": "50000" }),
+        pluginReportedContextWindow({ "x-sigma-plugin-context-window": "50000" }),
         undefined,
         "context-window header without the plugin marker is ignored",
     );
     assert.equal(
-        pluginReportedContextWindow({ "x-bili-plugin": "pi-plugin/0.0.1", "x-bili-plugin-context-window": "50000" }),
+        pluginReportedContextWindow({ "x-sigma-plugin": "pi-plugin/0.0.1", "x-sigma-plugin-context-window": "50000" }),
         50000,
         "plugin marker + reported window is honored",
     );
     assert.equal(
-        pluginReportedContextWindow({ "x-bili-plugin": "pi-plugin/0.0.1", "x-bili-plugin-context-window": "junk" }),
+        pluginReportedContextWindow({ "x-sigma-plugin": "pi-plugin/0.0.1", "x-sigma-plugin-context-window": "junk" }),
         undefined,
         "non-numeric reported window falls back to the cascade",
     );
 
-    // x-bili-plugin-conversation: likewise gated on the marker, while the
+    // x-sigma-plugin-conversation: likewise gated on the marker, while the
     // legacy client headers keep working without any marker.
     assert.equal(
-        clientConversationHeader({ "x-bili-plugin-conversation": "steal-me" }),
+        clientConversationHeader({ "x-sigma-plugin-conversation": "steal-me" }),
         undefined,
         "plugin conversation header without the marker is ignored",
     );
     assert.equal(
-        clientConversationHeader({ "x-bili-plugin": "pi-plugin/0.0.1", "x-bili-plugin-conversation": "steal-me" }),
+        clientConversationHeader({ "x-sigma-plugin": "pi-plugin/0.0.1", "x-sigma-plugin-conversation": "steal-me" }),
         "steal-me",
         "plugin conversation header honored with the marker",
     );
     assert.equal(
-        clientConversationHeader({ "x-bili-plugin-conversation": "steal-me", "x-claude-code-session-id": "legacy-1" }),
+        clientConversationHeader({ "x-sigma-plugin-conversation": "steal-me", "x-claude-code-session-id": "legacy-1" }),
         "legacy-1",
         "falls through to the legacy client header",
     );

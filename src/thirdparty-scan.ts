@@ -2,12 +2,12 @@
 //
 // Two compressors on one conversation double-compress: message refs get
 // re-anchored against rewritten history, summaries cite deleted content, and
-// the client's view silently scrambles. The installer swaps out bili's own
-// sibling extensions (opencode-acp / billion-context-pi), but a user can
+// the client's view silently scrambles. The installer swaps out sigma's own
+// sibling extensions (opencode-acp / sigma-pi), but a user can
 // always install OTHER third-party context-compression plugins alongside
-// bili — nothing detects that today. This module scans the client's plugin
+// sigma — nothing detects that today. This module scans the client's plugin
 // registry (best-effort, read-only, cached) for:
-//   1. known conflicting entries (bili's siblings, when not absorbed by design);
+//   1. known conflicting entries (sigma's siblings, when not absorbed by design);
 //   2. suspected compression plugins by name keyword (compress*/compact*/acp/
 //      summar*/context) — flagged for user confirmation, never auto-fixed.
 // Callers: launcher pre-launch warning, proxy first-request-per-session
@@ -46,7 +46,7 @@ export interface ScanResult {
     sourcesScanned: number;
 }
 
-/** #920: opencode-acp co-resident with bili's OWN opencode native/launcher
+/** #920: opencode-acp co-resident with sigma's OWN opencode native/launcher
  *  mode is absorbed by design (legacy sessions keep their compression
  *  carrier) — it is NOT a conflict there. Everywhere else (wire mode, other
  *  clients) the same entry warns like any known conflict. */
@@ -67,12 +67,12 @@ export function clearScanCache(): void {
 }
 
 export function conflictScanEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-    const v = env.BILI_CONFLICT_SCAN?.trim().toLowerCase();
+    const v = env.SIGMA_CONFLICT_SCAN?.trim().toLowerCase();
     return !(v === "0" || v === "false");
 }
 
 /** Identify the requesting client from wire headers so a standalone proxy
- *  (no x-bili-plugin header) can still scan the right registry. Codex is
+ *  (no x-sigma-plugin header) can still scan the right registry. Codex is
  *  recognized but returns undefined — it has no scannable plugin registry
  *  here, and its compaction paths are already intercepted/budget-aligned. */
 export function sniffScanClient(headers: Record<string, string | string[] | undefined>): ScanClient | undefined {
@@ -121,14 +121,14 @@ function entryName(entry: string): string {
     return base.replace(/\.(js|ts|mjs|cjs|json)$/i, "");
 }
 
-function isBiliSelf(entry: string): boolean {
+function isSigmaSelf(entry: string): boolean {
     const name = entryName(entry);
-    if (name === "billion-context") return true;
-    return /[/\\]billion-context([/\\]|$)/.test(entry.trim());
+    if (name === "sigma") return true;
+    return /[/\\]sigma([/\\]|$)/.test(entry.trim());
 }
 
 function classifyOpencodeEntry(c: Collector, entry: string, source: string): void {
-    if (isBiliSelf(entry)) return;
+    if (isSigmaSelf(entry)) return;
     const trimmed = entry.trim();
     if (/^opencode-acp(@|$)/.test(trimmed) || /[/\\]opencode-acp([/\\]|$)/.test(trimmed)) {
         add(c, { client: "opencode", entry, source, match: "known", knownId: "opencode-acp" });
@@ -212,9 +212,9 @@ function scanPi(env: NodeJS.ProcessEnv, cwd: string): ScanResult {
         c.sources += 1;
         for (const p of packages) {
             if (typeof p !== "string" || p === "") continue;
-            if (isBiliSelf(p)) continue;
+            if (isSigmaSelf(p)) continue;
             if (isLegacyBcpEntry(p)) {
-                add(c, { client: "pi", entry: p, source: file, match: "known", knownId: "billion-context-pi" });
+                add(c, { client: "pi", entry: p, source: file, match: "known", knownId: "sigma-pi" });
                 continue;
             }
             if (KEYWORD_RE.test(entryName(p))) add(c, { client: "pi", entry: p, source: file, match: "keyword" });
@@ -243,7 +243,7 @@ function scanOmp(env: NodeJS.ProcessEnv): ScanResult {
             const item = /^\s+-\s+(.*)$/.exec(line);
             if (item) {
                 const entry = item[1]!.trim().replace(/^["']|["']$/g, "");
-                if (!entry || isBiliSelf(entry)) continue;
+                if (!entry || isSigmaSelf(entry)) continue;
                 if (KEYWORD_RE.test(entryName(entry))) add(c, { client: "omp", entry, source: file, match: "keyword" });
                 continue;
             }
@@ -274,7 +274,7 @@ function scanKimi(env: NodeJS.ProcessEnv): ScanResult {
         } catch { /* no plugins dir at all */ }
     }
     for (const id of ids) {
-        if (id === "billion-context") continue;
+        if (id === "sigma") continue;
         if (KEYWORD_RE.test(id)) add(c, { client: "kimi", entry: id, source: registry, match: "keyword" });
     }
     return { client: "kimi", findings: c.findings, sourcesScanned: c.sources };
@@ -293,7 +293,7 @@ function scanHermes(env: NodeJS.ProcessEnv): ScanResult {
     // Dir name only: matching plugin.yaml full text false-positives on any
     // description mentioning "context"/"summarize".
     for (const e of entries) {
-        if (!e.isDirectory() || e.name === "billion-context") continue;
+        if (!e.isDirectory() || e.name === "sigma") continue;
         if (KEYWORD_RE.test(e.name)) add(c, { client: "hermes", entry: e.name, source: path.join(pluginsDir, e.name), match: "keyword" });
     }
     return { client: "hermes", findings: c.findings, sourcesScanned: c.sources };
@@ -318,7 +318,7 @@ function scanDsh(env: NodeJS.ProcessEnv): ScanResult {
             const deps = obj[key];
             if (!deps || typeof deps !== "object" || Array.isArray(deps)) continue;
             for (const dep of Object.keys(deps as Record<string, unknown>)) {
-                if (dep === "billion-context") continue;
+                if (dep === "sigma") continue;
                 if (KEYWORD_RE.test(dep)) add(c, { client: "dsh", entry: dep, source: file, match: "keyword" });
             }
         }

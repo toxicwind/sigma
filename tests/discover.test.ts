@@ -68,7 +68,7 @@ function withHome(home: string, fn: () => void): void {
 }
 
 test("readZcodeConfig: reads <home>/v2/config.json", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-zcode-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-zcode-"));
     try {
         const v2 = path.join(tmp, "v2");
         fs.mkdirSync(v2, { recursive: true });
@@ -88,7 +88,7 @@ test("readZcodeConfig: reads <home>/v2/config.json", () => {
 });
 
 test("readZcodeConfig: missing dir or unparseable file → empty providers", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-zcode-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-zcode-"));
     try {
         withHome(tmp, () => {
             assert.deepEqual(readZcodeConfig(tmp), { providers: {} });
@@ -156,7 +156,7 @@ test("zcodeStoreFileFor: upstream derivation — ZCODE_DATA_BASE_DIR is a base d
 });
 
 test("readZcodeConfig: finds the legacy store under upstream env relocation (ZCODE_DATA_BASE_DIR as base dir, #1151)", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-zcenv-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-zcenv-"));
     try {
         const v2 = path.join(tmp, ".zcode", "v2");
         fs.mkdirSync(v2, { recursive: true });
@@ -172,7 +172,7 @@ test("readZcodeConfig: finds the legacy store under upstream env relocation (ZCO
 });
 
 test("readZcodeConfig: merges legacy config.json with provider_config.json, personal wins per key (#1151)", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-zcode-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-zcode-"));
     try {
         const v2 = path.join(tmp, "v2");
         fs.mkdirSync(v2, { recursive: true });
@@ -211,7 +211,7 @@ test("readZcodeConfig: merges legacy config.json with provider_config.json, pers
 });
 
 test("readZcodeConfig: honors ZCODE_PERSONAL_PROVIDER_CONFIG_FILE override (#1151)", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-zcode-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-zcode-"));
     try {
         const alt = path.join(tmp, "alt", "personal.json");
         fs.mkdirSync(path.dirname(alt), { recursive: true });
@@ -235,14 +235,14 @@ test("readZcodeConfig: honors ZCODE_PERSONAL_PROVIDER_CONFIG_FILE override (#115
     }
 });
 
-test("extractHttpsHosts: dedupes, lowercases, drops http, unwraps /bili/", () => {
+test("extractHttpsHosts: dedupes, lowercases, drops http, unwraps /sigma/", () => {
     const config: ClientConfig = {
         claude: { anthropicBaseUrl: "https://Claude.Example.com/api" },
         codex: {
             openaiBaseUrl: "https://oai-codex.example.com/backend",
             providers: {
                 a: { baseUrl: "https://codex.example.com/v1" },
-                b: { baseUrl: "http://127.0.0.1:8787/bili/https://unwrapped.example.com/v1" },
+                b: { baseUrl: "http://127.0.0.1:8787/sigma/https://unwrapped.example.com/v1" },
                 dup: { baseUrl: "https://codex.example.com/v2" },
                 junk: { baseUrl: "not-a-url" },
             },
@@ -282,7 +282,7 @@ test("extractHttpsHosts: codebuddy base URL + models.json urls (https only, unwr
             modelUrls: [
                 "https://models.example.com/v1/chat/completions",
                 "http://local.example.com/v1/chat/completions",
-                "http://127.0.0.1:8787/bili/https://wrapped.example.com/v1",
+                "http://127.0.0.1:8787/sigma/https://wrapped.example.com/v1",
             ],
         },
     };
@@ -346,7 +346,7 @@ test("extractHttpsHosts: opencode/omp → zen gateway default host, coexists wit
 });
 
 async function withTempHome<T>(fn: (home: string, env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bili-disc-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-disc-"));
     const savedHome = process.env.HOME;
     process.env.HOME = tmp;
     try {

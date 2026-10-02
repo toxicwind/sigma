@@ -1,5 +1,5 @@
 /**
- * Opt-in self-restart (#811): when a newer billion-context is already on disk
+ * Opt-in self-restart (#811): when a newer sigma is already on disk
  * but this process still runs the old code (#806: the stale install could
  * serve indefinitely, visible only as a log-line reminder), re-exec the
  * process so the new version actually takes over.
@@ -20,8 +20,8 @@
  *
  * The replacement is spawned non-detached with inherited stdio/env: it joins
  * this process's group (a launcher's stopProxy() kills the whole group, so
- * the replacement stays collectable — #414) and inherits BILI_PARENT_PID /
- * BILI_LAUNCH_TOKEN (the launcher liveness watcher keeps working).
+ * the replacement stays collectable — #414) and inherits SIGMA_PARENT_PID /
+ * SIGMA_LAUNCH_TOKEN (the launcher liveness watcher keeps working).
  */
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import net from "node:net";
@@ -163,7 +163,7 @@ export async function performSelfRestart(deps: SelfRestartDeps): Promise<SelfRes
     log("info", `[restart] self-restart v${deps.runningVersion} -> v${deps.diskVersion}: verifying the on-disk install first`);
     const bad = await verifyInstallLoadable(deps.installDir);
     if (bad) {
-        log("warn", `[restart] aborted: ${bad} — keeping the current process; restart bili manually`);
+        log("warn", `[restart] aborted: ${bad} — keeping the current process; restart sigma manually`);
         return { ok: false, error: bad };
     }
 

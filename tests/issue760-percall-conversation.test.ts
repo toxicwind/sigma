@@ -93,7 +93,7 @@ async function startRig(): Promise<Rig> {
     const proxyPort = (proxy.address() as { port: number }).port;
     return {
         proxyUrl: (path) => `http://127.0.0.1:${proxyPort}${path}`,
-        modelUrl: () => `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+        modelUrl: () => `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
         upstreamBodies,
         closeAll: async () => {
             await close(proxy);
@@ -198,8 +198,8 @@ test("wire mode: proxy prints its own conversation id in the static system part,
         await waitFor(() => rig.upstreamBodies.length >= 2, "two upstream bodies");
         const sys0 = sysText(rig.upstreamBodies[0]);
         const canon = canonicalOf("conv-760-a");
-        assert.match(sys0, new RegExp(`\\[Your bili conversation id: ${canon}\\.`), "id note carries the derived canonical pfa-* id");
-        assert.doesNotMatch(sys0, /\[Your bili conversation id: conv-760-a\./, "note no longer leaks the raw client session id");
+        assert.match(sys0, new RegExp(`\\[Your sigma conversation id: ${canon}\\.`), "id note carries the derived canonical pfa-* id");
+        assert.doesNotMatch(sys0, /\[Your sigma conversation id: conv-760-a\./, "note no longer leaks the raw client session id");
         assert.equal(sysText(rig.upstreamBodies[1]), sys0, "system bytes stable across turns (prefix-cache anchor)");
     } finally {
         await rig.closeAll();
@@ -243,7 +243,7 @@ test("canonical pfa-* id (derived, not the client's own) routes to the right ses
         await waitFor(() => rig.upstreamBodies.length >= 1, "one upstream body");
         const sys0 = sysText(rig.upstreamBodies[0]);
         const canon = canonicalOf("conv-canonical");
-        assert.match(sys0, new RegExp(`\\[Your bili conversation id: ${canon}\\.`), "note carries the derived canonical id");
+        assert.match(sys0, new RegExp(`\\[Your sigma conversation id: ${canon}\\.`), "note carries the derived canonical id");
 
         // Route by the CANONICAL id — the value the model actually echoes back.
         const rCanon = await toolCall(rig, canon);
@@ -322,8 +322,8 @@ function byId(lines: string[], n: number): Record<string, unknown> {
 test("shared shim, no env/meta id: per-call ids route two sessions independently and flip them to plugin mode", async () => {
     const rig = await startRig();
     const h = spawnShell({
-        BILI_MCP_PROXY: rig.proxyUrl(""),
-        BILI_CONVERSATION_ID: "",
+        SIGMA_MCP_PROXY: rig.proxyUrl(""),
+        SIGMA_CONVERSATION_ID: "",
         CLAUDE_CODE_SESSION_ID: "",
     });
     try {
@@ -367,13 +367,13 @@ test("shared shim, no env/meta id: per-call ids route two sessions independently
         const canonB = canonicalOf("conv-mcp-b");
         // A's first request: wire mode — ephemeral compress tool injected, id note present.
         assert.ok(toolNames(rig.upstreamBodies[0]).includes("compress"), "wire request carries the ephemeral compress tool");
-        assert.match(sysText(rig.upstreamBodies[0]), new RegExp(`\\[Your bili conversation id: ${canonA}\\.`));
+        assert.match(sysText(rig.upstreamBodies[0]), new RegExp(`\\[Your sigma conversation id: ${canonA}\\.`));
         // A's second request arrives AFTER the tool call landed:
         // pure plugin mode — no ephemeral tools, id note still flows.
         assert.ok(!toolNames(rig.upstreamBodies[2]).includes("compress"), "post-tool-call request drops the ephemeral compress tool");
-        assert.match(sysText(rig.upstreamBodies[2]), new RegExp(`\\[Your bili conversation id: ${canonA}\\.`), "id note flows in plugin mode too");
+        assert.match(sysText(rig.upstreamBodies[2]), new RegExp(`\\[Your sigma conversation id: ${canonA}\\.`), "id note flows in plugin mode too");
         // B's requests carry B's id, not A's — no cross-talk.
-        assert.match(sysText(rig.upstreamBodies[3]), new RegExp(`\\[Your bili conversation id: ${canonB}\\.`));
+        assert.match(sysText(rig.upstreamBodies[3]), new RegExp(`\\[Your sigma conversation id: ${canonB}\\.`));
 
         // Sticky plugin-mode flip, and the untouched sibling stays wire mode.
         const stA = await statusOf(rig, "conv-mcp-a");
@@ -428,8 +428,8 @@ test("shim: per-call id strips the forwarded arg, routes on the body field, neve
     await listen(mock);
     const mockPort = (mock.address() as { port: number }).port;
     const h = spawnShell({
-        BILI_MCP_PROXY: `http://127.0.0.1:${mockPort}`,
-        BILI_CONVERSATION_ID: "",
+        SIGMA_MCP_PROXY: `http://127.0.0.1:${mockPort}`,
+        SIGMA_CONVERSATION_ID: "",
         CLAUDE_CODE_SESSION_ID: "",
     });
     try {

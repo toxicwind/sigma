@@ -6,10 +6,10 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 // Fail fast on the very first 429 instead of the default 3 attempts with
 // exponential backoff — the in-band-error tests want the failure immediately.
-process.env.BILI_REPLAY_RETRY_MAX = "1";
+process.env.SIGMA_REPLAY_RETRY_MAX = "1";
 // Shrink the preflight hold grace so a 1.5s-slow summarization call reliably
 // outlives it (default is 30s — too slow for a test).
-process.env.BILI_PREFLIGHT_HOLD_MS = "300";
+process.env.SIGMA_PREFLIGHT_HOLD_MS = "300";
 
 import { defaultConfig } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -225,12 +225,12 @@ test("gap 3: non-stream + preflight 429 after early commit → structured JSON e
     const proxy = await startProxy(up.port);
     try {
         const r = await timedPost(
-            `http://127.0.0.1:${proxy.address().port}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`,
+            `http://127.0.0.1:${proxy.address().port}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`,
             { "content-type": "application/json", "x-acp-session": "gap-json-429" },
             JSON.stringify({ model: "gpt-small", max_tokens: 1024, messages: bigConversation() }),
         );
         assert.equal(r.status, 200, "status was committed early and cannot become 503 anymore");
-        assert.equal(r.headers["x-bili-preflight"], "compressing");
+        assert.equal(r.headers["x-sigma-preflight"], "compressing");
         assert.ok(r.tHeaderMs < SLOW_MS, `headers arrived before summarization finished (${r.tHeaderMs}ms)`);
         assert.ok(r.body.startsWith(" "), "whitespace keep-alive precedes the JSON body");
         const json = JSON.parse(r.body) as { error?: { code?: string; message?: string; retryable?: boolean } };
@@ -250,12 +250,12 @@ test("gap 4: non-stream + upstream 400 after early commit → verbatim upstream 
     const proxy = await startProxy(up.port);
     try {
         const r = await timedPost(
-            `http://127.0.0.1:${proxy.address().port}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`,
+            `http://127.0.0.1:${proxy.address().port}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`,
             { "content-type": "application/json", "x-acp-session": "gap-json-400" },
             JSON.stringify({ model: "gpt-small", max_tokens: 1024, messages: bigConversation() }),
         );
         assert.equal(r.status, 200, "the early commit survives the upstream 400");
-        assert.equal(r.headers["x-bili-preflight"], "compressing");
+        assert.equal(r.headers["x-sigma-preflight"], "compressing");
         const json = JSON.parse(r.body) as { error?: { message?: string } };
         assert.equal(json.error?.message, "simulated gateway failure", "verbatim upstream error body under the committed 200");
         assert.equal(up.forwards(), 1);
@@ -286,7 +286,7 @@ test("gap 5: repeated client aborts on proxy-openai-sse → upstream destroyed, 
     try {
         for (let round = 0; round < 3; round++) {
             const req = http.request(
-                `http://127.0.0.1:${proxy.address().port}/bili/http://127.0.0.1:${upstream.address().port}/v1/chat/completions`,
+                `http://127.0.0.1:${proxy.address().port}/sigma/http://127.0.0.1:${upstream.address().port}/v1/chat/completions`,
                 { method: "POST", headers: { "content-type": "application/json", "x-acp-session": `gap-storm-${round}` } },
             );
             req.on("response", (res) => {

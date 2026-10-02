@@ -1,4 +1,4 @@
-# REQ: `bili hermes` — bring hermes-agent under the proxy with zero config edits
+# REQ: `sigma hermes` — bring hermes-agent under the proxy with zero config edits
 
 ## Date
 2026-08-24
@@ -23,20 +23,20 @@ through the proxy, inject the four ACP tools.**
 
 ## Requirements
 
-1. `bili hermes [opts --] [args]` spawns a fresh proxy and launches hermes
+1. `sigma hermes [opts --] [args]` spawns a fresh proxy and launches hermes
    against it; proxy dies with the client.
 2. Zero edits to the user's real `~/.hermes/` — skills, memories, sessions,
    SOUL.md, `.env` stay shared.
 3. Provider endpoints are discovered from `~/.hermes/config.yaml` (both the
    v12 `providers:` dict and the legacy `custom_providers:` list).
-4. Every upstream — http AND https — rides the `/bili/` URL form (no cert
+4. Every upstream — http AND https — rides the `/sigma/` URL form (no cert
    MITM): hermes's httpx builds its CA bundle from certifi, so MITM would need
    trust config we cannot inject via env. The proxy terminates TLS upstream
-   itself, so `/bili/https://...` needs no client-side cert at all.
+   itself, so `/sigma/https://...` needs no client-side cert at all.
 5. Works with `HERMES_HOME` already set (hermes-native override respected).
 
 ## Non-goals
 - No hermes-side plugin (hermes has no extension API; wire-mode tool injection
   covers it — verified end to end).
-- `hermes acp` (Zed Agent Client Protocol) is unrelated to bili's ACP
+- `hermes acp` (Zed Agent Client Protocol) is unrelated to sigma's ACP
   compression and out of scope.

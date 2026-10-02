@@ -8,21 +8,21 @@ import { setLogCapture } from "../src/logger.js";
 
 // #762: failure-triggered dump of the exact forwarded body on upstream 4xx.
 
-const savedGate = process.env.BILI_DUMP_4XX;
-const savedCap = process.env.BILI_DUMP_4XX_MAX_BYTES;
+const savedGate = process.env.SIGMA_DUMP_4XX;
+const savedCap = process.env.SIGMA_DUMP_4XX_MAX_BYTES;
 const savedDir = process.env.ACP_DUMP_DIR;
 
 function restoreDumpEnv(): void {
-    if (savedGate === undefined) delete process.env.BILI_DUMP_4XX;
-    else process.env.BILI_DUMP_4XX = savedGate;
-    if (savedCap === undefined) delete process.env.BILI_DUMP_4XX_MAX_BYTES;
-    else process.env.BILI_DUMP_4XX_MAX_BYTES = savedCap;
+    if (savedGate === undefined) delete process.env.SIGMA_DUMP_4XX;
+    else process.env.SIGMA_DUMP_4XX = savedGate;
+    if (savedCap === undefined) delete process.env.SIGMA_DUMP_4XX_MAX_BYTES;
+    else process.env.SIGMA_DUMP_4XX_MAX_BYTES = savedCap;
 }
 
 let dir: string;
 before(() => {
     setLogCapture(() => {});
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-error-dump-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-error-dump-"));
     process.env.ACP_DUMP_DIR = dir;
 });
 
@@ -39,7 +39,7 @@ function errFiles(): string[] {
 }
 
 test("off by default: no file written", () => {
-    delete process.env.BILI_DUMP_4XX;
+    delete process.env.SIGMA_DUMP_4XX;
     try {
         assert.equal(dumpRejectedBody(400, "s1", '{"model":"m","messages":[]}'), null);
         assert.deepEqual(errFiles(), []);
@@ -49,7 +49,7 @@ test("off by default: no file written", () => {
 });
 
 test("on: JSON body is pretty-printed and parseable", () => {
-    process.env.BILI_DUMP_4XX = "1";
+    process.env.SIGMA_DUMP_4XX = "1";
     try {
         const out = dumpRejectedBody(400, "s1", '{"model":"m","messages":[{"role":"user","content":"u"}]}');
         assert.ok(out && out.startsWith(dir));
@@ -65,7 +65,7 @@ test("on: JSON body is pretty-printed and parseable", () => {
 });
 
 test("on: non-JSON body passes through raw", () => {
-    process.env.BILI_DUMP_4XX = "1";
+    process.env.SIGMA_DUMP_4XX = "1";
     try {
         const out = dumpRejectedBody(400, "s1", "<html>bad gateway</html>");
         assert.ok(out);
@@ -76,8 +76,8 @@ test("on: non-JSON body passes through raw", () => {
 });
 
 test("on: oversized body is capped with a truncation marker", () => {
-    process.env.BILI_DUMP_4XX = "1";
-    process.env.BILI_DUMP_4XX_MAX_BYTES = "2048";
+    process.env.SIGMA_DUMP_4XX = "1";
+    process.env.SIGMA_DUMP_4XX_MAX_BYTES = "2048";
     try {
         const raw = `{"payload":"${"x".repeat(5000)}"}`;
         const out = dumpRejectedBody(413, "s1", raw);
@@ -92,7 +92,7 @@ test("on: oversized body is capped with a truncation marker", () => {
 });
 
 test("on: empty body is skipped", () => {
-    process.env.BILI_DUMP_4XX = "1";
+    process.env.SIGMA_DUMP_4XX = "1";
     const before = errFiles().length;
     try {
         assert.equal(dumpRejectedBody(400, "s1", ""), null);
@@ -103,7 +103,7 @@ test("on: empty body is skipped", () => {
 });
 
 test("on: Buffer bodies work and session ids are sanitized", () => {
-    process.env.BILI_DUMP_4XX = "1";
+    process.env.SIGMA_DUMP_4XX = "1";
     try {
         const out = dumpRejectedBody(400, "a/b c", Buffer.from('{"a":1}', "utf8"));
         assert.ok(out);

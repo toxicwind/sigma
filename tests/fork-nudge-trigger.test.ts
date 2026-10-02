@@ -145,7 +145,7 @@ async function runCase(opts: { anonymous: boolean }): Promise<{
             stream: true,
             messages: forkConversation(),
         });
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers,
             body,
@@ -269,7 +269,7 @@ async function runImageCase(): Promise<Array<{ stream: boolean; body: string }>>
     const proxyPort = proxy.address().port;
 
     try {
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({

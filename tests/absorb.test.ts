@@ -244,7 +244,7 @@ test("handlePluginManifest: absorb advertised on all three wires only when enabl
 });
 
 test("persist round-trip: absorbed records and absorbedTokens survive save/load", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-absorb-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-absorb-"));
     const store = new SessionStore({ dir, debounceMs: 0 });
     const session = getSession(`t-absorb-persist-${Math.random().toString(36).slice(2)}`, { protocol: "anthropic" });
     const record: AbsorbRecord = {

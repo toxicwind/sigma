@@ -92,7 +92,7 @@ async function startHarness(upstream: http.Server, over: Partial<ProxyOptions> =
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
     const t0 = performance.now();
     const post = async (headers: Record<string, string>, body?: Record<string, unknown>) => {
         const res = await fetch(url, {

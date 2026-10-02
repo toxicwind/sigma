@@ -61,7 +61,7 @@ type ExtensionAPI = {
 
 function agentName(override: string | undefined): string {
     if (override) return override;
-    return process.env.BILLION_CONTEXT_PLUGIN_AGENT === "omp" ? "omp" : "pi";
+    return process.env.SIGMA_PLUGIN_AGENT === "omp" ? "omp" : "pi";
 }
 
 function proxyBaseForCtx(ctx: Ctx | undefined): string | undefined {
@@ -134,7 +134,7 @@ export function parentConversationIdOf(ctx: Ctx): string | undefined {
 // anthropic wire — excluding it meant the target shape was never stamped
 // (#268). The anthropic wire gets stamped too: the proxy records the mapping
 // from the body pck there as well and strips the field before forwarding to
-// the real Anthropic. pi is untouched (it stamps x-bili-plugin-conversation in
+// the real Anthropic. pi is untouched (it stamps x-sigma-plugin-conversation in
 // before_provider_headers, which outranks the body field).
 // #1403: stamp ONLY when the destination will actually be seen by the proxy —
 // the pck's sole consumer is the proxy itself (identity bind + strip-before-
@@ -203,20 +203,20 @@ function manifestToTool(proxyBase: string, tool: ManifestTool, agent: string): T
                 const output = await forwardTool(proxyBase, conversationId, tool.name, params, signal);
                 return { content: [{ type: "text", text: output }] };
             } catch (err) {
-                return { content: [{ type: "text", text: `bili tool error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+                return { content: [{ type: "text", text: `sigma tool error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
             }
         },
     };
 }
 
 function parseProviderRewrites(env: NodeJS.ProcessEnv): Record<string, string> | undefined {
-    const raw = env.BILI_PROVIDER_REWRITES;
+    const raw = env.SIGMA_PROVIDER_REWRITES;
     if (raw === undefined || raw.trim().length === 0) return undefined;
     let parsed: unknown;
     try {
         parsed = JSON.parse(raw);
     } catch {
-        console.error("bili-plugin: BILI_PROVIDER_REWRITES is not valid JSON — provider URLs left untouched");
+        console.error("sigma-plugin: SIGMA_PROVIDER_REWRITES is not valid JSON — provider URLs left untouched");
         return undefined;
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
@@ -229,15 +229,15 @@ function parseProviderRewrites(env: NodeJS.ProcessEnv): Record<string, string> |
 }
 
 // #788: neutral wording — the plugin also loads under plain pi/omp launches
-// where the user never intended proxy mode (e.g. they use billion-context-pi
+// where the user never intended proxy mode (e.g. they use sigma-pi
 // in-process instead), so offer both exits instead of assuming proxy intent.
 function noProxyWarning(agent: string): string {
     const removeHint = agent === "pi"
-        ? ", or remove this plugin (`bili plugin remove pi`) if you use billion-context-pi or don't want a proxy"
+        ? ", or remove this plugin (`sigma plugin remove pi`) if you use sigma-pi or don't want a proxy"
         : agent === "omp"
-            ? ", or remove this plugin (`bili plugin remove omp`) if you don't want a proxy"
+            ? ", or remove this plugin (`sigma plugin remove omp`) if you don't want a proxy"
             : "";
-    return `bili: no proxy detected — run via \`bili ${agent}\` (or set a /bili/ baseURL) to use proxy mode${removeHint}`;
+    return `sigma: no proxy detected — run via \`sigma ${agent}\` (or set a /sigma/ baseURL) to use proxy mode${removeHint}`;
 }
 
 const RETRY_INTERVAL_MS = 10000;
@@ -269,7 +269,7 @@ async function registerTools(pi: ExtensionAPI, ctx: Ctx, state: RegisterState, a
                 tools = await fetchManifest(proxyBase);
             } catch (err) {
                 state.retryAt = Date.now() + wait;
-                console.error(`bili-plugin(${agent}): manifest fetch failed: ${err instanceof Error ? err.message : String(err)} — retrying in ${wait / 1000}s`);
+                console.error(`sigma-plugin(${agent}): manifest fetch failed: ${err instanceof Error ? err.message : String(err)} — retrying in ${wait / 1000}s`);
                 return;
             }
         }
@@ -288,7 +288,7 @@ async function registerTools(pi: ExtensionAPI, ctx: Ctx, state: RegisterState, a
             // conversation so the proxy can record a read-only inheritance
             // link (decompress/search_context fall back to the parent chain —
             // no state is copied). Plain pi sessions never identity-register:
-            // their plugin-mode binding rides the x-bili-plugin-conversation
+            // their plugin-mode binding rides the x-sigma-plugin-conversation
             // header stamped per request below, so the extra register only
             // fires when derivation is actually declared. omp ALWAYS registers
             // (its wire carries no other conversation signal), so it reports
@@ -305,7 +305,7 @@ async function registerTools(pi: ExtensionAPI, ctx: Ctx, state: RegisterState, a
                     // wire mode forever (the early return above blocks every
                     // retry).
                     state.retryAt = Date.now() + wait;
-                    console.error(`bili-plugin(${agent}): identity register failed (${err instanceof Error ? err.message : String(err)}) — retrying in ${wait / 1000}s`);
+                    console.error(`sigma-plugin(${agent}): identity register failed (${err instanceof Error ? err.message : String(err)}) — retrying in ${wait / 1000}s`);
                     return;
                 }
             }
@@ -314,7 +314,7 @@ async function registerTools(pi: ExtensionAPI, ctx: Ctx, state: RegisterState, a
             state.sid = undefined;
             state.toolsFor = undefined;
             state.retryAt = Date.now() + wait;
-            console.error(`bili-plugin(${agent}): tool registration deferred (${err instanceof Error ? err.message : String(err)}) — retrying in ${wait / 1000}s`);
+            console.error(`sigma-plugin(${agent}): tool registration deferred (${err instanceof Error ? err.message : String(err)}) — retrying in ${wait / 1000}s`);
         }
     })();
     try {
@@ -324,7 +324,7 @@ async function registerTools(pi: ExtensionAPI, ctx: Ctx, state: RegisterState, a
     }
 }
 
-export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalMs?: number }): (pi: ExtensionAPI) => void {
+export function createSigmaPlugin(agentOverride?: string, opts?: { retryIntervalMs?: number }): (pi: ExtensionAPI) => void {
     return function biliPlugin(pi: ExtensionAPI): void {
         const agent = agentName(agentOverride);
         const state: RegisterState = { retryIntervalMs: opts?.retryIntervalMs ?? RETRY_INTERVAL_MS };
@@ -333,7 +333,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
         // proxy-mode session. Prime the fetch at load time: the launcher
         // health-checks the proxy before spawning pi, so by session_start the
         // prime has almost always settled and toolsReady flips in microtasks
-        // — ahead of round 1. Native mode (#519) sets BILLION_CONTEXT_PROXY
+        // — ahead of round 1. Native mode (#519) sets SIGMA_PROXY
         // only after async bootstrap, so no prime exists there and round 1
         // stays on wire mode (residual; the host would have to await us).
         const primeBase = detectProxyBase(undefined);
@@ -347,8 +347,8 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
         const rewrites = parseProviderRewrites(process.env);
         if (rewrites !== undefined && typeof pi.registerProvider !== "function") {
             console.error(
-                "bili-plugin: BILI_PROVIDER_REWRITES is set but this pi build has no registerProvider API — " +
-                    "provider traffic goes DIRECT (uncompressed). Update pi, or reinstall the bili plugin: `bili plugin install pi`.",
+                "sigma-plugin: SIGMA_PROVIDER_REWRITES is set but this pi build has no registerProvider API — " +
+                    "provider traffic goes DIRECT (uncompressed). Update pi, or reinstall the sigma plugin: `sigma plugin install pi`.",
             );
         }
         if (rewrites !== undefined && typeof pi.registerProvider === "function") {
@@ -356,12 +356,12 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                 try {
                     pi.registerProvider(key, { baseUrl: url });
                 } catch (err) {
-                    console.error(`bili-plugin: registerProvider(${key}) failed: ${err instanceof Error ? err.message : String(err)} — traffic for this provider goes direct`);
+                    console.error(`sigma-plugin: registerProvider(${key}) failed: ${err instanceof Error ? err.message : String(err)} — traffic for this provider goes direct`);
                 }
             }
         }
         // #535: cancel the host's NATIVE compaction so its summarizer never
-        // fires alongside bili's ACP compression — the in-extension
+        // fires alongside sigma's ACP compression — the in-extension
         // replacement for the old compaction-off config injection. pi's event
         // carries `reason`: cancel only threshold + overflow so manual
         // /compact stays user-owned. omp (#851): session_before_compact
@@ -376,13 +376,13 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
         // blocks on session_compact (#395).
         // Whether we own compression is decided at EVENT time, not load time:
         // in native mode (#519) the proxy origin lands in
-        // BILLION_CONTEXT_PROXY only after the async bootstrap finishes, so a
+        // SIGMA_PROXY only after the async bootstrap finishes, so a
         // load-time check would leave the cancel disarmed for the whole
         // session. Plain pi/omp with the plugin installed but NO reachable
         // proxy (incl. a failed bootstrap) stays fully native.
         // #1382: a proxy EXISTING is not enough — the evidence must be that
         // THIS conversation's traffic reaches it. Native mode sets
-        // BILLION_CONTEXT_PROXY for the whole process, but extension-provided
+        // SIGMA_PROXY for the whole process, but extension-provided
         // models like pi-claude-bridge run their own child processes (the
         // model's baseUrl is literally "claude-bridge") and call upstream
         // directly: the fetch intercept never sees those requests, so the
@@ -391,7 +391,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
         // takes over Pi's in its own session_before_compact handler, which
         // never runs once an earlier handler returned cancel. Accepted
         // evidence, in order: (1) local — we stamped
-        // x-bili-plugin-conversation for this session id (tools registered
+        // x-sigma-plugin-conversation for this session id (tools registered
         // AND a request routed through the proxy), or omp's identity register
         // succeeded; (2) remote — the proxy confirms it carries the
         // conversation id (/__bili/plugin/status ok). A non-http(s) baseUrl
@@ -415,7 +415,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
             try {
                 return (await fetchStatus(proxyBase, sid)) !== undefined;
             } catch (err) {
-                console.error(`bili-plugin(${agent}): compaction ownership probe failed (${err instanceof Error ? err.message : String(err)}) — leaving native compaction enabled`);
+                console.error(`sigma-plugin(${agent}): compaction ownership probe failed (${err instanceof Error ? err.message : String(err)}) — leaving native compaction enabled`);
                 return false;
             }
         };
@@ -466,10 +466,10 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                 try {
                     const switched = await pi.setModel?.({ ...model, baseUrl: rewritten });
                     if (switched === false) {
-                        console.error(`bili-plugin: omp setModel(${provider}/${String(model.id)}) rejected (no API key) — traffic for this provider goes direct`);
+                        console.error(`sigma-plugin: omp setModel(${provider}/${String(model.id)}) rejected (no API key) — traffic for this provider goes direct`);
                     }
                 } catch (err) {
-                    console.error(`bili-plugin: omp setModel failed: ${err instanceof Error ? err.message : String(err)} — traffic goes direct`);
+                    console.error(`sigma-plugin: omp setModel failed: ${err instanceof Error ? err.message : String(err)} — traffic goes direct`);
                 }
             };
             pi.on("session_start", (_event, ctx) => repin(ctx));
@@ -496,7 +496,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     try {
                         status = await fetchStatus(proxyBase, conversationId);
                     } catch (err) {
-                        notify(`bili: status fetch failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+                        notify(`sigma: status fetch failed: ${err instanceof Error ? err.message : String(err)}`, "error");
                         return;
                     }
                     if (status === undefined) {
@@ -526,10 +526,10 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     // sendMessage (older pi).
                     if (typeof pi.sendMessage === "function") {
                         try {
-                            pi.sendMessage({ customType: "bili-acp-status", content: text, display: true });
+                            pi.sendMessage({ customType: "sigma-acp-status", content: text, display: true });
                             return;
                         } catch (err) {
-                            console.error(`bili-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
+                            console.error(`sigma-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
                         }
                     }
                     notify(text, "info");
@@ -560,7 +560,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     try {
                         text = await forwardTool(proxyBase, conversationId, "acp_cache", toolArgs);
                     } catch (err) {
-                        notify(`bili: cache report failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+                        notify(`sigma: cache report failed: ${err instanceof Error ? err.message : String(err)}`, "error");
                         return;
                     }
                     // Persistent transcript output (TUI + web hosts like pi-web). The proxy strips
@@ -569,10 +569,10 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     // for hosts without sendMessage (older pi).
                     if (typeof pi.sendMessage === "function") {
                         try {
-                            pi.sendMessage({ customType: "bili-acp-cache", content: wrapCacheReport(text), display: true });
+                            pi.sendMessage({ customType: "sigma-acp-cache", content: wrapCacheReport(text), display: true });
                             return;
                         } catch (err) {
-                            console.error(`bili-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
+                            console.error(`sigma-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
                         }
                     }
                     notify(text, "info");
@@ -621,14 +621,14 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     try {
                         text = await forwardTool(proxyBase, conversationId, "acp_rule", toolArgs);
                     } catch (err) {
-                        notify(`bili: acp_rule failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+                        notify(`sigma: acp_rule failed: ${err instanceof Error ? err.message : String(err)}`, "error");
                         return;
                     }
                     // #1192 note channel (disabledOptionalToolNote): the feature is off in
                     // this session's effective config — surface the enablement hint instead
                     // of echoing the model-facing note into the transcript.
                     if (text.startsWith("acp_rule is not enabled")) {
-                        notify("bili: acp_rule is not enabled on this bili proxy — set compress.rules.enabled: true in your bili config", "warning");
+                        notify("sigma: acp_rule is not enabled on this sigma proxy — set compress.rules.enabled: true in your sigma config", "warning");
                         return;
                     }
                     // Persistent transcript output (TUI + web hosts like pi-web). The proxy strips
@@ -637,10 +637,10 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                     // for hosts without sendMessage (older pi).
                     if (typeof pi.sendMessage === "function") {
                         try {
-                            pi.sendMessage({ customType: "bili-acp-rule", content: wrapRuleReport(text), display: true });
+                            pi.sendMessage({ customType: "sigma-acp-rule", content: wrapRuleReport(text), display: true });
                             return;
                         } catch (err) {
-                            console.error(`bili-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
+                            console.error(`sigma-plugin(${agent}): sendMessage failed (${err instanceof Error ? err.message : String(err)}) — falling back to notify`);
                         }
                     }
                     notify(text, "info");
@@ -650,7 +650,7 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
         pi.on("before_provider_headers", async (event, ctx) => {
             try {
                 // #1243: on the native lane the proxy origin lands via an async
-                // bootstrap that writes BILLION_CONTEXT_PROXY only after the spawn;
+                // bootstrap that writes SIGMA_PROXY only after the spawn;
                 // a one-shot (-p) fires this event exactly once, inside that
                 // window. Await the writer's ready promise instead of racing it —
                 // hosts without a native entry register no waiter and fall
@@ -671,42 +671,42 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
                 try {
                     await registerTools(pi, ctx, state, agent);
                 } catch (err) {
-                    console.error(`bili-plugin(${agent}): tool registration failed (${err instanceof Error ? err.message : String(err)}) — riding wire mode for this request`);
+                    console.error(`sigma-plugin(${agent}): tool registration failed (${err instanceof Error ? err.message : String(err)}) — riding wire mode for this request`);
                 }
-                // The x-bili-plugin marker tells the proxy "the client owns the
+                // The x-sigma-plugin marker tells the proxy "the client owns the
                 // ACP tools natively — skip wire-level injection". Ownership is
                 // claimed only once tools are registered (#162). In launcher mode
                 // the manifest fetch is primed at extension load time (#1217), so
                 // by round 1 registration has almost always completed.
                 if (state.toolsReady === true) {
                     const sid = sessionIdOf(ctx);
-                    if (sid !== undefined) headers["x-bili-plugin-conversation"] = sid;
+                    if (sid !== undefined) headers["x-sigma-plugin-conversation"] = sid;
                     if (sid !== undefined && sid.length > 0) {
                         state.carriedSids ??= new Set();
                         state.carriedSids.add(sid);
                     }
-                    headers["x-bili-plugin"] = agent;
+                    headers["x-sigma-plugin"] = agent;
                     const window = ctx.model?.contextWindow;
                     if (typeof window === "number" && Number.isFinite(window) && window > 0) {
-                        headers["x-bili-plugin-context-window"] = String(Math.floor(window));
+                        headers["x-sigma-plugin-context-window"] = String(Math.floor(window));
                     }
                     // Runtime-info (#955): model id + configured max output.
                     // pi's model config exposes id / contextWindow / baseUrl;
                     // maxTokens lives on the model object when configured.
                     const modelId = ctx.model?.id;
                     if (typeof modelId === "string" && modelId.length > 0) {
-                        headers["x-bili-plugin-model"] = modelId;
+                        headers["x-sigma-plugin-model"] = modelId;
                         const maxOut = (ctx.model as { maxTokens?: unknown } | undefined)?.maxTokens;
-                        if (typeof maxOut === "number" && Number.isFinite(maxOut) && maxOut > 0) headers["x-bili-plugin-max-output"] = String(Math.floor(maxOut));
+                        if (typeof maxOut === "number" && Number.isFinite(maxOut) && maxOut > 0) headers["x-sigma-plugin-max-output"] = String(Math.floor(maxOut));
                         reportRuntimeInfoOnChange(proxyBase, { agent, model: modelId, contextWindow: typeof window === "number" && window > 0 ? Math.floor(window) : undefined, maxOutput: typeof maxOut === "number" && maxOut > 0 ? Math.floor(maxOut) : undefined, baseURL: ctx.model?.baseUrl, source: "client-config" });
                     }
                 }
             } catch (err) {
-                console.error(`bili-plugin(${agent}): header stamp skipped (${err instanceof Error ? err.message : String(err)})`);
+                console.error(`sigma-plugin(${agent}): header stamp skipped (${err instanceof Error ? err.message : String(err)})`);
             }
         });
         // omp never emits before_provider_headers — where pi stamps the
-        // x-bili-plugin-* headers and reports runtime info (#955) — so omp's
+        // x-sigma-plugin-* headers and reports runtime info (#955) — so omp's
         // report rides this per-request event instead: POST only, deduped per
         // model switch, gated on toolsReady like pi's header path (ownership
         // claim = ACP tools registered; round 1 rides wire mode).
@@ -736,14 +736,14 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
             try {
                 await registerTools(pi, ctx, state, agent);
             } catch (err) {
-                console.error(`bili-plugin(${agent}): tool registration failed (${err instanceof Error ? err.message : String(err)}) — riding wire mode for this request`);
+                console.error(`sigma-plugin(${agent}): tool registration failed (${err instanceof Error ? err.message : String(err)}) — riding wire mode for this request`);
             }
             if (agent === "omp") reportOmpRuntimeInfo(ctx);
             return stampPromptCacheKey(event, ctx, agent);
         });
         pi.on("session_start", (_event, ctx) => {
             state.sid = undefined;
-            void registerTools(pi, ctx, state, agent).catch((err: unknown) => console.error(`bili-plugin(${agent}): ${err instanceof Error ? err.message : String(err)}`));
+            void registerTools(pi, ctx, state, agent).catch((err: unknown) => console.error(`sigma-plugin(${agent}): ${err instanceof Error ? err.message : String(err)}`));
         });
         // omp fires session_compact on in-session native compaction (sid does
         // not rotate), so the proxy reuses stale state — notify it to archive
@@ -764,6 +764,6 @@ export function createBiliPlugin(agentOverride?: string, opts?: { retryIntervalM
     };
 }
 
-export default createBiliPlugin();
+export default createSigmaPlugin();
 
 export { fetchStatus };

@@ -1,4 +1,4 @@
-// #1235: `bili doctor` — read-only audit of every install lane and registered
+// #1235: `sigma doctor` — read-only audit of every install lane and registered
 // proxy process. Verdict precedence, render format, per-lane presence probes
 // (sandboxed homes), and the full runDoctor report (mocked registry).
 
@@ -58,8 +58,8 @@ test("globalVerdict: checkout is frozen regardless of registry; registry newer t
 function syntheticReport(overrides?: { lanes?: DoctorLane[]; processes?: DoctorProcess[] }): DoctorReport {
     return {
         generatedAt: Date.parse("2026-09-24T00:00:00Z"),
-        packageName: "billion-context",
-        global: { installDir: "/x/node_modules/billion-context", form: "npm", diskVersion: "0.1.143", runningVersion: "0.1.143", registryVersion: "0.1.143", updateTag: "latest", lastCheckTime: Date.parse("2026-09-24T00:00:00Z"), verdict: "ok" },
+        packageName: "sigma",
+        global: { installDir: "/x/node_modules/sigma", form: "npm", diskVersion: "0.1.143", runningVersion: "0.1.143", registryVersion: "0.1.143", updateTag: "latest", lastCheckTime: Date.parse("2026-09-24T00:00:00Z"), verdict: "ok" },
         lanes: overrides?.lanes ?? [],
         processes: overrides?.processes ?? [],
     };
@@ -68,12 +68,12 @@ function syntheticReport(overrides?: { lanes?: DoctorLane[]; processes?: DoctorP
 test("renderDoctorReport: verdict lines carry the issue-specified formats", () => {
     const text = renderDoctorReport(syntheticReport({
         lanes: [
-            { agent: "omp", kind: "reference", installed: true, detail: "/old/dist/agent/omp-native.js", channel: "the global bili install (entry points at it)", verdict: "stale", copyVersion: "0.1.1", registryVersion: "0.1.2" },
+            { agent: "omp", kind: "reference", installed: true, detail: "/old/dist/agent/omp-native.js", channel: "the global sigma install (entry points at it)", verdict: "stale", copyVersion: "0.1.1", registryVersion: "0.1.2" },
             { agent: "dsh:dev", kind: "host-managed", installed: true, detail: "dep spec: link:/local/x (local pin — dev lane, manual)", verdict: "frozen", reason: "local-pin dep spec — no live update path; point it at a registry version or rebuild manually (AGENTS.md install-lane contract)" },
             { agent: "pi", kind: "host-managed", installed: false, detail: "not installed", verdict: "absent" },
         ],
         processes: [
-            { instanceId: "abc", pid: 4242, port: 8787, origin: "http://127.0.0.1:8787", startedAt: Date.parse("2026-09-24T00:00:00Z"), alive: true, runningFrom: "/x/node_modules/billion-context/dist/index.js" },
+            { instanceId: "abc", pid: 4242, port: 8787, origin: "http://127.0.0.1:8787", startedAt: Date.parse("2026-09-24T00:00:00Z"), alive: true, runningFrom: "/x/node_modules/sigma/dist/index.js" },
             { instanceId: "def", pid: 5555, port: 8788, origin: "http://127.0.0.1:8788", startedAt: Date.parse("2026-09-24T00:00:00Z"), alive: false },
         ],
     }));
@@ -81,7 +81,7 @@ test("renderDoctorReport: verdict lines carry the issue-specified formats", () =
     assert.match(text, /frozen/);
     assert.match(text, /zombie \(process gone, marker left behind\)/);
     assert.match(text, /summary: 0 ok, 1 stale, 1 frozen, 0 broken, 1 absent; processes: 1 live, 1 zombie/);
-    assert.match(text, /updates via: the global bili install \(entry points at it\)/);
+    assert.match(text, /updates via: the global sigma install \(entry points at it\)/);
 });
 
 test("inspectLanePresence omp: dead entry is a broken lane, live entry resolves its copy version", () => {
@@ -94,7 +94,7 @@ test("inspectLanePresence omp: dead entry is a broken lane, live entry resolves 
         mkdirSync(path.join(ompHome), { recursive: true });
         mkdirSync(path.dirname(liveEntry), { recursive: true });
         writeFileSync(liveEntry, "export {};\n");
-        writeFileSync(path.join(liveRoot, "package.json"), JSON.stringify({ name: "billion-context", version: "0.1.143" }));
+        writeFileSync(path.join(liveRoot, "package.json"), JSON.stringify({ name: "sigma", version: "0.1.143" }));
         const cfg = (entries: string[]): string => ["extensions:", ...entries.map((e) => `  - ${e}`)].join("\n") + "\n";
         writeFileSync(path.join(ompHome, "config.yml"), cfg([deadEntry]));
         withEnv({ PI_CODING_AGENT_DIR: ompHome }, () => {
@@ -121,12 +121,12 @@ test("inspectLanePresence dsh: local pin flags a frozen dev lane, registry pin r
         const dshHome = path.join(base, "dsh");
         const devDir = path.join(dshHome, "profiles", "dev");
         const mainDir = path.join(dshHome, "profiles", "main");
-        const mainCopy = path.join(mainDir, "node_modules", "billion-context");
+        const mainCopy = path.join(mainDir, "node_modules", "sigma");
         mkdirSync(devDir, { recursive: true });
         mkdirSync(mainCopy, { recursive: true });
-        writeFileSync(path.join(devDir, "package.json"), JSON.stringify({ dependencies: { "billion-context": "link:/local/x" }, dsh: { profile: { bundles: ["billion-context"] } } }));
-        writeFileSync(path.join(mainDir, "package.json"), JSON.stringify({ dependencies: { "billion-context": "^0.1.140" }, dsh: { profile: { bundles: ["billion-context"] } } }));
-        writeFileSync(path.join(mainCopy, "package.json"), JSON.stringify({ name: "billion-context", version: "0.1.140" }));
+        writeFileSync(path.join(devDir, "package.json"), JSON.stringify({ dependencies: { "sigma": "link:/local/x" }, dsh: { profile: { bundles: ["sigma"] } } }));
+        writeFileSync(path.join(mainDir, "package.json"), JSON.stringify({ dependencies: { "sigma": "^0.1.140" }, dsh: { profile: { bundles: ["sigma"] } } }));
+        writeFileSync(path.join(mainCopy, "package.json"), JSON.stringify({ name: "sigma", version: "0.1.140" }));
         withEnv({ DSH_HOME: dshHome }, () => {
             const p = inspectLanePresence("dsh");
             assert.equal(p.installed, true);
@@ -149,12 +149,12 @@ test("inspectLanePresence hermes: baked plugin.yaml version is the freshness sig
     const base = mkdtempSync(path.join(tmpdir(), "bc-doctor-hermes-"));
     try {
         const hermesHome = path.join(base, "hermes");
-        const pluginDir = path.join(hermesHome, "plugins", "billion-context");
+        const pluginDir = path.join(hermesHome, "plugins", "sigma");
         const proxyScript = path.join(base, "global", "dist", "index.js");
         mkdirSync(pluginDir, { recursive: true });
         writeFileSync(path.join(pluginDir, "__init__.py"), "");
-        writeFileSync(path.join(pluginDir, "plugin.yaml"), "id: billion-context\nversion: 0.1.100\nname: Billion Context\n");
-        writeFileSync(path.join(pluginDir, "bili.json"), JSON.stringify({ proxyScript, nodePath: "node" }));
+        writeFileSync(path.join(pluginDir, "plugin.yaml"), "id: sigma\nversion: 0.1.100\nname: Billion Context\n");
+        writeFileSync(path.join(pluginDir, "sigma.json"), JSON.stringify({ proxyScript, nodePath: "node" }));
         withEnv({ HERMES_HOME: hermesHome }, () => {
             const p = inspectLanePresence("hermes");
             assert.equal(p.installed, true);
@@ -196,7 +196,7 @@ test("runDoctor: corrupt lane config surfaces as a broken probe row, not absent"
     const base = mkdtempSync(path.join(tmpdir(), "bc-doctor-corrupt-run-"));
     const ocCfg = path.join(base, "opencode.json");
     writeFileSync(ocCfg, "{ not json");
-    const runWithFetch = mockFetch(() => new Response(JSON.stringify({ name: "billion-context", version: "999.0.0" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const runWithFetch = mockFetch(() => new Response(JSON.stringify({ name: "sigma", version: "999.0.0" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     try {
         await runWithFetch(async () => {
             await withEnv({
@@ -214,7 +214,7 @@ test("runDoctor: corrupt lane config surfaces as a broken probe row, not absent"
                 CLAUDE_CONFIG_DIR: undefined,
                 OPENCODE_CONFIG: ocCfg,
             }, async () => {
-                const report = await runDoctor({ packageName: "billion-context", runningVersion: "0.1.143" });
+                const report = await runDoctor({ packageName: "sigma", runningVersion: "0.1.143" });
                 const oc = report.lanes.find((l) => l.agent === "opencode");
                 assert.equal(oc?.verdict, "broken");
                 assert.match(oc?.detail ?? "", /probe failed: .*not valid JSON/);
@@ -234,7 +234,7 @@ test("runDoctor: full report against a mocked registry, sandboxed homes", async 
     const urls: string[] = [];
     const runWithFetch = mockFetch((url) => {
         urls.push(url);
-        return new Response(JSON.stringify({ name: "billion-context", version: "999.0.0" }), { status: 200, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ name: "sigma", version: "999.0.0" }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     try {
         await runWithFetch(async () => {
@@ -253,8 +253,8 @@ test("runDoctor: full report against a mocked registry, sandboxed homes", async 
                 CLAUDE_CONFIG_DIR: undefined,
                 OPENCODE_CONFIG: undefined,
             }, async () => {
-                const report = await runDoctor({ packageName: "billion-context", runningVersion: "0.1.143" });
-                assert.ok(urls.some((u) => u.includes("registry.npmjs.org/billion-context/latest")), `registry URL hit: ${urls.join(", ")}`);
+                const report = await runDoctor({ packageName: "sigma", runningVersion: "0.1.143" });
+                assert.ok(urls.some((u) => u.includes("registry.npmjs.org/sigma/latest")), `registry URL hit: ${urls.join(", ")}`);
                 assert.equal(report.global.registryVersion, "999.0.0");
                 assert.equal(report.global.updateTag, "latest");
                 assert.deepEqual(report.lanes.map((l) => l.agent).sort(), [...PLUGIN_AGENTS].sort());
@@ -271,7 +271,7 @@ test("runDoctor: full report against a mocked registry, sandboxed homes", async 
                 }
                 const parsed = JSON.parse(JSON.stringify(report, null, 2)) as DoctorReport;
                 assert.equal(parsed.global.registryVersion, "999.0.0");
-                assert.ok(renderDoctorReport(parsed).includes("bili doctor"));
+                assert.ok(renderDoctorReport(parsed).includes("sigma doctor"));
             });
         });
     } finally {
@@ -299,7 +299,7 @@ test("runDoctor: unreachable registry never produces a false-stale verdict", asy
                 CLAUDE_CONFIG_DIR: undefined,
                 OPENCODE_CONFIG: undefined,
             }, async () => {
-                const report = await runDoctor({ packageName: "billion-context", runningVersion: "0.1.143" });
+                const report = await runDoctor({ packageName: "sigma", runningVersion: "0.1.143" });
                 assert.equal(report.global.registryVersion, undefined);
                 assert.match(report.global.reason ?? "", /registry unreachable/);
                 for (const lane of report.lanes) {

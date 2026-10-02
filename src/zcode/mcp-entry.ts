@@ -1,5 +1,5 @@
 // zcode native MCP entry (#1145): spawned per-session by ZCode (mcp.servers.
-// bili). Bootstraps a bili proxy, routes the provider store through it,
+// sigma). Bootstraps a sigma proxy, routes the provider store through it,
 // verifies the ACP tool manifest BEFORE stamping the plugin-mode header
 // (round 1 rides wire mode), then serves the ACP tools over stdio with a
 // watchdog that respawns the proxy or reverts routing on its death.
@@ -44,7 +44,7 @@ function startWatchdog(applied: ZcodeRouteApplied, attached: boolean, log: (msg:
                 { scriptPath: nativeProxyScriptPath() },
             );
             if (handle.origin !== state.origin) {
-                process.env.BILI_MCP_PROXY = handle.origin;
+                process.env.SIGMA_MCP_PROXY = handle.origin;
                 const routed = await routeZcodeConfig({ origin: handle.origin, log });
                 if (!routed) throw new Error("proxy respawned but the zcode config rewrite failed");
                 await activateZcodePluginMode(routed, { log });
@@ -75,7 +75,7 @@ export async function main(): Promise<void> {
     if (!applied) {
         process.exit(0);
     }
-    process.env.BILI_MCP_PROXY = applied.origin;
+    process.env.SIGMA_MCP_PROXY = applied.origin;
     try {
         const tools = await fetchManifest(applied.origin, "anthropic");
         if (tools.length === 0) throw new Error("manifest returned no tools");
@@ -91,7 +91,7 @@ export async function main(): Promise<void> {
 
 if (process.argv[1] && /(?:^|[\\/])mcp-entry\.(?:ts|js)$/.test(process.argv[1])) {
     main().catch((err) => {
-        process.stderr.write(`[bili-zcode] fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+        process.stderr.write(`[sigma-zcode] fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
         process.exit(1);
     });
 }

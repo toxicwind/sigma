@@ -156,7 +156,7 @@ async function post(h: Harness, upstreamIdx: number, path: string, body: Record<
 
 async function postRaw(h: Harness, upstreamIdx: number, path: string, body: Record<string, unknown>, headers: Record<string, string> = {}): Promise<Response> {
     const up = h.upstreams[upstreamIdx]!;
-    return fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${up.port}${path}`, {
+    return fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${up.port}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),

@@ -1,7 +1,7 @@
-// E2E: REAL `opencode` (native plugin lane) through bili's native extension
+// E2E: REAL `opencode` (native plugin lane) through sigma's native extension
 // (#1267, split from #1239). Sibling of e2e-native-pi.test.ts (#1246): a
 // deterministic fake chat-completions upstream scripts the model, so the whole
-// native chain — proxy bootstrap, URL interception, x-bili-plugin stamping,
+// native chain — proxy bootstrap, URL interception, x-sigma-plugin stamping,
 // ACP tool registration, plugin-tool execution (acp_status / compress) and
 // REAL compression — runs in-process with zero tokens and no network. Gated by
 // ACP_TEST_E2E_OC_NATIVE=1 (needs `npm run build` first — the plugin loads
@@ -11,7 +11,7 @@
 // either.
 //
 // Assertions map 1:1 to #1239's acceptance list:
-//   1. traffic is intercepted + plugin-mode claimed (x-bili-plugin: opencode + ses_ id)
+//   1. traffic is intercepted + plugin-mode claimed (x-sigma-plugin: opencode + ses_ id)
 //   2. session binding + status reachable (live /__bili/plugin/status endpoint —
 //      the /acp slash command itself is TUI-only; `run` dispatches no commands)
 //   3. acp_status executes and returns the kernel status report
@@ -52,7 +52,7 @@ fs.mkdirSync(WORK_ROOT, { recursive: true });
 // a fallback because some hosts point it INSIDE the workspace tree (#815 trap).
 function pickCwdRoot(): string {
   try {
-    const sibling = path.join(path.dirname(REPO_ROOT), "billion-context-e2e-native-oc");
+    const sibling = path.join(path.dirname(REPO_ROOT), "sigma-e2e-native-oc");
     fs.mkdirSync(sibling, { recursive: true });
     return sibling;
   } catch {
@@ -167,14 +167,14 @@ type Ctx = {
 };
 
 function cleanEnv(): NodeJS.ProcessEnv {
-  // This suite may run INSIDE a bili-driven shell (BILLION_CONTEXT_PROXY et
-  // al. preset): the native lane must bootstrap its OWN proxy, so every bili
+  // This suite may run INSIDE a sigma-driven shell (SIGMA_PROXY et
+  // al. preset): the native lane must bootstrap its OWN proxy, so every sigma
   // side-channel has to go. Host opencode overrides leak real sessions too.
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
     if (
-      key.startsWith("BILI") ||
-      key.startsWith("BILLION_CONTEXT") ||
+      key.startsWith("SIGMA") ||
+      key.startsWith("SIGMA") ||
       key.startsWith("ACP_") ||
       key.startsWith("OPENCODE")
     )
@@ -221,7 +221,7 @@ async function startCtx(): Promise<Ctx> {
     ctx.xdg.state,
     ctx.xdg.data,
     path.join(ctx.xdg.config, "opencode"),
-    path.join(ctx.xdg.config, "billion-context"),
+    path.join(ctx.xdg.config, "sigma"),
   ])
     fs.mkdirSync(d, { recursive: true });
 
@@ -282,7 +282,7 @@ async function startCtx(): Promise<Ctx> {
   // the protected zone". Zeroing it leaves only the message-count rule, which
   // the two push-back runs clear deterministically.
   fs.writeFileSync(
-    path.join(ctx.xdg.config, "billion-context", "billion-context.json"),
+    path.join(ctx.xdg.config, "sigma", "sigma.json"),
     JSON.stringify({ compress: { preserveRecentTokens: 0 } }, null, 2),
   );
 
@@ -303,7 +303,7 @@ async function startCtx(): Promise<Ctx> {
 type InstanceRecord = { pid?: number; origin?: string; startedAt?: number; lane?: string };
 
 function instanceRecords(ctx: Ctx): InstanceRecord[] {
-  const dir = path.join(ctx.xdg.state, "billion-context", "instances");
+  const dir = path.join(ctx.xdg.state, "sigma", "instances");
   const out: InstanceRecord[] = [];
   try {
     for (const f of fs.readdirSync(dir)) {
@@ -443,7 +443,7 @@ function ocRun(
 function biliLog(ctx: Ctx): string {
   try {
     return fs.readFileSync(
-      path.join(ctx.xdg.state, "billion-context", "bili.log"),
+      path.join(ctx.xdg.state, "sigma", "sigma.log"),
       "utf8",
     );
   } catch {
@@ -461,7 +461,7 @@ type SessionFile = {
 };
 
 function sessionFiles(ctx: Ctx): { file: string; parsed: SessionFile }[] {
-  const dir = path.join(ctx.xdg.data, "billion-context", "sessions");
+  const dir = path.join(ctx.xdg.data, "sigma", "sessions");
   const out: { file: string; parsed: SessionFile }[] = [];
   try {
     for (const prov of fs.readdirSync(dir)) {
@@ -470,7 +470,7 @@ function sessionFiles(ctx: Ctx): { file: string; parsed: SessionFile }[] {
       try {
         entries = fs.readdirSync(provDir);
       } catch {
-        continue; // not a directory (e.g. .bili-migration markers)
+        continue; // not a directory (e.g. .sigma-migration markers)
       }
       for (const f of entries) {
         if (!f.endsWith(".json")) continue;
@@ -539,7 +539,7 @@ if (checkOnly) {
         assert.equal(
           o.plugin,
           "opencode",
-          `request must be plugin-stamped (x-bili-plugin), got ${o.plugin}`,
+          `request must be plugin-stamped (x-sigma-plugin), got ${o.plugin}`,
         );
         assert.ok(
           o.conv !== null && /^ses_/.test(o.conv),
@@ -572,8 +572,8 @@ if (checkOnly) {
       );
       assert.match(
         statusResult.content,
-        /billion-context[ @]/,
-        `acp_status result must carry the bili version stamp, got: ${shown}`,
+        /sigma[ @]/,
+        `acp_status result must carry the sigma version stamp, got: ${shown}`,
       );
 
       await stopProxiesGracefully(ctx);

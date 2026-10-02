@@ -180,7 +180,7 @@ test("reserveOutputHeadroom: no-op for a non-positive / non-finite window", () =
 });
 
 // #896: capPct caps the reservation at a fraction of the WINDOW —
-// reserved = min(maxOutput, capPct × window) — aligned with billion-context-pi #207.
+// reserved = min(maxOutput, capPct × window) — aligned with sigma-pi #207.
 test("reserveOutputHeadroom: capPct caps the reservation at a fraction of the window (#896)", () => {
     // Cap binding: max_tokens 131072 on a 262144 window, cap 0.25 → reserved = min(131072, 65536).
     assert.equal(reserveOutputHeadroom(262_144, 131_072, 0.25), 196_608);

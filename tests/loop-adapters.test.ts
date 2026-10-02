@@ -195,7 +195,7 @@ test("anthropic adapter: relay-echoed message_delta with input_tokens: 0 must NO
 });
 
 test("anthropic adapter (#299): stitched stream — terminal's complete usage adopts atomically, no double-count", async () => {
-    // After a compress re-request, the stream handed to a downstream bili is
+    // After a compress re-request, the stream handed to a downstream sigma is
     // two rounds stitched: round1's message_start (pre-compress cache_read) +
     // the final synthetic terminal (post-compress input, cache_read
     // legitimately 0). The terminal carries a COMPLETE usage object

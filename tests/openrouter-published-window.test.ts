@@ -133,9 +133,9 @@ async function startRig(): Promise<Rig> {
 }
 
 async function effectiveLimit(rig: Rig, session: string): Promise<number | undefined> {
-    const r = await fetch(`http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`, {
+    const r = await fetch(`http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-acp-session": session, "x-bili-plugin": "test-agent" },
+        headers: { "content-type": "application/json", "x-acp-session": session, "x-sigma-plugin": "test-agent" },
         body: JSON.stringify({ model: MODEL, max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }),
     });
     assert.equal(r.status, 200);

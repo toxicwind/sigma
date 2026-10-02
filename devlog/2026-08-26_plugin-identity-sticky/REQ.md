@@ -1,6 +1,6 @@
 # Requirement: native mode disappears after switching models in the omp TUI
 
-User report: in a `bili omp` TUI session, after switching models (GLM chat → qwen responses), the
+User report: in a `sigma omp` TUI session, after switching models (GLM chat → qwen responses), the
 model fell back to wire mode (the model pasted raw acp_status output into the conversation, and
 "native mode disappeared").
 

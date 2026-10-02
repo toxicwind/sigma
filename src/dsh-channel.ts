@@ -1,6 +1,6 @@
 // #966: the dsh-side plugin channel — the single install lane for dsh.
 //
-// `bili plugin install|remove dsh` drives dsh's own pnpm forwarder
+// `sigma plugin install|remove dsh` drives dsh's own pnpm forwarder
 // (`dsh plugin --profile <name> add|remove <spec>`, #950) instead of writing
 // managed blocks into every profile's cordis.patch.yml, and the auto-updater
 // re-runs the channel after a global self-update so each profile's copy stays
@@ -15,7 +15,7 @@ import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { resolveDshHome } from "./client-config.js";
 
-export const DSH_PACKAGE = "billion-context";
+export const DSH_PACKAGE = "sigma";
 
 const DSH_EXEC_TIMEOUT_MS = 5 * 60 * 1000; // cold pnpm store + slow network
 
@@ -41,8 +41,8 @@ export function dshProfileDirs(env: NodeJS.ProcessEnv = process.env): string[] {
 
 // Pre-unification installs wrote this block into every profile's
 // cordis.patch.yml. Strings are STABLE — existing user files carry them.
-export const DSH_PATCH_BEGIN = "# bili begin (managed by billion-context — `bili plugin install dsh`)";
-export const DSH_PATCH_END = "# bili end";
+export const DSH_PATCH_BEGIN = "# sigma begin (managed by sigma — `sigma plugin install dsh`)";
+export const DSH_PATCH_END = "# sigma end";
 
 const DSH_PATCH_HEADER = "# Your patch layer for this dsh profile, applied after every bundle layer:\n# a top-level YAML array of loader patch entries (id-targeted config\n# overrides, disables, and insert lists; `!!js` expressions allowed).\n";
 
@@ -79,7 +79,7 @@ export function dshHasLegacyManagedBlock(profileDir: string): boolean {
 /** Strip the legacy managed block from this profile's cordis.patch.yml
  *  (restoring the placeholder shape when nothing meaningful remains).
  *  Returns true when the file was rewritten. Coexistence of a legacy block
- *  and the bundle layer duplicates the `bili-native` loader id and
+ *  and the bundle layer duplicates the `sigma-native` loader id and
  *  hard-fails dsh boot (#950 mutual exclusion), so install/remove migrate
  *  old lanes through this before touching the channel. */
 export function stripLegacyManagedBlock(profileDir: string): boolean {
@@ -102,7 +102,7 @@ function readManifestDependencies(profileDir: string): Record<string, unknown> {
     return manifest.dependencies ?? {};
 }
 
-/** True iff the profile manifest lists billion-context as a bundle (the
+/** True iff the profile manifest lists sigma as a bundle (the
  *  state `dsh plugin add` leaves behind — dsh reconciles
  *  `dsh.profile.bundles` from deps whose resolved manifest declares
  *  `dsh.bundle.patch`). */
@@ -116,7 +116,7 @@ export function dshBundleInstalled(profileDir: string): boolean {
     }
 }
 
-/** The declared dependency spec for billion-context in this profile
+/** The declared dependency spec for sigma in this profile
  *  (registry form like "^0.1.120", or a local pin like "link:/x" /
  *  "file:/x.tgz"), or undefined when the profile does not depend on it. */
 export function dshProfileDepSpec(profileDir: string): string | undefined {
@@ -128,7 +128,7 @@ export function dshProfileDepSpec(profileDir: string): string | undefined {
     }
 }
 
-export function dshProfileDependsOnBili(profileDir: string): boolean {
+export function dshProfileDependsOnSigma(profileDir: string): boolean {
     return dshProfileDepSpec(profileDir) !== undefined;
 }
 
@@ -143,10 +143,10 @@ function underDir(dir: string, root: string): boolean {
     return dir === root || dir.startsWith(root + path.sep);
 }
 
-/** True when `installDir` is a copy of billion-context living inside a dsh
+/** True when `installDir` is a copy of sigma living inside a dsh
  *  profile bundle (<dshHome>/profiles/<name>/…), as written or after symlink
  *  resolution (pnpm store links, dev link: pins). #1196: such a copy has no
- *  global bili driving its refresh — the process running FROM it is the only
+ *  global sigma driving its refresh — the process running FROM it is the only
  *  candidate to trigger the channel refresh. */
 export function isDshProfileCopy(installDir: string, env: NodeJS.ProcessEnv = process.env): boolean {
     const profiles = path.join(resolveDshHome(env), "profiles");
@@ -180,7 +180,7 @@ export function _setDshRunnersForTest(r: { sync?: DshSyncRun; async?: DshAsyncRu
 }
 
 function dshCommand(env: NodeJS.ProcessEnv): string {
-    const override = env.BILI_DSH_BIN?.trim();
+    const override = env.SIGMA_DSH_BIN?.trim();
     return override && override.length > 0 ? override : "dsh";
 }
 
@@ -216,7 +216,7 @@ export function planDshSpawn(
 function formatDshError(err: unknown, args: readonly string[]): Error {
     const e = err as { code?: string | number; status?: number; stderr?: string | Buffer; message?: string };
     if (e.code === "ENOENT") {
-        return new Error("dsh CLI not found on PATH — install deepseek-harness first (or set BILI_DSH_BIN to its binary), then retry");
+        return new Error("dsh CLI not found on PATH — install deepseek-harness first (or set SIGMA_DSH_BIN to its binary), then retry");
     }
     const stderr = typeof e.stderr === "string" ? e.stderr.trim() : e.stderr instanceof Buffer ? e.stderr.toString("utf8").trim() : "";
     const detail = stderr || (typeof e.message === "string" && e.message.length > 0 ? e.message : `exit ${e.status ?? "?"}`);
@@ -283,7 +283,7 @@ export async function runDshPluginAsync(args: string[], env: NodeJS.ProcessEnv =
 // — post-self-update lockstep refresh (#966 closes #953) ————————————————
 
 /** After a global self-update, bring every registry-pinned profile copy of
- *  billion-context back to the new global version so the loaded plugin and
+ *  sigma back to the new global version so the loaded plugin and
  *  the proxy never drift apart again (#953). Best-effort by contract: never
  *  throws — a failed refresh degrades to the pre-fix behavior (stale profile
  *  copy until the next manual update), never to a broken update loop.
@@ -299,14 +299,14 @@ export async function refreshDshProfileBundles(
     } catch {
         return; // dsh has never run on this machine — nothing to keep in step
     }
-    const targets = dirs.filter((dir) => dshProfileDependsOnBili(dir));
+    const targets = dirs.filter((dir) => dshProfileDependsOnSigma(dir));
     if (targets.length === 0) return;
     let refreshed = 0;
     for (const dir of targets) {
         const name = path.basename(dir);
         const spec = dshProfileDepSpec(dir);
         if (spec !== undefined && !isRegistryDepSpec(spec)) {
-            log("info", `[update] dsh profile ${name}: billion-context pinned to ${spec} (local source) — leaving it alone`);
+            log("info", `[update] dsh profile ${name}: sigma pinned to ${spec} (local source) — leaving it alone`);
             continue;
         }
         try {

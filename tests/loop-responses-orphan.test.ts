@@ -90,7 +90,7 @@ function mockFetch(handler: () => Response): { calls: () => number; restore: () 
 }
 
 test("#440 T1: 0-event EOF → first event is response.created, failed preceded by created", async () => {
-    process.env.BILI_REPLAY_RETRY_MAX = "1";
+    process.env.SIGMA_REPLAY_RETRY_MAX = "1";
     const ctx = makeCtx("resp-orphan-t1");
     const mock = mockFetch(() => new Response('{"error":"boom"}', { status: 500, headers: { "content-type": "application/json" } }));
     try {
@@ -102,7 +102,7 @@ test("#440 T1: 0-event EOF → first event is response.created, failed preceded 
         assertCreatedBeforeFailed(events);
     } finally {
         mock.restore();
-        delete process.env.BILI_REPLAY_RETRY_MAX;
+        delete process.env.SIGMA_REPLAY_RETRY_MAX;
     }
 });
 

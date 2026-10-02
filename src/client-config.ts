@@ -92,7 +92,7 @@ export interface OpencodeConfig {
 /** opencode's built-in "zen" gateway (`opencode auth login`): the baseURL
  *  (`https://opencode.ai/zen/v1/messages`) comes from the models.dev catalog,
  *  not from any local config file, so discovery cannot see it — seed it like
- *  the other stock model gateways so `bili omp` / `bili opencode` cert-MITM
+ *  the other stock model gateways so `sigma omp` / `sigma opencode` cert-MITM
  *  zen traffic instead of blind-tunneling it (#1405). */
 export const OPENCODE_DEFAULT_MODEL_HOSTS = ["opencode.ai"];
 
@@ -167,7 +167,7 @@ export interface KimiConfig {
 export interface GeminiConfig {
     /** The user's pre-existing `GOOGLE_GEMINI_BASE_URL` env — when set,
      *  gemini-cli already routes model traffic to this relay, so the launcher
-     *  wraps IT via /bili/ instead of the stock Google endpoint. */
+     *  wraps IT via /sigma/ instead of the stock Google endpoint. */
     baseUrl?: string;
 }
 
@@ -203,7 +203,7 @@ export interface AiderConfig {
 }
 
 /** goose (Block) model routing surface. Release builds wire reqwest with
- *  rustls (webpki roots), so bili's CA is untrusted and cert-MITM cannot reach
+ *  rustls (webpki roots), so sigma's CA is untrusted and cert-MITM cannot reach
  *  the model legs — every leg must be redirected straight at the proxy as
  *  plain HTTP instead: built-in openai/anthropic via their `*_HOST` env
  *  overrides, custom declarative providers via a regenerated config overlay. */
@@ -509,19 +509,19 @@ export function readDshConfig(dshHome: string): DshConfig {
  *  binary that honors HTTPS_PROXY (Go net/http) and resolves its API host
  *  from TRAE_CLI_API_HOST (chatmodel.resolveBaseURL); without it the
  *  enterprise gateway is console.enterprise.trae.cn. These hosts are
- *  cert-MITM'd so `bili trae` can compress the model traffic. */
+ *  cert-MITM'd so `sigma trae` can compress the model traffic. */
 export const TRAE_DEFAULT_MODEL_HOSTS = [
     "console.enterprise.trae.cn",
     "www.trae.cn",
 ];
 
-/** jcode (Rust harness) default model hosts, cert-MITM'd so `bili jcode`
+/** jcode (Rust harness) default model hosts, cert-MITM'd so `sigma jcode`
  *  compresses the zai leg. Loopback providers stay direct via NO_PROXY. */
 export const JCODE_DEFAULT_MODEL_HOSTS = [
     "api.z.ai",
 ];
 
-/** Qwen Code's stock model gateways, cert-MITM'd so `bili qwen` compresses
+/** Qwen Code's stock model gateways, cert-MITM'd so `sigma qwen` compresses
  *  the model traffic: DashScope OpenAI-compatible endpoints (CN/intl/coding),
  *  the Qwen OAuth gateway, plus the third-party provider hosts qwen-code ships
  *  support for. Custom relays go through `--mitm-domain`. */
@@ -868,7 +868,7 @@ export function parseMcodeYaml(text: string): McodeConfig {
     return result;
 }
 
-/** Copilot CLI (GitHub) model hosts, cert-MITM'd so `bili copilot` compresses
+/** Copilot CLI (GitHub) model hosts, cert-MITM'd so `sigma copilot` compresses
  *  the model traffic. The binary is closed-source Go (net/http honors
  *  HTTPS_PROXY + SSL_CERT_FILE); the family is api.githubcopilot.com plus the
  *  per-plan subdomains from GitHub's own CI firewall allowlist for the CLI. */
@@ -879,7 +879,7 @@ export const COPILOT_DEFAULT_MODEL_HOSTS = [
     "api.enterprise.githubcopilot.com",
 ];
 
-/** Amp (Sourcegraph) backend host, cert-MITM'd so `bili amp` compresses the
+/** Amp (Sourcegraph) backend host, cert-MITM'd so `sigma amp` compresses the
  *  model traffic. Closed-source Go like copilot; ampcode.com carries both the
  *  model leg and the control plane (/api/internal, /api/telemetry). */
 export const AMP_DEFAULT_MODEL_HOSTS = ["ampcode.com"];
@@ -1465,7 +1465,7 @@ export function parseZcodePersonalConfig(obj: unknown): ZcodeConfig {
 // Upstream path truth (zai-org/ZCode): getDataBaseDir() = ZCODE_DATA_BASE_DIR
 // > home; getZCodeDataRootDir() = join(base, ".zcode"); both provider stores
 // live under <root>/v2/; the personal file may be relocated wholesale via
-// ZCODE_PERSONAL_PROVIDER_CONFIG_FILE (provider-runtime-env.ts). Legacy bili
+// ZCODE_PERSONAL_PROVIDER_CONFIG_FILE (provider-runtime-env.ts). Legacy sigma
 // treated ZCODE_DATA_BASE_DIR as the .zcode root itself — kept as a compat
 // candidate below, but the upstream derivation is canonical.
 export function zcodeDataRoot(env: NodeJS.ProcessEnv): string {
@@ -1651,7 +1651,7 @@ export function readAiderConfig(env: NodeJS.ProcessEnv = process.env, cwd: strin
 
 /** The client a launcher run targets. Scopes model-window collection so a
  *  launched client's own declarations are authoritative (#436: launching
- *  `bili omp` with omp's models.yml declaring 131072 must not be overridden by
+ *  `sigma omp` with omp's models.yml declaring 131072 must not be overridden by
  *  another client's larger declaration for the same model id). */
 export type ModelWindowScope = "claude" | "codex" | "pi" | "omp" | "opencode" | "hermes" | "dsh" | "codebuddy" | "qoder" | "trae" | "jcode" | "kimi" | "gemini" | "iflow" | "qwen" | "mcode" | "aider" | "copilot" | "amp" | "goose";
 
@@ -1692,7 +1692,7 @@ export function collectModelWindows(config: ClientConfig, scope?: ModelWindowSco
 
 /** Configured max output per model id (#971): the same sources as
  *  collectModelWindows, reduced to the id → maxOutput map the launcher hands
- *  the proxy via BILI_LAUNCHER_MODEL_MAX_OUTPUTS. */
+ *  the proxy via SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS. */
 export function collectModelMaxOutputs(config: ClientConfig, scope?: ModelWindowScope): Record<string, number> {
     const out: Record<string, number> = {};
     const add = (wins: ModelWindow[] | undefined): void => {

@@ -13,7 +13,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 
 /** #1073: forward-proxy-style (absolute-form) management probes addressed to
- *  bili instances must return real health state instead of being tunneled and
+ *  sigma instances must return real health state instead of being tunneled and
  *  403'd by the target's own admin gate — while every #409 security property
  *  (self-layer denial, remote-peer marker, hostname marker) stays intact. */
 
@@ -96,7 +96,7 @@ function absoluteGet(port: number, targetUrl: string, hostHeader: string): Promi
     return promise;
 }
 
-async function makeBili(): Promise<http.Server> {
+async function makeSigma(): Promise<http.Server> {
     const opts: ProxyOptions = {
         port: 0,
         host: "127.0.0.1",
@@ -124,15 +124,15 @@ async function makeBili(): Promise<http.Server> {
 test("integration: absolute-form management probes answer with real health state (#1073)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-admin-probe-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-admin-probe-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
 
-    const p1 = await makeBili();
-    const p2 = await makeBili();
+    const p1 = await makeSigma();
+    const p2 = await makeSigma();
     const port1 = (p1.address() as { port: number }).port;
     const port2 = (p2.address() as { port: number }).port;
     try {
@@ -146,7 +146,7 @@ test("integration: absolute-form management probes answer with real health state
 
         // SELF shape: prober configured with P1's own port as its proxy asks
         // for http://127.0.0.1:<P1>/__bili/health. Pre-fix: tunneled onto
-        // itself → 403 "the bili tunnel may not target the proxy itself".
+        // itself → 403 "the sigma tunnel may not target the proxy itself".
         const selfProbe = await absoluteGet(port1, `http://127.0.0.1:${port1}/__bili/health`, `127.0.0.1:${port1}`);
         assert.equal(selfProbe.status, 200, `self-addressed probe must be served locally (got ${selfProbe.status}: ${selfProbe.body})`);
         assert.equal(JSON.parse(selfProbe.body).instanceId, id1, "answered by the probed instance itself");
@@ -154,8 +154,8 @@ test("integration: absolute-form management probes answer with real health state
 
         // CROSS-INSTANCE shape: the incident's traffic — connection lands on P1,
         // absolute target points at sibling P2. Pre-fix: P1 relayed WITH the
-        // x-bili-tunnel marker → P2's admin gate 403 "management endpoints are
-        // not reachable through the bili tunnel" (×2372 in the wild).
+        // x-sigma-tunnel marker → P2's admin gate 403 "management endpoints are
+        // not reachable through the sigma tunnel" (×2372 in the wild).
         const crossProbe = await absoluteGet(port1, `http://127.0.0.1:${port2}/__bili/health`, `127.0.0.1:${port2}`);
         assert.equal(crossProbe.status, 200, `loopback→loopback sibling probe must pass unmarked (got ${crossProbe.status}: ${crossProbe.body})`);
         assert.equal(JSON.parse(crossProbe.body).instanceId, id2, "reached the TARGET instance, not the relay");
@@ -164,9 +164,9 @@ test("integration: absolute-form management probes answer with real health state
         // marker stays stamped (DNS-rebinding conservatism) → target still 403s.
         const byName = await absoluteGet(port1, `http://localhost:${port2}/__bili/health`, `localhost:${port2}`);
         assert.equal(byName.status, 403, "hostname-targeted cross-instance probe keeps the tunnel marker");
-        assert.match(byName.body, /management endpoints are not reachable through the bili tunnel/);
+        assert.match(byName.body, /management endpoints are not reachable through the sigma tunnel/);
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         p1.closeAllConnections?.();
         await close(p1);
         p2.closeAllConnections?.();

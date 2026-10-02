@@ -25,11 +25,11 @@ async function freePort(): Promise<number> {
 }
 
 test("passthroughState resolves env over file over default", () => {
-    const root = path.join(tmpdir(), `bili-passthrough-state-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-passthrough-state-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
-    const previous = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const previousEnv = process.env.ACP_PASSTHROUGH;
     delete process.env.ACP_PASSTHROUGH;
     try {
@@ -46,7 +46,7 @@ test("passthroughState resolves env over file over default", () => {
         assert.deepEqual(passthroughState(process.env), { enabled: false, source: "env" });
     } finally {
         if (previousEnv === undefined) delete process.env.ACP_PASSTHROUGH; else process.env.ACP_PASSTHROUGH = previousEnv;
-        if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+        if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
         rmSync(root, { recursive: true, force: true });
     }
 });
@@ -54,13 +54,13 @@ test("passthroughState resolves env over file over default", () => {
 test("web config exposes and toggles passthrough (#405)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-passthrough-web-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-passthrough-web-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
 
-    const previous = { config: process.env.BILI_CONFIG_FILE, env: process.env.ACP_PASSTHROUGH };
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = { config: process.env.SIGMA_CONFIG_FILE, env: process.env.ACP_PASSTHROUGH };
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     delete process.env.ACP_PASSTHROUGH;
     const port = await freePort();
     const opts: ProxyOptions = {
@@ -136,7 +136,7 @@ test("web config exposes and toggles passthrough (#405)", async () => {
     } finally {
         await close(proxy);
         if (previous.env === undefined) delete process.env.ACP_PASSTHROUGH; else process.env.ACP_PASSTHROUGH = previous.env;
-        if (previous.config === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous.config;
+        if (previous.config === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous.config;
         rmSync(root, { recursive: true, force: true });
     }
 });

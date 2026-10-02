@@ -1,5 +1,5 @@
 import { defaultCountTokens, type CoreMessage, type NudgeDecision } from "acp-kernel";
-import { googleSystemText, type BiliMessage, type GoogleRequestBody } from "acp-kernel/wire";
+import { googleSystemText, type SigmaMessage, type GoogleRequestBody } from "acp-kernel/wire";
 import { estimateCoreMessages } from "../preflight.js";
 import { readOutputBudget, writeOutputBudget, type OutputBudgetField } from "./side-request.js";
 
@@ -21,7 +21,7 @@ const OUTPUT_CLAMP_FLOOR = 1024;
 const EMERGENCY_NUDGE_ESCALATION_PCT = 0.7;
 
 /** chars/4 measure of the per-request overhead that lives OUTSIDE the kernel's
- *  fold space: the outbound system prompt (client text plus bili-injected parts)
+ *  fold space: the outbound system prompt (client text plus sigma-injected parts)
  *  and the tool schemas. The kernel's contextBreakdown classifies messages only,
  *  so this is what the status panel's SysPrompt row must add back (#532). Same
  *  counting method as estimateInputTokens below. */
@@ -79,9 +79,9 @@ export interface ThinkingMassInput {
  *  Returns the total tokens projected (0 = nothing to do). Deterministic for a
  *  given (messages, inputs) pair; the shares sum exactly to the gap (floors go
  *  to earlier targets, remainder to the last one). */
-export function projectThinkingMass(msgs: BiliMessage[], input: ThinkingMassInput): number {
+export function projectThinkingMass(msgs: SigmaMessage[], input: ThinkingMassInput): number {
     if (!input.measured || !(input.providerInputTokens > 0)) return 0;
-    const targets: Array<{ msg: BiliMessage; sig: number }> = [];
+    const targets: Array<{ msg: SigmaMessage; sig: number }> = [];
     for (const m of msgs) {
         if (m.contentType !== "reasoning") continue;
         if (typeof m.thinkingSignature !== "string" || m.thinkingSignature.length === 0) continue;

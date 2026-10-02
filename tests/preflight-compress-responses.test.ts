@@ -111,7 +111,7 @@ test("e2e #280 (Responses): restored session with lastInputTokens=0 → prefligh
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
 
     // Seven ~4.6k-char messages (~1140 tokens each, ~8k total < the 10k window,
     // so preflight stays off for session A). The kernel protects the last 5

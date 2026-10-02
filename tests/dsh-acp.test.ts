@@ -69,11 +69,11 @@ test("registers both /acp and /acp-cache (#1146)", async () => {
 
 test("/acp renders the live panel", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/status": {
                 status: 200,
-                body: { ok: true, panel: "ACP Context Analysis\nbillion-context@9.9.9" },
+                body: { ok: true, panel: "ACP Context Analysis\nsigma@9.9.9" },
             },
         },
     );
@@ -83,18 +83,18 @@ test("/acp renders the live panel", async () => {
 
 test("/acp on an armed-but-idle proxy renders the idle notice", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/manifest": { status: 200, body: { version: "9.9.9" } },
         },
     );
     assert.equal(outcome.kind, "success");
-    assert.match(outcome.text, /billion-context@9\.9\.9 — proxy connected, compression armed/);
+    assert.match(outcome.text, /sigma@9\.9\.9 — proxy connected, compression armed/);
 });
 
 test("/acp when the proxy is unreachable reports an error", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {},
     );
     assert.equal(outcome.kind, "error");
@@ -102,9 +102,9 @@ test("/acp when the proxy is unreachable reports an error", async () => {
 });
 
 test("/acp without a proxy env gives the launch hint", async () => {
-    const { outcome } = await runHandler({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, {});
+    const { outcome } = await runHandler({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, {});
     assert.equal(outcome.kind, "error");
-    assert.match(outcome.text, /launch dsh through `bili dsh`/);
+    assert.match(outcome.text, /launch dsh through `sigma dsh`/);
 });
 
 // — #1146: /acp-cache — resolves the latest conversation id via the status
@@ -112,7 +112,7 @@ test("/acp without a proxy env gives the launch hint", async () => {
 
 test("/acp-cache forwards acp_cache bound to the latest conversation", async () => {
     const { outcome, calls } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/status": {
                 status: 200,
@@ -130,7 +130,7 @@ test("/acp-cache forwards acp_cache bound to the latest conversation", async () 
 
 test("/acp-cache on an armed-but-idle proxy says to send a request first", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/manifest": { status: 200, body: { version: "9.9.9" } },
         },
@@ -142,7 +142,7 @@ test("/acp-cache on an armed-but-idle proxy says to send a request first", async
 
 test("/acp-cache when the proxy is unreachable reports an error", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {},
         "acp-cache",
     );
@@ -151,14 +151,14 @@ test("/acp-cache when the proxy is unreachable reports an error", async () => {
 });
 
 test("/acp-cache without a proxy env gives the launch hint", async () => {
-    const { outcome } = await runHandler({ BILLION_CONTEXT_PROXY: undefined, BILLION_CONTEXT_PLUGIN: undefined }, {}, "acp-cache");
+    const { outcome } = await runHandler({ SIGMA_PROXY: undefined, SIGMA_PLUGIN: undefined }, {}, "acp-cache");
     assert.equal(outcome.kind, "error");
-    assert.match(outcome.text, /launch dsh through `bili dsh`/);
+    assert.match(outcome.text, /launch dsh through `sigma dsh`/);
 });
 
 test("/acp-cache renders proxy-side failures unwrapped", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/status": {
                 status: 200,
@@ -175,7 +175,7 @@ test("/acp-cache renders proxy-side failures unwrapped", async () => {
 
 test("/acp-cache on an unknown conversation renders the friendly no-session notice", async () => {
     const { outcome } = await runHandler(
-        { BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: undefined },
+        { SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: undefined },
         {
             "http://127.0.0.1:8787/__bili/plugin/status": {
                 status: 200,

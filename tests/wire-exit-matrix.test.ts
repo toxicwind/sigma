@@ -5,8 +5,8 @@ import test from "node:test";
 import { existsSync } from "node:fs";
 
 process.env.NODE_ENV = "test";
-process.env.BILI_REPLAY_RETRY_MAX = "1";
-process.env.BILI_PREFLIGHT_HOLD_MS = "300";
+process.env.SIGMA_REPLAY_RETRY_MAX = "1";
+process.env.SIGMA_PREFLIGHT_HOLD_MS = "300";
 
 import { defaultConfig } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -198,7 +198,7 @@ test("abort x proxy-openai-sse: client abort mid-stream destroys the upstream re
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`;
         const outcome = await abortAfterFirstByte(url, { "content-type": "application/json", "x-acp-session": "mx-abort-oai" }, JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         assert.ok(outcome === "first-byte" || outcome === "header");
         await new Promise((r) => setTimeout(r, 300));
@@ -218,7 +218,7 @@ test("abort x proxy-anthropic-sse: client abort mid-stream destroys the upstream
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/messages`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/messages`;
         await abortAfterFirstByte(url, { "content-type": "application/json", "x-acp-session": "mx-abort-ant" }, JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         await new Promise((r) => setTimeout(r, 300));
         assert.ok(up.socketsClosed() >= 1, `upstream socket(s) destroyed after client abort (closed=${up.socketsClosed()})`);
@@ -236,7 +236,7 @@ test("abort x proxy-responses-sse: client abort mid-stream destroys the upstream
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/responses`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/responses`;
         await abortAfterFirstByte(url, { "content-type": "application/json", "x-acp-session": "mx-abort-resp" }, JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, instructions: "You are a test agent.", input: [{ type: "message", role: "user", content: "hi" }] }));
         await new Promise((r) => setTimeout(r, 300));
         assert.ok(up.socketsClosed() >= 1, `upstream socket(s) destroyed after client abort (closed=${up.socketsClosed()})`);
@@ -254,7 +254,7 @@ test("abort x proxy-json: client abort while the JSON is buffering destroys the 
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`;
         await abortAfterFirstByte(url, { "content-type": "application/json", "x-acp-session": "mx-abort-json" }, JSON.stringify({ model: "m-test", max_tokens: 1024, messages: [{ role: "user", content: "hi" }] }));
         await new Promise((r) => setTimeout(r, 300));
         assert.ok(up.socketsClosed() >= 1, `upstream socket(s) destroyed after client abort (closed=${up.socketsClosed()})`);
@@ -278,7 +278,7 @@ test("error-delivery x proxy-openai-sse: upstream 429 AFTER the early 200 commit
         // in-band on the openai wire.
         const r = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; tHeaderMs: number; body: string }>((resolve, reject) => {
             const t0 = Date.now();
-            const req = http.request(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": "mx-inband-oai" } }, (res) => {
+            const req = http.request(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": "mx-inband-oai" } }, (res) => {
                 const tHeaderMs = Date.now() - t0;
                 const chunks: Buffer[] = [];
                 res.on("data", (c: Buffer) => chunks.push(c));
@@ -290,7 +290,7 @@ test("error-delivery x proxy-openai-sse: upstream 429 AFTER the early 200 commit
         assert.equal(r.status, 200, "early commit owns the status line");
         assert.equal(String(r.headers["content-type"]), "text/event-stream");
         assert.ok(r.tHeaderMs < SLOW_MS, `headers committed before the slow preflight finished (${r.tHeaderMs}ms)`);
-        assert.ok(r.body.includes(": bili-preflight"), "keep-alive comment present");
+        assert.ok(r.body.includes(": sigma-preflight"), "keep-alive comment present");
         // Post-commit upstream failure goes through emitStreamError: openai
         // shape = top-level error frame + [DONE]. #1455: the legacy
         // error-delta + finish_reason looked like a successful completion and
@@ -316,7 +316,7 @@ test("error-delivery x proxy-openai-sse: preflight failure after the early commi
     try {
         const r = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; tHeaderMs: number; body: string }>((resolve, reject) => {
             const t0 = Date.now();
-            const req = http.request(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": "mx-inband-oai2" } }, (res) => {
+            const req = http.request(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": "mx-inband-oai2" } }, (res) => {
                 const tHeaderMs = Date.now() - t0;
                 const chunks: Buffer[] = [];
                 res.on("data", (c: Buffer) => chunks.push(c));
@@ -328,7 +328,7 @@ test("error-delivery x proxy-openai-sse: preflight failure after the early commi
         assert.equal(r.status, 200, "early commit owns the status line");
         assert.equal(String(r.headers["content-type"]), "text/event-stream");
         assert.ok(r.tHeaderMs < SLOW_MS, `headers committed before the slow summarization failed (${r.tHeaderMs}ms)`);
-        assert.ok(r.body.includes(": bili-preflight"), "keep-alive comment present");
+        assert.ok(r.body.includes(": sigma-preflight"), "keep-alive comment present");
         // Post-commit PREFLIGHT failure goes through emitPreflightError: openai
         // shape = top-level {error} object + [DONE] (no choices framing).
         assert.ok(r.body.includes('"error"'), "top-level in-band error object present");

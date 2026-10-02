@@ -373,7 +373,7 @@ function proxyOpts(relayPort: number): ProxyOptions {
 test("pi child conversation links its parent and serves its blocks read-only (#1333 e2e)", async () => {
     // Two child wire shapes must both record the link: the anonymous shape
     // (session header only — identity register drives binding) and the REAL
-    // pi plugin shape (x-bili-plugin + x-bili-plugin-conversation stamped by
+    // pi plugin shape (x-sigma-plugin + x-sigma-plugin-conversation stamped by
     // the extension — pluginAgent comes from the header, the identity branch
     // is skipped, and the register must be consulted through the stamped
     // conversation id instead).
@@ -397,7 +397,7 @@ async function runDerivedInheritanceE2E(shape: "anonymous" | "stamped"): Promise
     const proxy = await startServer(proxyOpts(relayPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${relayPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${relayPort}/v1/chat/completions`;
 
     const preExisting = new Set(listSessions().map((s) => s.id));
     const newSessions = () => listSessions().filter((s) => !preExisting.has(s.id));
@@ -429,7 +429,7 @@ async function runDerivedInheritanceE2E(shape: "anonymous" | "stamped"): Promise
         // (the kernel's syncBlocks would deactivate copied blocks anyway).
         // The stamped shape mirrors what the real pi extension sends.
         const childHeaders = shape === "stamped"
-            ? { "x-bili-plugin": "pi", "x-bili-plugin-conversation": childConv }
+            ? { "x-sigma-plugin": "pi", "x-sigma-plugin-conversation": childConv }
             : {};
         const childReply = await chat(url, [{ role: "user", content: `run ${run} child first turn (${shape}): ${FILLER.repeat(12)}` }], childConv, childHeaders);
         assert.ok(childReply.length > 0, "child turn must produce a reply");
@@ -495,7 +495,7 @@ test("child whose requests carry the real plugin wire shape links its parent (#1
     const proxy = await startServer(proxyOpts(relayPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${relayPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${relayPort}/v1/chat/completions`;
 
     const preExisting = new Set(listSessions().map((s) => s.id));
     const newSessions = () => listSessions().filter((s) => !preExisting.has(s.id));
@@ -520,10 +520,10 @@ test("child whose requests carry the real plugin wire shape links its parent (#1
         assert.ok(reg.ok, "register must succeed");
 
         // The child's requests carry the REAL pi wire shape — before_provider_headers
-        // stamps x-bili-plugin + x-bili-plugin-conversation on every request, so the
+        // stamps x-sigma-plugin + x-sigma-plugin-conversation on every request, so the
         // server-side identity branch is skipped and only the header-announced consume
         // path can pick up the parent link (#1356 review blocker). No x-acp-session.
-        const piHeaders = { "x-bili-plugin": "pi", "x-bili-plugin-conversation": childConv };
+        const piHeaders = { "x-sigma-plugin": "pi", "x-sigma-plugin-conversation": childConv };
         const childReply = await chat(url, [{ role: "user", content: `run ${run} child first turn: ${FILLER.repeat(12)}` }], "", piHeaders);
         assert.ok(childReply.length > 0, "child turn must produce a reply");
 
@@ -564,7 +564,7 @@ test("register landing after the child's first request still links late (#1362)"
     const proxy = await startServer(proxyOpts(relayPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${relayPort}/v1/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${relayPort}/v1/chat/completions`;
 
     const preExisting = new Set(listSessions().map((s) => s.id));
     const newSessions = () => listSessions().filter((s) => !preExisting.has(s.id));
@@ -580,7 +580,7 @@ test("register landing after the child's first request still links late (#1362)"
 
         // The extension flips tools-ready BEFORE the register POST completes, so the
         // child's first model request can reach the proxy before any register exists.
-        const piHeaders = { "x-bili-plugin": "pi", "x-bili-plugin-conversation": childConv };
+        const piHeaders = { "x-sigma-plugin": "pi", "x-sigma-plugin-conversation": childConv };
         const firstTurn = [{ role: "user", content: `run ${run} child first turn: ${FILLER.repeat(12)}` }] as ChatMsg[];
         const reply1 = await chat(url, firstTurn, "", piHeaders);
         assert.ok(reply1.length > 0, "child first turn must produce a reply");

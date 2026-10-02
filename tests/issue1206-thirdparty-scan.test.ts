@@ -59,9 +59,9 @@ function hermeticEnv(root: string): NodeJS.ProcessEnv {
 
 test("conflictScanEnabled defaults on, honors 0/false", () => {
     assert.equal(conflictScanEnabled({}), true);
-    assert.equal(conflictScanEnabled({ BILI_CONFLICT_SCAN: "1" }), true);
-    assert.equal(conflictScanEnabled({ BILI_CONFLICT_SCAN: "0" }), false);
-    assert.equal(conflictScanEnabled({ BILI_CONFLICT_SCAN: "false" }), false);
+    assert.equal(conflictScanEnabled({ SIGMA_CONFLICT_SCAN: "1" }), true);
+    assert.equal(conflictScanEnabled({ SIGMA_CONFLICT_SCAN: "0" }), false);
+    assert.equal(conflictScanEnabled({ SIGMA_CONFLICT_SCAN: "false" }), false);
 });
 
 test("sniffScanClient identifies clients from wire headers", () => {
@@ -76,10 +76,10 @@ test("sniffScanClient identifies clients from wire headers", () => {
 
 test("opencode scan: known conflict + keyword entries, self/context7 skipped", () => {
     clearScanCache();
-    const root = tmp("bili-1206-oc-");
-    const cwd = tmp("bili-1206-oc-cwd-");
+    const root = tmp("sigma-1206-oc-");
+    const cwd = tmp("sigma-1206-oc-cwd-");
     writeFile(path.join(root, ".config", "opencode", "opencode.json"), JSON.stringify({
-        plugin: ["opencode-acp@stable", "@scope/context-compressor", "billion-context", "context7", { name: "memory-compactor" }],
+        plugin: ["opencode-acp@stable", "@scope/context-compressor", "sigma", "context7", { name: "memory-compactor" }],
     }));
     writeFile(path.join(cwd, ".opencode", "opencode.json"), JSON.stringify({ plugin: ["compact-helper"] }));
     const res = scanClientPlugins("opencode", { env: hermeticEnv(root), cwd });
@@ -88,7 +88,7 @@ test("opencode scan: known conflict + keyword entries, self/context7 skipped", (
     assert.ok(names.includes("@scope/context-compressor"));
     assert.ok(names.includes("memory-compactor"));
     assert.ok(names.includes("compact-helper"), "project-layer entry must be scanned");
-    assert.ok(!names.includes("billion-context"), "bili itself must be skipped");
+    assert.ok(!names.includes("sigma"), "sigma itself must be skipped");
     assert.ok(!names.some((n) => n === "context7"), "context7 must NOT be keyword-matched");
     const known = res.findings.find((f) => f.entry === "opencode-acp@stable");
     assert.equal(known?.match, "known");
@@ -98,13 +98,13 @@ test("opencode scan: known conflict + keyword entries, self/context7 skipped", (
 
 test("opencode scan: no config at all yields empty result without throwing", () => {
     clearScanCache();
-    const root = tmp("bili-1206-oc-empty-");
+    const root = tmp("sigma-1206-oc-empty-");
     const res = scanClientPlugins("opencode", { env: hermeticEnv(root), cwd: root });
     assert.deepEqual(res.findings, []);
 });
 
 test("opencode scan: project walk never climbs past the git root", () => {
-    const base = tmp("bili-1206-oc-repo-");
+    const base = tmp("sigma-1206-oc-repo-");
     writeFile(path.join(base, "opencode.json"), JSON.stringify({ plugin: ["acp-decoy"] }));
     const repo = path.join(base, "repo");
     fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
@@ -119,7 +119,7 @@ test("opencode scan: project walk never climbs past the git root", () => {
 });
 
 test("opencode scan: without a .git anchor the walk stops at cwd", () => {
-    const tree = tmp("bili-1206-oc-nogit-");
+    const tree = tmp("sigma-1206-oc-nogit-");
     writeFile(path.join(tree, "opencode.json"), JSON.stringify({ plugin: ["acp-parent"] }));
     const child = path.join(tree, "child");
     fs.mkdirSync(child, { recursive: true });
@@ -147,30 +147,30 @@ test("opencode scan: without a .git anchor the walk stops at cwd", () => {
     }
 });
 
-test("pi scan: legacy bcp entry is known-conflict, keyword entries flagged, bili-self skipped", () => {
+test("pi scan: legacy bcp entry is known-conflict, keyword entries flagged, sigma-self skipped", () => {
     clearScanCache();
-    const root = tmp("bili-1206-pi-");
-    const cwd = tmp("bili-1206-pi-cwd-");
+    const root = tmp("sigma-1206-pi-");
+    const cwd = tmp("sigma-1206-pi-cwd-");
     const home = resolvePiHome(hermeticEnv(root));
     writeFile(path.join(home, "settings.json"), JSON.stringify({
-        packages: ["npm:billion-context-pi", "npm:context-forge", "/u/node_modules/billion-context/dist/agent/pi.js"],
+        packages: ["npm:sigma-pi", "npm:context-forge", "/u/node_modules/sigma/dist/agent/pi.js"],
     }));
     const res = scanClientPlugins("pi", { env: hermeticEnv(root), cwd });
-    const bcp = res.findings.find((f) => f.entry === "npm:billion-context-pi");
+    const bcp = res.findings.find((f) => f.entry === "npm:sigma-pi");
     assert.equal(bcp?.match, "known");
-    assert.equal(bcp?.knownId, "billion-context-pi");
+    assert.equal(bcp?.knownId, "sigma-pi");
     assert.ok(res.findings.some((f) => f.entry === "npm:context-forge" && f.match === "keyword"));
-    assert.ok(!res.findings.some((f) => f.entry.includes("dist/agent/pi.js")), "bili's own extension path must be skipped");
+    assert.ok(!res.findings.some((f) => f.entry.includes("dist/agent/pi.js")), "sigma's own extension path must be skipped");
 });
 
-test("omp scan: extensions block parsed, bili entry skipped, keyword flagged", () => {
+test("omp scan: extensions block parsed, sigma entry skipped, keyword flagged", () => {
     clearScanCache();
-    const root = tmp("bili-1206-omp-");
+    const root = tmp("sigma-1206-omp-");
     const home = resolveOmpHome(hermeticEnv(root));
     writeFile(path.join(home, "config.yml"), [
         "model: m",
         "extensions:",
-        "  - /u/node_modules/billion-context/dist/agent/omp-native.js",
+        "  - /u/node_modules/sigma/dist/agent/omp-native.js",
         "  - npm:context-forger",
         "providers:",
         "  p1: {}",
@@ -182,15 +182,15 @@ test("omp scan: extensions block parsed, bili entry skipped, keyword flagged", (
     assert.equal(res.findings[0]?.match, "keyword");
 });
 
-test("kimi scan: installed.json ids scanned, billion-context skipped", () => {
+test("kimi scan: installed.json ids scanned, sigma skipped", () => {
     clearScanCache();
-    const root = tmp("bili-1206-kimi-");
+    const root = tmp("sigma-1206-kimi-");
     const env: NodeJS.ProcessEnv = { ...hermeticEnv(root), KIMI_CODE_HOME: path.join(root, "kimi") };
     const pluginsDir = path.join(resolveKimiHome(env), "plugins");
     writeFile(path.join(pluginsDir, "installed.json"), JSON.stringify({
         version: 1,
         plugins: [
-            { id: "billion-context", root: "./managed/billion-context", source: "local-path", enabled: true },
+            { id: "sigma", root: "./managed/sigma", source: "local-path", enabled: true },
             { id: "context-keeper", root: "./managed/context-keeper", source: "local-path", enabled: true },
         ],
     }));
@@ -199,12 +199,12 @@ test("kimi scan: installed.json ids scanned, billion-context skipped", () => {
     assert.equal(res.findings[0]?.entry, "context-keeper");
 });
 
-test("hermes scan: plugin dirs matched by dir name only, bili skipped", () => {
+test("hermes scan: plugin dirs matched by dir name only, sigma skipped", () => {
     clearScanCache();
-    const root = tmp("bili-1206-hermes-");
+    const root = tmp("sigma-1206-hermes-");
     const env: NodeJS.ProcessEnv = { ...hermeticEnv(root), HERMES_HOME: path.join(root, "hermes") };
     const pluginsDir = path.join(resolveHermesHome(env), "plugins");
-    fs.mkdirSync(path.join(pluginsDir, "billion-context"), { recursive: true });
+    fs.mkdirSync(path.join(pluginsDir, "sigma"), { recursive: true });
     fs.mkdirSync(path.join(pluginsDir, "weather"), { recursive: true });
     writeFile(path.join(pluginsDir, "context-keeper", "plugin.yaml"), "name: context-keeper\n");
     // Keyword-rich manifest under a NON-matching dir name must not trigger —
@@ -214,7 +214,7 @@ test("hermes scan: plugin dirs matched by dir name only, bili skipped", () => {
     assert.deepEqual(res.findings.map((f) => f.entry), ["context-keeper"]);
 });
 
-test("#920: opencode-acp is design-absorbed only under bili's own opencode mode", () => {
+test("#920: opencode-acp is design-absorbed only under sigma's own opencode mode", () => {
     const known: ThirdPartyFinding = { client: "opencode", entry: "opencode-acp", source: "global", match: "known", knownId: "opencode-acp" };
     assert.equal(isDesignAbsorbed(known, "opencode"), true);
     assert.equal(isDesignAbsorbed(known, undefined), false, "wire mode: still a conflict");
@@ -223,12 +223,12 @@ test("#920: opencode-acp is design-absorbed only under bili's own opencode mode"
     assert.equal(isDesignAbsorbed(suspected, "opencode"), false, "keyword tier is never absorbed");
 });
 
-test("dsh scan: profile package.json deps scanned, billion-context skipped", () => {
+test("dsh scan: profile package.json deps scanned, sigma skipped", () => {
     clearScanCache();
-    const root = tmp("bili-1206-dsh-");
+    const root = tmp("sigma-1206-dsh-");
     const env: NodeJS.ProcessEnv = { ...hermeticEnv(root), DSH_HOME: path.join(root, "dsh") };
     writeFile(path.join(root, "dsh", "profiles", "main", "package.json"), JSON.stringify({
-        dependencies: { "billion-context": "^0.1.0", "context-keeper": "^1.0.0" },
+        dependencies: { "sigma": "^0.1.0", "context-keeper": "^1.0.0" },
     }));
     const res = scanClientPlugins("dsh", { env, cwd: root });
     assert.deepEqual(res.findings.map((f) => f.entry), ["context-keeper"]);
@@ -236,7 +236,7 @@ test("dsh scan: profile package.json deps scanned, billion-context skipped", () 
 
 test("dsh scan: missing profiles root yields empty result without throwing", () => {
     clearScanCache();
-    const root = tmp("bili-1206-dsh-empty-");
+    const root = tmp("sigma-1206-dsh-empty-");
     const env: NodeJS.ProcessEnv = { ...hermeticEnv(root), DSH_HOME: path.join(root, "dsh") };
     const res = scanClientPlugins("dsh", { env, cwd: root });
     assert.deepEqual(res.findings, []);
@@ -244,7 +244,7 @@ test("dsh scan: missing profiles root yields empty result without throwing", () 
 
 test("claude scan: enabledPlugins keys + plugins dir scanned", () => {
     clearScanCache();
-    const root = tmp("bili-1206-claude-");
+    const root = tmp("sigma-1206-claude-");
     const env: NodeJS.ProcessEnv = { ...hermeticEnv(root), CLAUDE_CONFIG_DIR: path.join(root, "claude") };
     writeFile(path.join(root, "claude", "settings.json"), JSON.stringify({
         enabledPlugins: { "context-compressor": true, "theme-dark": true },
@@ -257,15 +257,15 @@ test("claude scan: enabledPlugins keys + plugins dir scanned", () => {
 
 test("unknown client yields empty result", () => {
     clearScanCache();
-    const res = scanClientPlugins("codex", { env: {}, cwd: tmp("bili-1206-unknown-") });
+    const res = scanClientPlugins("codex", { env: {}, cwd: tmp("sigma-1206-unknown-") });
     assert.deepEqual(res.findings, []);
     assert.equal(res.client, "codex");
 });
 
 test("scan results are cached within TTL and invalidated by clearScanCache", () => {
     clearScanCache();
-    const root = tmp("bili-1206-cache-");
-    const cwd = tmp("bili-1206-cache-cwd-");
+    const root = tmp("sigma-1206-cache-");
+    const cwd = tmp("sigma-1206-cache-cwd-");
     const cfgFile = path.join(root, ".config", "opencode", "opencode.json");
     writeFile(cfgFile, JSON.stringify({ plugin: ["opencode-acp"] }));
     const first = scanClientPlugins("opencode", { env: hermeticEnv(root), cwd });

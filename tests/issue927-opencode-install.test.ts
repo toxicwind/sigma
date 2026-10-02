@@ -36,7 +36,7 @@ async function withEnv(vars: Record<string, string | undefined>, fn: () => Promi
 }
 
 function isolatedHome(): { home: string; cfgDir: string; env: Record<string, string | undefined> } {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc927-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc927-"));
     const cfgDir = path.join(home, ".config-x/opencode");
     return {
         home,
@@ -48,8 +48,8 @@ function isolatedHome(): { home: string; cfgDir: string; env: Record<string, str
             XDG_STATE_HOME: path.join(home, ".state-x"),
             XDG_CACHE_HOME: path.join(home, ".cache-x"),
             OPENCODE_CONFIG: undefined,
-            BILI_CLIENT_BIN: undefined,
-            BILI_MCP_PROXY: "http://127.0.0.1:8787",
+            SIGMA_CLIENT_BIN: undefined,
+            SIGMA_MCP_PROXY: "http://127.0.0.1:8787",
         },
     };
 }
@@ -65,27 +65,27 @@ test("pickPluginKey: 2.x writes plugins, 1.x and unknowns write plugin (#927)", 
     assert.equal(pickPluginKey(3), "plugins");
 });
 
-test("detectOpencodeMajor: honors BILI_CLIENT_BIN, fails soft to 1 (#927)", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-oc927-ver-"));
+test("detectOpencodeMajor: honors SIGMA_CLIENT_BIN, fails soft to 1 (#927)", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-oc927-ver-"));
     const isWin = process.platform === "win32";
     try {
         // Windows: execFileSync cannot spawn shebang scripts — fake the npm
-        // global shim shape (.cmd) there, matching what BILI_CLIENT_BIN points
+        // global shim shape (.cmd) there, matching what SIGMA_CLIENT_BIN points
         // at in the wild.
         const ext = isWin ? ".cmd" : "";
         const v2bin = path.join(home, `fake-opencode-v2${ext}`);
         fs.writeFileSync(v2bin, isWin ? "@echo opencode 2.0.3\r\n" : "#!/bin/sh\necho \"opencode 2.0.3\"\n");
         if (!isWin) fs.chmodSync(v2bin, 0o755);
-        await withEnv({ BILI_CLIENT_BIN: v2bin }, async () => {
+        await withEnv({ SIGMA_CLIENT_BIN: v2bin }, async () => {
             assert.equal(detectOpencodeMajor(), 2);
         });
         const deadBin = path.join(home, `fake-opencode-dead${ext}`);
         fs.writeFileSync(deadBin, isWin ? "@exit /b 3\r\n" : "#!/bin/sh\nexit 3\n");
         if (!isWin) fs.chmodSync(deadBin, 0o755);
-        await withEnv({ BILI_CLIENT_BIN: deadBin }, async () => {
+        await withEnv({ SIGMA_CLIENT_BIN: deadBin }, async () => {
             assert.equal(detectOpencodeMajor(), 1);
         });
-        await withEnv({ BILI_CLIENT_BIN: path.join(home, "does-not-exist") }, async () => {
+        await withEnv({ SIGMA_CLIENT_BIN: path.join(home, "does-not-exist") }, async () => {
             assert.equal(detectOpencodeMajor(), 1);
         });
     } finally {
@@ -116,10 +116,10 @@ test("install targets existing opencode.jsonc, preserves comments, keeps compact
         await withEnv(env, async () => {
             const msg = pluginInstall("opencode");
             assert.match(msg, /installed -> .*opencode\.jsonc/);
-            assert.match(msg, /mcp\.bili not written/);
+            assert.match(msg, /mcp\.sigma not written/);
             assert.match(msg, /compaction\.auto already disabled/);
             assert.doesNotMatch(msg, /set to false/);
-            const dir = path.join(cfgDir, "plugins/billion-context");
+            const dir = path.join(cfgDir, "plugins/sigma");
             let text = fs.readFileSync(file, "utf8");
             assert.ok(text.includes("// user comment that must survive"), "line comment survived");
             assert.ok(text.includes("/* hand-tuned */"), "block comment survived");
@@ -131,7 +131,7 @@ test("install targets existing opencode.jsonc, preserves comments, keeps compact
 
             // idempotent re-run: byte-identical file, presence notes only
             const again = pluginInstall("opencode");
-            assert.match(again, /mcp\.bili not written/);
+            assert.match(again, /mcp\.sigma not written/);
             assert.match(again, new RegExp(`${ocKey} present`));
             assert.match(again, /compaction\.auto already disabled/);
             assert.equal(fs.readFileSync(file, "utf8"), text, "re-run leaves the file byte-identical");
@@ -165,8 +165,8 @@ test("fresh config dir: creates plain opencode.json, remove restores pre-install
             assert.match(msg, /compaction\.auto set to false/);
             const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
             assert.deepEqual(data.compaction, { auto: false });
-            assert.deepEqual(data[ocKey], [path.join(cfgDir, "plugins/billion-context")]);
-            assert.equal(fs.existsSync(`${file}.bili-bak`), false, "nothing existed to back up");
+            assert.deepEqual(data[ocKey], [path.join(cfgDir, "plugins/sigma")]);
+            assert.equal(fs.existsSync(`${file}.sigma-bak`), false, "nothing existed to back up");
 
             assert.match(pluginRemove("opencode"), /removed/);
             assert.match(pluginRemove("opencode"), /not installed/);
@@ -235,8 +235,8 @@ test("broken target config: refuses to overwrite, writes nothing (#927)", async 
         await withEnv(env, async () => {
             assert.throws(() => pluginInstall("opencode"), /refusing to overwrite/);
             assert.equal(fs.readFileSync(file, "utf8"), broken, "broken config left byte-identical");
-            assert.equal(fs.existsSync(`${file}.bili-bak`), false);
-            assert.equal(fs.existsSync(path.join(cfgDir, "plugins/billion-context/index.js")), false);
+            assert.equal(fs.existsSync(`${file}.sigma-bak`), false);
+            assert.equal(fs.existsSync(path.join(cfgDir, "plugins/sigma/index.js")), false);
         });
     } finally {
         fs.rmSync(home, { recursive: true, force: true });
@@ -247,7 +247,7 @@ test("status/remove recognize our entry under either key spelling (#927)", async
     const { home, cfgDir, env } = isolatedHome();
     const { otherKey } = ocKeys();
     const file = path.join(cfgDir, "opencode.json");
-    const dir = path.join(cfgDir, "plugins/billion-context");
+    const dir = path.join(cfgDir, "plugins/sigma");
     fs.mkdirSync(cfgDir, { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ [otherKey]: [dir] }));
     try {

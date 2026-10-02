@@ -10,7 +10,7 @@ process.env.NODE_TEST_CONTEXT = "1";
 // #1365: legacy dead-attach suites must not pay the 5s routed-evidence grace
 // default (same waitFor-cap race as dsh-native.test.ts). Pinned-path tests
 // override per-test.
-process.env.BILI_ATTACH_EVIDENCE_GRACE_MS = "30";
+process.env.SIGMA_ATTACH_EVIDENCE_GRACE_MS = "30";
 
 import type { NativeInterceptState } from "../src/agent/native-intercept.ts";
 import type { V2HttpRequestEvent, V2PluginContext, V2State } from "../src/agent/opencode-v2.ts";
@@ -25,42 +25,42 @@ const EXPECTED_TOOLS = [...ACP_TOOLS_OPENAI.map((t) => t.function.name), ABSORB_
 const MODEL_URL = "https://api.anthropic.com/v1/messages";
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-test("shouldBootstrapNativeOpencode: true in a bare host with no bili env", () => {
+test("shouldBootstrapNativeOpencode: true in a bare host with no sigma env", () => {
     assert.equal(shouldBootstrapNativeOpencode({}), true);
 });
 
 test("shouldBootstrapNativeOpencode: false when the plugin or native mode is opted out", () => {
-    assert.equal(shouldBootstrapNativeOpencode({ BILLION_CONTEXT_PLUGIN: "0" }), false);
-    assert.equal(shouldBootstrapNativeOpencode({ BILI_NATIVE_OPENCODE: "0" }), false);
+    assert.equal(shouldBootstrapNativeOpencode({ SIGMA_PLUGIN: "0" }), false);
+    assert.equal(shouldBootstrapNativeOpencode({ SIGMA_NATIVE_OPENCODE: "0" }), false);
 });
 
-test("shouldBootstrapNativeOpencode: false when a bili launch already owns a proxy", () => {
-    assert.equal(shouldBootstrapNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485" }), false);
-    assert.equal(shouldBootstrapNativeOpencode({ BILLION_CONTEXT_PROXY: "  " }), true);
-    assert.equal(shouldBootstrapNativeOpencode({ BILI_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/bili/http://x"}' }), false);
+test("shouldBootstrapNativeOpencode: false when a sigma launch already owns a proxy", () => {
+    assert.equal(shouldBootstrapNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485" }), false);
+    assert.equal(shouldBootstrapNativeOpencode({ SIGMA_PROXY: "  " }), true);
+    assert.equal(shouldBootstrapNativeOpencode({ SIGMA_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/sigma/http://x"}' }), false);
 });
 
 test("native entry exports an OpenCode 2.x plugin object", () => {
-    assert.equal(nativeDefault.id, "billion-context-opencode-native");
+    assert.equal(nativeDefault.id, "sigma-opencode-native");
     assert.equal(typeof nativeDefault.setup, "function");
 });
 
 // #820 coexistence: the standalone opencode-acp extension must see this marker
-// at its action-time check even though our bootstrap writes BILLION_CONTEXT_PROXY
-// only later (async) and its /bili/ baseUrl check never sees our rewrite.
+// at its action-time check even though our bootstrap writes SIGMA_PROXY
+// only later (async) and its /sigma/ baseUrl check never sees our rewrite.
 test("module evaluation marks the process as a native opencode host", () => {
-    assert.equal(process.env.BILLION_CONTEXT_NATIVE, "opencode");
+    assert.equal(process.env.SIGMA_NATIVE, "opencode");
 });
 
 test("markNativeHost: sets when unset, first writer wins", () => {
     const env: NodeJS.ProcessEnv = {};
     markNativeHost(env, "pi");
-    assert.equal(env.BILLION_CONTEXT_NATIVE, "pi");
+    assert.equal(env.SIGMA_NATIVE, "pi");
     markNativeHost(env, "opencode");
-    assert.equal(env.BILLION_CONTEXT_NATIVE, "pi");
-    const blank: NodeJS.ProcessEnv = { BILLION_CONTEXT_NATIVE: "" };
+    assert.equal(env.SIGMA_NATIVE, "pi");
+    const blank: NodeJS.ProcessEnv = { SIGMA_NATIVE: "" };
     markNativeHost(blank, "omp");
-    assert.equal(blank.BILLION_CONTEXT_NATIVE, "omp");
+    assert.equal(blank.SIGMA_NATIVE, "omp");
 });
 
 test("route: healthy origin rewrites the request reference and records proxyBase", async () => {
@@ -75,7 +75,7 @@ test("route: healthy origin rewrites the request reference and records proxyBase
     };
     await route(e, s);
     const out = e.request as Request;
-    assert.equal(out.url, `${origin}/bili/${MODEL_URL}`);
+    assert.equal(out.url, `${origin}/sigma/${MODEL_URL}`);
     assert.equal(out.method, "POST");
     assert.equal(out.headers.get("authorization"), "Bearer x");
     assert.equal(await out.text(), body);
@@ -91,7 +91,7 @@ test("route: non-model-API and already-routed URLs are left untouched", async ()
     const e1: V2HttpRequestEvent = { request: plain };
     await route(e1, s);
     assert.equal(e1.request, plain);
-    const routed = new Request(`${origin}/bili/${MODEL_URL}`);
+    const routed = new Request(`${origin}/sigma/${MODEL_URL}`);
     const e2: V2HttpRequestEvent = { request: routed };
     await route(e2, s);
     assert.equal(e2.request, routed);
@@ -107,7 +107,7 @@ test("route: waits for a pending bootstrap before routing", async () => {
     const pending = route(e, s);
     release("http://127.0.0.1:4321");
     await pending;
-    assert.equal((e.request as Request).url, `http://127.0.0.1:4321/bili/${MODEL_URL}`);
+    assert.equal((e.request as Request).url, `http://127.0.0.1:4321/sigma/${MODEL_URL}`);
 });
 
 test("route: failed bootstrap sends direct with a single warning (no respawn wired)", async () => {
@@ -127,7 +127,7 @@ test("route: failed bootstrap sends direct with a single warning (no respawn wir
         await route(e2, s);
         assert.equal((e2.request as Request).url, MODEL_URL);
         assert.equal(s.proxyBase, undefined);
-        assert.equal(warnings.filter((w) => w.includes("bili-native-opencode")).length, 1);
+        assert.equal(warnings.filter((w) => w.includes("sigma-native-opencode")).length, 1);
     } finally {
         console.error = origError;
     }
@@ -148,7 +148,7 @@ test("route: dead origin respawns once and routes to the replacement", async () 
     const s: V2State = {};
     const e: V2HttpRequestEvent = { request: new Request(MODEL_URL) };
     await route(e, s);
-    assert.equal((e.request as Request).url, `${live}/bili/${MODEL_URL}`);
+    assert.equal((e.request as Request).url, `${live}/sigma/${MODEL_URL}`);
     assert.equal(s.proxyBase, live);
 });
 
@@ -234,9 +234,9 @@ test("setup(route): header stamping applies to the REPLACED request, tools regis
     };
     await hooks[0].cb(e);
     const out = e.request as Request;
-    assert.equal(out.url, `${origin}/bili/${MODEL_URL}`);
-    assert.equal(out.headers.get("x-bili-plugin-conversation"), "ses_abc");
-    assert.equal(out.headers.get("x-bili-plugin"), "opencode");
+    assert.equal(out.url, `${origin}/sigma/${MODEL_URL}`);
+    assert.equal(out.headers.get("x-sigma-plugin-conversation"), "ses_abc");
+    assert.equal(out.headers.get("x-sigma-plugin"), "opencode");
     cleanup();
 });
 
@@ -254,67 +254,67 @@ test("setup(route): kill switch keeps the hook fully inert", async () => {
     };
     const setup = createOpencodeV2Setup({ route: createNativeRoute(state, { probe: async () => true }) });
     const cleanup = await setup(ctx);
-    process.env.BILLION_CONTEXT_PLUGIN = "0";
+    process.env.SIGMA_PLUGIN = "0";
     try {
         const req = new Request(MODEL_URL);
         const e: V2HttpRequestEvent = { sessionID: "ses_x", request: req };
         await hooks[0](e);
         assert.equal(e.request, req);
     } finally {
-        delete process.env.BILLION_CONTEXT_PLUGIN;
+        delete process.env.SIGMA_PLUGIN;
         cleanup();
     }
 });
 
 test("nativeAttachOrigin: unset/blank/malformed/non-http(s) all resolve to undefined", () => {
     assert.equal(nativeAttachOrigin({}), undefined);
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "" }), undefined);
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "   " }), undefined);
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "not a url" }), undefined);
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "ftp://127.0.0.1:21" }), undefined);
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "" }), undefined);
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "   " }), undefined);
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "not a url" }), undefined);
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "ftp://127.0.0.1:21" }), undefined);
 });
 
 test("nativeAttachOrigin: normalizes a valid http(s) origin (trailing slash stripped)", () => {
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "http://127.0.0.1:8787" }), "http://127.0.0.1:8787");
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "http://127.0.0.1:8787///" }), "http://127.0.0.1:8787");
-    assert.equal(nativeAttachOrigin({ BILLION_CONTEXT_ATTACH: "  https://proxy.example.com/ " }), "https://proxy.example.com");
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "http://127.0.0.1:8787" }), "http://127.0.0.1:8787");
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "http://127.0.0.1:8787///" }), "http://127.0.0.1:8787");
+    assert.equal(nativeAttachOrigin({ SIGMA_ATTACH: "  https://proxy.example.com/ " }), "https://proxy.example.com");
 });
 
-test("planNativeOpencode: default is spawn; opt-out and /bili/ launches are off", () => {
+test("planNativeOpencode: default is spawn; opt-out and /sigma/ launches are off", () => {
     assert.deepEqual(planNativeOpencode({}), { mode: "spawn" });
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeOpencode({ BILI_NATIVE_OPENCODE: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeOpencode({ BILI_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/bili/http://x"}' }), { mode: "off" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_NATIVE_OPENCODE: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/sigma/http://x"}' }), { mode: "off" });
 });
 
-test("planNativeOpencode: a preset BILLION_CONTEXT_PROXY is an attach target, not a stand-down", () => {
+test("planNativeOpencode: a preset SIGMA_PROXY is an attach target, not a stand-down", () => {
     assert.deepEqual(
-        planNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485" }),
+        planNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485" }),
         { mode: "attach", attachOrigin: "http://127.0.0.1:36485" },
     );
     assert.deepEqual(
-        planNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485/" }),
+        planNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485/" }),
         { mode: "attach", attachOrigin: "http://127.0.0.1:36485" },
     );
-    // kill switches and a /bili/ launch still win over the preset
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485", BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485", BILI_PROVIDER_REWRITES: "{}" }), { mode: "off" });
+    // kill switches and a /sigma/ launch still win over the preset
+    assert.deepEqual(planNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485", SIGMA_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485", SIGMA_PROVIDER_REWRITES: "{}" }), { mode: "off" });
     // a garbage preset falls back to spawn (self-managed) rather than dead-off
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_PROXY: "garbage" }), { mode: "spawn" });
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_PROXY: "  " }), { mode: "spawn" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_PROXY: "garbage" }), { mode: "spawn" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_PROXY: "  " }), { mode: "spawn" });
 });
 
 test("planNativeOpencode: attach wins over spawn when no launcher owns the proxy", () => {
     assert.deepEqual(
-        planNativeOpencode({ BILLION_CONTEXT_ATTACH: "http://10.0.0.5:9000/" }),
+        planNativeOpencode({ SIGMA_ATTACH: "http://10.0.0.5:9000/" }),
         { mode: "attach", attachOrigin: "http://10.0.0.5:9000" },
     );
-    assert.deepEqual(planNativeOpencode({ BILLION_CONTEXT_ATTACH: "garbage" }), { mode: "spawn" });
+    assert.deepEqual(planNativeOpencode({ SIGMA_ATTACH: "garbage" }), { mode: "spawn" });
 });
 
-test("planNativeOpencode: explicit BILLION_CONTEXT_ATTACH wins over the env preset", () => {
+test("planNativeOpencode: explicit SIGMA_ATTACH wins over the env preset", () => {
     assert.deepEqual(
-        planNativeOpencode({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485", BILLION_CONTEXT_ATTACH: "http://10.0.0.5:9000" }),
+        planNativeOpencode({ SIGMA_PROXY: "http://127.0.0.1:36485", SIGMA_ATTACH: "http://10.0.0.5:9000" }),
         { mode: "attach", attachOrigin: "http://10.0.0.5:9000" },
     );
 });
@@ -335,7 +335,7 @@ test("native route: attach mode routes model traffic through the external proxy"
     const route = createNativeRoute(state, { probe: async () => true });
     const e: V2HttpRequestEvent = { sessionID: "ses_a", request: new Request(MODEL_URL, { method: "POST" }) };
     await route(e, s);
-    assert.equal((e.request as Request).url, `${origin}/bili/${MODEL_URL}`);
+    assert.equal((e.request as Request).url, `${origin}/sigma/${MODEL_URL}`);
     assert.equal(s.proxyBase, origin);
     assert.equal(respawnCalls, 0);
 });
@@ -386,13 +386,13 @@ test("native route: attach mode respawns on runtime death and routes to the repl
     const e: V2HttpRequestEvent = { sessionID: "ses_d", request: new Request(MODEL_URL, { method: "POST" }) };
     await route(e, s);
     assert.equal(respawnCalls, 1, "one respawn per death");
-    assert.equal((e.request as Request).url, `${spawned}/bili/${MODEL_URL}`, "request re-routed to the replacement");
+    assert.equal((e.request as Request).url, `${spawned}/sigma/${MODEL_URL}`, "request re-routed to the replacement");
     assert.equal(s.proxyBase, spawned);
     // next request fast-paths through the landed origin
     const e2: V2HttpRequestEvent = { sessionID: "ses_d", request: new Request(MODEL_URL, { method: "POST" }) };
     await route(e2, s);
     assert.equal(respawnCalls, 1, "no re-spawn while the replacement is healthy");
-    assert.equal((e2.request as Request).url, `${spawned}/bili/${MODEL_URL}`);
+    assert.equal((e2.request as Request).url, `${spawned}/sigma/${MODEL_URL}`);
 });
 
 test("native route: attach mode transient blip re-attaches to the SAME origin (no migration, #1135)", async () => {
@@ -415,7 +415,7 @@ test("native route: attach mode transient blip re-attaches to the SAME origin (n
     const e: V2HttpRequestEvent = { sessionID: "ses_e", request: new Request(MODEL_URL, { method: "POST" }) };
     await route(e, s);
     assert.equal(respawnCalls, 1);
-    assert.equal((e.request as Request).url, `${ext}/bili/${MODEL_URL}`, "re-attached to the same origin");
+    assert.equal((e.request as Request).url, `${ext}/sigma/${MODEL_URL}`, "re-attached to the same origin");
     assert.equal(state.origin, ext);
     assert.equal(s.proxyBase, ext);
 });
@@ -433,7 +433,7 @@ test("native route: attach mode leaves non-model requests untouched", async () =
 });
 
 test("#1135 wiring: attach arms runtime recovery; a dead target falls back to a spawned proxy", async () => {
-    const savedProxy = process.env.BILLION_CONTEXT_PROXY;
+    const savedProxy = process.env.SIGMA_PROXY;
     try {
         _resetNativeStateForTest();
         let spawned = 0;
@@ -448,16 +448,16 @@ test("#1135 wiring: attach arms runtime recovery; a dead target falls back to a 
         const landed = await _stateRespawnForTest()!();
         assert.equal(landed, "http://127.0.0.1:7777");
         assert.ok(spawned >= 1);
-        assert.equal(process.env.BILLION_CONTEXT_PROXY, "http://127.0.0.1:7777");
+        assert.equal(process.env.SIGMA_PROXY, "http://127.0.0.1:7777");
     } finally {
-        if (savedProxy === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-        else process.env.BILLION_CONTEXT_PROXY = savedProxy;
+        if (savedProxy === undefined) delete process.env.SIGMA_PROXY;
+        else process.env.SIGMA_PROXY = savedProxy;
         _resetNativeStateForTest();
     }
 });
 
 test("#1135 wiring: a healthy attach target stays attached (no migration, no spawn)", async () => {
-    const savedProxy = process.env.BILLION_CONTEXT_PROXY;
+    const savedProxy = process.env.SIGMA_PROXY;
     const server = createServer((req, res) => {
         if (req.url === "/__bili/plugin/manifest") {
             res.setHeader("content-type", "application/json");
@@ -479,11 +479,11 @@ test("#1135 wiring: a healthy attach target stays attached (no migration, no spa
         const landed = await _stateRespawnForTest()!();
         assert.equal(landed, `http://127.0.0.1:${port}`, "healthy target resolves to itself");
         assert.equal(spawned, 0, "no fallback spawn for a healthy target");
-        assert.equal(process.env.BILLION_CONTEXT_PROXY, `http://127.0.0.1:${port}`);
+        assert.equal(process.env.SIGMA_PROXY, `http://127.0.0.1:${port}`);
     } finally {
         server.close();
-        if (savedProxy === undefined) delete process.env.BILLION_CONTEXT_PROXY;
-        else process.env.BILLION_CONTEXT_PROXY = savedProxy;
+        if (savedProxy === undefined) delete process.env.SIGMA_PROXY;
+        else process.env.SIGMA_PROXY = savedProxy;
         _resetNativeStateForTest();
     }
 });
@@ -499,7 +499,7 @@ test("route: healthy origin triggers a single health probe across N steady-state
     for (let i = 0; i < 5; i++) {
         const e: V2HttpRequestEvent = { request: new Request(MODEL_URL) };
         await route(e, s);
-        assert.equal((e.request as Request).url, `${origin}/bili/${MODEL_URL}`);
+        assert.equal((e.request as Request).url, `${origin}/sigma/${MODEL_URL}`);
     }
     assert.equal(calls, 1, "expected exactly one probe for N requests within the TTL");
 });
@@ -526,7 +526,7 @@ test("route: a proxy that dies is detected within one TTL and degrades to direct
     const s: V2State = {};
     const up: V2HttpRequestEvent = { request: new Request(MODEL_URL) };
     await route(up, s);
-    assert.equal((up.request as Request).url, `${origin}/bili/${MODEL_URL}`);
+    assert.equal((up.request as Request).url, `${origin}/sigma/${MODEL_URL}`);
     assert.equal(calls, 1);
     alive = false;
     await sleep(45);
@@ -564,30 +564,30 @@ test("#1365 verifyAttachAndRecover: routed evidence pins the channel — waits t
             spawnCalls += 1;
             return "http://127.0.0.1:2";
         });
-        process.env.BILLION_CONTEXT_PROXY = origin;
-        _noteRoutedForTest(`${origin}/bili/${MODEL_URL}`);
+        process.env.SIGMA_PROXY = origin;
+        _noteRoutedForTest(`${origin}/sigma/${MODEL_URL}`);
         const pending = verifyAttachAndRecover(origin);
         upTimer = setTimeout(() => server.listen(port, "127.0.0.1"), 120);
         const recovered = await pending;
         clearTimeout(upTimer);
         assert.equal(recovered, origin, "recovery lands back on the pinned origin");
         assert.equal(spawnCalls, 0, "no second instance may be spawned over a pinned channel");
-        assert.equal(process.env.BILLION_CONTEXT_PROXY, origin, "the user's target stays frozen");
+        assert.equal(process.env.SIGMA_PROXY, origin, "the user's target stays frozen");
     } finally {
         clearTimeout(upTimer);
         server.close();
-        delete process.env.BILLION_CONTEXT_PROXY;
+        delete process.env.SIGMA_PROXY;
         _setSpawnForTest(undefined);
         _resetNativeStateForTest();
     }
 });
 
-test("#1365 route: already-routed /bili/ URLs record pinned-channel evidence before the model-URL gate", async () => {
+test("#1365 route: already-routed /sigma/ URLs record pinned-channel evidence before the model-URL gate", async () => {
     const origin = "http://127.0.0.1:9999";
     const state: NativeInterceptState = { origin, ready: Promise.resolve(origin) };
     const route = createNativeRoute(state, { probe: async () => true });
     const s: V2State = {};
-    const routed = new Request(`${origin}/bili/${MODEL_URL}`);
+    const routed = new Request(`${origin}/sigma/${MODEL_URL}`);
     const e: V2HttpRequestEvent = { request: routed };
     await route(e, s);
     assert.equal(e.request, routed, "already-routed requests stay untouched");
@@ -604,16 +604,16 @@ test("#1365 verifyAttachAndRecover: persistently dead pinned target — refuses 
             spawnCalls += 1;
             return "http://127.0.0.1:2";
         });
-        process.env.BILLION_CONTEXT_PROXY = origin;
-        process.env.BILI_ATTACH_HEALTH_DEADLINE_MS = "150";
-        _noteRoutedForTest(`${origin}/bili/${MODEL_URL}`);
+        process.env.SIGMA_PROXY = origin;
+        process.env.SIGMA_ATTACH_HEALTH_DEADLINE_MS = "150";
+        _noteRoutedForTest(`${origin}/sigma/${MODEL_URL}`);
         const recovered = await verifyAttachAndRecover(origin);
         assert.equal(recovered, undefined);
         assert.equal(spawnCalls, 0);
-        assert.equal(process.env.BILLION_CONTEXT_PROXY, origin, "the pinned target env must survive");
+        assert.equal(process.env.SIGMA_PROXY, origin, "the pinned target env must survive");
     } finally {
-        delete process.env.BILLION_CONTEXT_PROXY;
-        delete process.env.BILI_ATTACH_HEALTH_DEADLINE_MS;
+        delete process.env.SIGMA_PROXY;
+        delete process.env.SIGMA_ATTACH_HEALTH_DEADLINE_MS;
         _setSpawnForTest(undefined);
         _resetNativeStateForTest();
     }

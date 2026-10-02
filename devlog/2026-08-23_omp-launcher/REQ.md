@@ -1,7 +1,7 @@
 # REQ - omp launcher support
 
 - Task ID: `2026-08-23_omp-launcher`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Created: 2026-08-23
 - Status: Done
 - Priority: P1
@@ -10,17 +10,17 @@
 
 ## 1. Background & Problem Statement
 
-- **Context**: `bili <client>` launcher already brings up a proxy and points a coding
+- **Context**: `sigma <client>` launcher already brings up a proxy and points a coding
   agent at it with NO config-file edits, auto-proxying BOTH schemes: HTTPS upstreams
-  via cert-MITM, HTTP/plaintext upstreams via a `/bili/` baseURL rewrite applied
+  via cert-MITM, HTTP/plaintext upstreams via a `/sigma/` baseURL rewrite applied
   through the client's own mechanism (pi → isolated `PI_CODING_AGENT_DIR`, codex →
   `-c key=value`, claude → `ANTHROPIC_BASE_URL`).
 - **Current behavior (symptom)**: `omp` (oh-my-pi, a pi-based coding agent) is only a
-  *plugin-install* target, not a launcher client. `bili omp` → `unknown command`.
+  *plugin-install* target, not a launcher client. `sigma omp` → `unknown command`.
   Users of omp must hand-edit `~/.omp/agent/models.yml` to route through the proxy.
-- **Expected behavior**: `bili omp [args]` works like `bili pi` — discovers omp's
+- **Expected behavior**: `sigma omp [args]` works like `sigma pi` — discovers omp's
   upstreams by *reading* (never editing) `~/.omp/agent/models.yml`, rewrites the HTTP
-  providers' `baseUrl` to the `/bili/` prefix in an isolated `PI_CODING_AGENT_DIR`,
+  providers' `baseUrl` to the `/sigma/` prefix in an isolated `PI_CODING_AGENT_DIR`,
   whitelists HTTPS providers for MITM, and launches omp pointed at the proxy.
 - **Impact**: omp users get the zero-config compression experience; no manual
   `models.yml` edits, no persistent config changes.
@@ -31,8 +31,8 @@
   - Node: v25.9.0
   - OS/Arch: linux-x64
 - **Minimal reproduction steps**:
-  1) `bili omp` → `bili: unknown command "omp"` (before this change).
-  2) After this change: `bili omp -p "reply with exactly: pong"` → proxy starts,
+  1) `sigma omp` → `sigma: unknown command "omp"` (before this change).
+  2) After this change: `sigma omp -p "reply with exactly: pong"` → proxy starts,
      omp routes through it, returns `pong`.
 - **Relevant configuration**: `~/.omp/agent/models.yml` (providers with `baseUrl`),
   `~/.omp/agent/config.yml` (extensions incl. the omp plugin, modelRoles).
@@ -47,18 +47,18 @@
   - omp is pi-based: it honors `PI_CODING_AGENT_DIR`, so the pi isolated-home pattern
     applies directly.
 - **Non-Goals** (explicitly out of scope):
-  - No `bili test omp` smoke-test command (pi-test stays pi-only).
+  - No `sigma test omp` smoke-test command (pi-test stays pi-only).
   - No MCP-injection path for omp (it uses the native extension like pi, not MCP).
 
 ## 4. Acceptance Criteria (must be testable)
 
 - **Correctness**:
-  - [x] `bili omp` is recognized as a launch client (`isLaunchClient("omp") === true`).
+  - [x] `sigma omp` is recognized as a launch client (`isLaunchClient("omp") === true`).
   - [x] `discoverRoutes("omp", config)` splits omp providers into `httpsDomains`
-        (MITM) + `httpRewrites` (`/bili/`), keyed by provider name.
+        (MITM) + `httpRewrites` (`/sigma/`), keyed by provider name.
   - [x] `prepareOmpHttpRewrite` builds an isolated `PI_CODING_AGENT_DIR` that symlinks
         every real-home entry except `models.yml`, and writes a `models.yml` whose
-        target providers' `baseUrl` is rewritten (HTTP → `/bili/` wrap) while all other
+        target providers' `baseUrl` is rewritten (HTTP → `/sigma/` wrap) while all other
         bytes (comments, ordering, other providers) are preserved verbatim.
   - [x] The real `~/.omp/agent/models.yml` is never modified.
 - **Performance / Stability**:
@@ -75,7 +75,7 @@
   - `src/launcher.ts` — `omp` added to `LAUNCH_CLIENTS`/`BaseClientName`;
     `launcherInjectMcp` excludes omp; `discoverRoutes` omp branch; new
     `prepareOmpHttpRewrite`; `runLaunch` omp env branch + cleanup.
-  - `src/cli.ts` — help text mentions `bili omp`.
+  - `src/cli.ts` — help text mentions `sigma omp`.
   - `tests/launcher.test.ts` — 8 new tests.
 - **Risks**: YAML parsing is targeted (string `baseUrl` values only); a non-standard
   `models.yml` layout (e.g. flow-style providers) would be skipped, not corrupted —

@@ -22,14 +22,14 @@ export type KimiNativePlan =
     | { readonly mode: "attach"; readonly attachOrigin: string }
     | { readonly mode: "spawn" };
 
-// Kill-switches > attach (BILLION_CONTEXT_ATTACH ?? BILLION_CONTEXT_PROXY) >
-// spawn. A preset BILLION_CONTEXT_PROXY is the `bili kimi` launcher (or a user
-// attach): routing is already owned (MITM / /bili/ rewrite), so we attach —
+// Kill-switches > attach (SIGMA_ATTACH ?? SIGMA_PROXY) >
+// spawn. A preset SIGMA_PROXY is the `sigma kimi` launcher (or a user
+// attach): routing is already owned (MITM / /sigma/ rewrite), so we attach —
 // stamp headers only, never rewrite, never spawn. Same contract as
 // planNativeDsh (#941).
 export function planNativeKimi(env: NodeJS.ProcessEnv = process.env): KimiNativePlan {
-    if (env.BILLION_CONTEXT_PLUGIN === "0" || env.BILI_NATIVE_KIMI === "0") return { mode: "off" };
-    if (env.BILI_PROVIDER_REWRITES !== undefined) return { mode: "off" };
+    if (env.SIGMA_PLUGIN === "0" || env.SIGMA_NATIVE_KIMI === "0") return { mode: "off" };
+    if (env.SIGMA_PROVIDER_REWRITES !== undefined) return { mode: "off" };
     const attach = nativeAttachOrigin(env) ?? proxyEnvOrigin(env);
     if (attach !== undefined) return { mode: "attach", attachOrigin: attach };
     return { mode: "spawn" };
@@ -58,7 +58,7 @@ export async function waitForProxyHealthy(origin: string, deadlineMs = 15000, in
     }
 }
 
-const CONFIG_LOCK_DIR = ".bili-config.lock";
+const CONFIG_LOCK_DIR = ".sigma-config.lock";
 const CONFIG_LOCK_TIMEOUT_MS = 5000;
 const CONFIG_LOCK_STALE_MS = 30000;
 
@@ -148,7 +148,7 @@ export async function routeKimiConfig(opts: RouteKimiOptions): Promise<KimiRoute
         authLines: res.authLines,
     };
     const authSource = res.authSource;
-    const bakPath = path.join(home, "config.toml.bili-bak");
+    const bakPath = path.join(home, "config.toml.sigma-bak");
     await withConfigLock(home, () => {
         const current = fs.readFileSync(cfgPath, "utf8");
         if (!fs.existsSync(bakPath)) fs.writeFileSync(bakPath, current);
@@ -201,7 +201,7 @@ export function unrouteKimi(opts: { env?: NodeJS.ProcessEnv; kimiHome?: string; 
     const log = opts.log ?? defaultLog;
     const home = opts.kimiHome ?? resolveKimiHome(env);
     const cfgPath = path.join(home, "config.toml");
-    const bakPath = path.join(home, "config.toml.bili-bak");
+    const bakPath = path.join(home, "config.toml.sigma-bak");
     try {
         let text: string;
         try {
@@ -209,7 +209,7 @@ export function unrouteKimi(opts: { env?: NodeJS.ProcessEnv; kimiHome?: string; 
         } catch {
             return;
         }
-        if (text.includes("# bili begin")) {
+        if (text.includes("# sigma begin")) {
             fs.writeFileSync(cfgPath, unrouteKimiConfig(text));
             log("reverted config.toml to pre-native routing");
         }
@@ -225,13 +225,13 @@ export interface RestoreKimiBackupResult {
     readonly restored: boolean;
 }
 
-/** Uninstall-level restore: put the pristine .bili-bak text back verbatim. */
+/** Uninstall-level restore: put the pristine .sigma-bak text back verbatim. */
 export function restoreKimiBackup(opts: { env?: NodeJS.ProcessEnv; kimiHome?: string; log?: (msg: string) => void }): RestoreKimiBackupResult {
     const env = opts.env ?? process.env;
     const log = opts.log ?? defaultLog;
     const home = opts.kimiHome ?? resolveKimiHome(env);
     const cfgPath = path.join(home, "config.toml");
-    const bakPath = path.join(home, "config.toml.bili-bak");
+    const bakPath = path.join(home, "config.toml.sigma-bak");
     try {
         const bak = fs.readFileSync(bakPath, "utf8");
         fs.writeFileSync(cfgPath, bak);
@@ -245,7 +245,7 @@ export function restoreKimiBackup(opts: { env?: NodeJS.ProcessEnv; kimiHome?: st
 }
 
 export function defaultLog(msg: string): void {
-    process.stderr.write(`[bili-kimi] ${msg}\n`);
+    process.stderr.write(`[sigma-kimi] ${msg}\n`);
 }
 
 export type BootstrapMode =
@@ -278,7 +278,7 @@ export async function bootstrapKimiNative(opts: BootstrapKimiOptions = {}): Prom
         origin = plan.attachOrigin;
         attached = true;
         if (!(await waitForProxyHealthy(origin, opts.healthDeadlineMs))) {
-            throw new Error(`attach target ${origin} is not healthy — start your bili proxy first`);
+            throw new Error(`attach target ${origin} is not healthy — start your sigma proxy first`);
         }
     } else {
         const ensure = opts.ensureProxy ?? defaultEnsureProxy;
@@ -293,7 +293,7 @@ export async function bootstrapKimiNative(opts: BootstrapKimiOptions = {}): Prom
 }
 
 async function defaultEnsureProxy(): Promise<{ origin: string; attached: boolean }> {
-    // The spawned proxy's parent-gone watchdog (#server.ts BILI_PARENT_PID)
+    // The spawned proxy's parent-gone watchdog (#server.ts SIGMA_PARENT_PID)
     // keys off OUR pid: kimi kills this MCP child when its session ends, so
     // the per-session proxy tears itself down with it.
     const handle = await ensureProxyRunning(

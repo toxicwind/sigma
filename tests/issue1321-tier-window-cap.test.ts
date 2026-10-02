@@ -115,7 +115,7 @@ async function startRig(): Promise<Rig> {
 }
 
 function url(rig: Rig): string {
-    return `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+    return `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
 }
 
 // The EMERGENCY nudge is rendered as a trailing user message whose text begins

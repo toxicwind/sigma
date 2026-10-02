@@ -286,7 +286,7 @@ test("e2e google: session-identified Gemini stream compresses and keeps the upst
     const proxy = await startServer(proxyOptions(upstreamPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
 
     try {
         const { clientBytes, replies } = await runConversation(url, { "x-acp-session": "google-grow-1" }, state);
@@ -326,7 +326,7 @@ test("e2e google: an anonymous Gemini client (no headers, omp's shape) attaches 
     const proxy = await startServer(proxyOptions(upstreamPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
 
     try {
         const { replies } = await runConversation(url, {}, state);
@@ -356,9 +356,9 @@ test("e2e google: plugin mode (omp) keeps the agent's tool call, credits usage a
     const proxy = await startServer(proxyOptions(upstreamPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:streamGenerateContent?alt=sse`;
 
-    const headers = { "x-bili-plugin": "omp", "x-bili-plugin-conversation": "omp-gemini-1" };
+    const headers = { "x-sigma-plugin": "omp", "x-sigma-plugin-conversation": "omp-gemini-1" };
     const contents: { role: string; parts: GooglePart[] }[] = [];
     try {
         for (let i = 1; i <= PLUGIN_TURNS; i++) {
@@ -427,7 +427,7 @@ test("e2e google: a non-streaming generateContent turn stays JSON, passes the re
     const proxy = await startServer(proxyOptions(upstreamPort));
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:generateContent`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:generateContent`;
 
     try {
         const res = await fetch(url, {

@@ -99,7 +99,7 @@ test("e2e #496 (byte-counting relay): one rejected forward, then fail-fast — t
     const proxyPort = (proxy.address() as { port: number }).port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
         const headers = { "content-type": "application/json", "x-acp-session": "img-relay-sess" };
 
         // --- Request 1: no overflow evidence yet → forward ONCE; relay rejects 400 ---

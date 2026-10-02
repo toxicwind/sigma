@@ -9,7 +9,7 @@ Branch: `2026-09-13_opencode-v2` · Issue: #735 (from opencode-acp#395)
 | `src/agent/opencode.ts` | V2 branch appended: `setup(ctx)` per the probed 2.0 runtime API; default export becomes the dual-shape object `{ id, setup, server }` (V1 `server()` untouched) |
 | `src/agent/shared.ts` | `fetchManifest` gains an optional `"openai"` format (maps `tools.openai[] {name, description, parameters}` → `{name, description, inputSchema}`); new `reportCompactionBoundary` POST helper (`/__bili/plugin/compact`) |
 | `src/launcher.ts` | `prepareOpencodeHttpRewrite` merges `compaction: { ...existing, auto: false }` into the generated temp config (safe on both generations — V1 tolerates the unknown key) |
-| `tests/opencode-v2.test.ts` | New: 9 tests — dual export shape, static tool parity vs bundled schemas, inert-without-proxy, kill switch, `/bili/`-URL activation + header timing + tool forwarding, env-based activation, compaction-boundary reporting, cleanup dispose, manifest openai mapping |
+| `tests/opencode-v2.test.ts` | New: 9 tests — dual export shape, static tool parity vs bundled schemas, inert-without-proxy, kill switch, `/sigma/`-URL activation + header timing + tool forwarding, env-based activation, compaction-boundary reporting, cleanup dispose, manifest openai mapping |
 | `tests/launcher.test.ts` | +2 assertions: temp opencode config carries `compaction.auto === false` |
 | `README.md` | "Which do I need?" table split by generation; launcher line; new "OpenCode 2.0" section (pure-proxy config incl. apiKey requirement, launcher behavior, `/acp` limitation) |
 
@@ -22,7 +22,7 @@ Branch: `2026-09-13_opencode-v2` · Issue: #735 (from opencode-acp#395)
   through the proxy — pure-proxy round-trip OK with the documented config
   shape; provider requires a non-empty `apiKey` even for local endpoints.
 - Live ②: real OC2 binary + built `dist/agent/opencode.js` plugin:
-  - model called the **native** `acp_status` tool; bili log shows
+  - model called the **native** `acp_status` tool; sigma log shows
     `[plugin] tool acp_status executed via plugin` and zero `[acp-loop]`
     lines → true plugin mode, no wire-level tool injection;
   - probe harness confirmed header mutations on `e.request.headers` reach the

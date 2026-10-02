@@ -6,7 +6,7 @@
 //   node tools/analyze-dumps.mjs              # all sessions in default dir
 //   node tools/analyze-dumps.mjs -- sid       # filter by session id
 //
-// Default dump dir: ~/.local/state/billion-context/dumps
+// Default dump dir: ~/.local/state/sigma/dumps
 //
 // For each consecutive pair of dumps (A → B), computes how much of A's
 // serialized messages array survives as a PREFIX of B. Without compression
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 const args = process.argv.slice(2);
-const dir = args[0] || join(homedir(), ".local", "state", "billion-context", "dumps");
+const dir = args[0] || join(homedir(), ".local", "state", "sigma", "dumps");
 const sid = args[1];
 
 let files;

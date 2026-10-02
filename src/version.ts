@@ -17,4 +17,4 @@ function readPkgField(field: string, fallback: string): string {
 }
 
 export const VERSION = readPkgField("version", "dev");
-export const PACKAGE_NAME = readPkgField("name", "billion-context");
+export const PACKAGE_NAME = readPkgField("name", "sigma");

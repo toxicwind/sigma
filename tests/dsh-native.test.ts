@@ -10,28 +10,28 @@ import { apply, planNativeDsh, shouldBootstrapNativeDsh, persistClientEvent, _re
 // #1365: legacy dead-attach suites must not pay the 5s routed-evidence grace
 // default (waitFor below caps at 5s — a full grace would race it). Pinned-path
 // tests override per-test.
-process.env.BILI_ATTACH_EVIDENCE_GRACE_MS = "30";
+process.env.SIGMA_ATTACH_EVIDENCE_GRACE_MS = "30";
 
 import { dshNativeInstalled, isNpmInstallForm, pluginInstall, pluginRemove, pluginStatusAll, selfPackageRoot } from "../src/plugin-install.ts";
 import { DSH_PATCH_BEGIN, DSH_PATCH_END, dshBundleInstalled, dshProfileDirs, planDshSpawn, stripDshManagedPatch, stripLegacyManagedBlock, _setDshRunnersForTest, type DshPlan } from "../src/dsh-channel.ts";
 
 test("planNativeDsh: kill-switches > attach > spawn precedence (#941)", () => {
     assert.deepEqual(planNativeDsh({}), { mode: "spawn" });
-    assert.deepEqual(planNativeDsh({ BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeDsh({ BILI_NATIVE_DSH: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeDsh({ BILI_PROVIDER_REWRITES: "{}" }), { mode: "off" });
-    // a preset BILLION_CONTEXT_PROXY (the `bili dsh` launcher) is an attach
+    assert.deepEqual(planNativeDsh({ SIGMA_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeDsh({ SIGMA_NATIVE_DSH: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeDsh({ SIGMA_PROVIDER_REWRITES: "{}" }), { mode: "off" });
+    // a preset SIGMA_PROXY (the `sigma dsh` launcher) is an attach
     // target, not a stand-down
-    assert.deepEqual(planNativeDsh({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:8787" });
-    // explicit BILLION_CONTEXT_ATTACH wins over the preset proxy env
-    assert.deepEqual(planNativeDsh({ BILLION_CONTEXT_ATTACH: "http://127.0.0.1:9999", BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787" }), { mode: "attach", attachOrigin: "http://127.0.0.1:9999" });
-    assert.deepEqual(planNativeDsh({ BILI_NATIVE_DSH: "0", BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787" }), { mode: "off" });
+    assert.deepEqual(planNativeDsh({ SIGMA_PROXY: "http://127.0.0.1:8787/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:8787" });
+    // explicit SIGMA_ATTACH wins over the preset proxy env
+    assert.deepEqual(planNativeDsh({ SIGMA_ATTACH: "http://127.0.0.1:9999", SIGMA_PROXY: "http://127.0.0.1:8787" }), { mode: "attach", attachOrigin: "http://127.0.0.1:9999" });
+    assert.deepEqual(planNativeDsh({ SIGMA_NATIVE_DSH: "0", SIGMA_PROXY: "http://127.0.0.1:8787" }), { mode: "off" });
 });
 
 test("shouldBootstrapNativeDsh: spawn-gated by env shape", () => {
     assert.equal(shouldBootstrapNativeDsh({}), true);
-    assert.equal(shouldBootstrapNativeDsh({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787" }), false);
-    assert.equal(shouldBootstrapNativeDsh({ BILI_NATIVE_DSH: "0" }), false);
+    assert.equal(shouldBootstrapNativeDsh({ SIGMA_PROXY: "http://127.0.0.1:8787" }), false);
+    assert.equal(shouldBootstrapNativeDsh({ SIGMA_NATIVE_DSH: "0" }), false);
 });
 
 // — legacy managed-block migration (#966) ————————————————————————
@@ -40,25 +40,25 @@ const HEADER = "# Your patch layer for this dsh profile, applied after every bun
 
 // Block as written by pre-#966 installs: the markers are stable constants,
 // the body is what the retired managed lane used to append.
-const legacyBlockOf = (root: string): string => `${DSH_PATCH_BEGIN}\n- insert:\n    - id: bili-native\n      name: ${pathToFileURL(path.join(root, "dist", "agent", "dsh-native.js")).href}\n- id: compaction-basic\n  config:\n    auto: false\n${DSH_PATCH_END}\n`;
+const legacyBlockOf = (root: string): string => `${DSH_PATCH_BEGIN}\n- insert:\n    - id: sigma-native\n      name: ${pathToFileURL(path.join(root, "dist", "agent", "dsh-native.js")).href}\n- id: compaction-basic\n  config:\n    auto: false\n${DSH_PATCH_END}\n`;
 
 test("planTokens: unpacks the win32 cmd.exe wrap back to argv", () => {
-    const plan = planDshSpawn("dsh", ["plugin", "--profile", "x", "add", "billion-context"], {}, "win32");
-    assert.deepEqual(planTokens(plan), ["plugin", "--profile", "x", "add", "billion-context"]);
+    const plan = planDshSpawn("dsh", ["plugin", "--profile", "x", "add", "sigma"], {}, "win32");
+    assert.deepEqual(planTokens(plan), ["plugin", "--profile", "x", "add", "sigma"]);
     // posix plans pass through untouched
-    assert.deepEqual(planTokens({ command: "dsh", args: ["plugin", "--profile", "x", "add", "billion-context"] }), ["plugin", "--profile", "x", "add", "billion-context"]);
+    assert.deepEqual(planTokens({ command: "dsh", args: ["plugin", "--profile", "x", "add", "sigma"] }), ["plugin", "--profile", "x", "add", "sigma"]);
 });
 
 test("stripDshManagedPatch: removes only the marked span; no-op without markers", () => {
-    const merged = `${HEADER}[]\n${legacyBlockOf("/opt/bili")}`;
+    const merged = `${HEADER}[]\n${legacyBlockOf("/opt/sigma")}`;
     assert.equal(stripDshManagedPatch(merged), `${HEADER}[]\n`);
     assert.equal(stripDshManagedPatch(HEADER), HEADER);
 });
 
 test("stripLegacyManagedBlock: restores the placeholder when nothing meaningful remains", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-legacy-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-legacy-"));
     try {
-        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/bili")}`);
+        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/sigma")}`);
         assert.equal(stripLegacyManagedBlock(dir), true);
         assert.equal(fs.readFileSync(path.join(dir, "cordis.patch.yml"), "utf8"), `${HEADER}[]\n`);
         assert.equal(stripLegacyManagedBlock(dir), false);
@@ -68,10 +68,10 @@ test("stripLegacyManagedBlock: restores the placeholder when nothing meaningful 
 });
 
 test("stripLegacyManagedBlock: preserves user entries; leaves non-managed files alone", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-legacy2-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-legacy2-"));
     try {
         const userEntry = '- id: my-thing\n  name: "@deepseek-ai/cordis-plugin-timer"\n';
-        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${HEADER}${userEntry}${legacyBlockOf("/opt/bili")}`);
+        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${HEADER}${userEntry}${legacyBlockOf("/opt/sigma")}`);
         assert.equal(stripLegacyManagedBlock(dir), true);
         const out = fs.readFileSync(path.join(dir, "cordis.patch.yml"), "utf8");
         assert.ok(out.includes(userEntry));
@@ -85,10 +85,10 @@ test("stripLegacyManagedBlock: preserves user entries; leaves non-managed files 
 });
 
 test("stripLegacyManagedBlock: preserves user comments when nothing meaningful remains", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-legacy3-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-legacy3-"));
     try {
         const notes = "# my note one\n# my note two\n";
-        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${notes}${legacyBlockOf("/opt/bili")}`);
+        fs.writeFileSync(path.join(dir, "cordis.patch.yml"), `${notes}${legacyBlockOf("/opt/sigma")}`);
         assert.equal(stripLegacyManagedBlock(dir), true);
         const out = fs.readFileSync(path.join(dir, "cordis.patch.yml"), "utf8");
         assert.ok(out.startsWith(notes));
@@ -123,11 +123,11 @@ function channelRunner(home: string, calls: string[][]): { sync: (p: DshPlan) =>
         const action = tokens[pi + 2];
         const dir = path.join(home, "profiles", name);
         if (action === "add") {
-            fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: `dsh-profile-${name}`, dependencies: { "billion-context": "^0.1.120" }, dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "billion-context"] } } }));
+            fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: `dsh-profile-${name}`, dependencies: { "sigma": "^0.1.120" }, dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "sigma"] } } }));
         } else if (action === "remove") {
             const m = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { dependencies?: Record<string, string>; dsh?: { profile?: { bundles?: string[] } } };
-            delete m.dependencies?.["billion-context"];
-            if (m.dsh?.profile?.bundles) m.dsh.profile.bundles = m.dsh.profile.bundles.filter((b) => b !== "billion-context");
+            delete m.dependencies?.["sigma"];
+            if (m.dsh?.profile?.bundles) m.dsh.profile.bundles = m.dsh.profile.bundles.filter((b) => b !== "sigma");
             fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(m));
         }
         return { stdout: "", stderr: "" };
@@ -157,10 +157,10 @@ const USER_ENTRY = '- id: my-thing\n  name: "@deepseek-ai/cordis-plugin-timer"\n
 
 // Mirrors the production spec rule (#925): npm-form install → registry name,
 // checkout/dev build → absolute path the forwarder turns into a link: dep.
-const expectedSpec = (): string => (isNpmInstallForm(selfPackageRoot()) ? "billion-context" : path.resolve(selfPackageRoot()));
+const expectedSpec = (): string => (isNpmInstallForm(selfPackageRoot()) ? "sigma" : path.resolve(selfPackageRoot()));
 
 test("dsh install drives the dsh plugin channel per profile, no managed blocks written", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-home-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-home-"));
     const calls: string[][] = [];
     _setDshRunnersForTest(channelRunner(home, calls));
     try {
@@ -171,7 +171,7 @@ test("dsh install drives the dsh plugin channel per profile, no managed blocks w
             fs.mkdirSync(path.join(home, "profiles", "headless"), { recursive: true });
             fs.mkdirSync(path.join(home, "profiles", "web"), { recursive: true });
             // headless carries a pre-unification managed block plus a user entry (upgrade path)
-            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), `${HEADER}${USER_ENTRY}${legacyBlockOf("/opt/bili")}`);
+            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), `${HEADER}${USER_ENTRY}${legacyBlockOf("/opt/sigma")}`);
 
             const msg = pluginInstall("dsh");
             assert.match(msg, /2 dsh profile/);
@@ -186,7 +186,7 @@ test("dsh install drives the dsh plugin channel per profile, no managed blocks w
             const headlessTxt = fs.readFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), "utf8");
             assert.ok(headlessTxt.includes(USER_ENTRY));
             assert.ok(!headlessTxt.includes(DSH_PATCH_BEGIN));
-            // the channel owns profile state — bili wrote no patch file of its own
+            // the channel owns profile state — sigma wrote no patch file of its own
             assert.ok(!fs.existsSync(path.join(home, "profiles", "web", "cordis.patch.yml")));
 
             assert.equal(pluginStatusAll().find((r) => r.agent === "dsh")?.status, "installed (dsh bundle in all 2 profiles)");
@@ -199,7 +199,7 @@ test("dsh install drives the dsh plugin channel per profile, no managed blocks w
 });
 
 test("dsh remove uninstalls through the same channel and migrates legacy blocks", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-remove-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-remove-"));
     const calls: string[][] = [];
     _setDshRunnersForTest(channelRunner(home, calls));
     try {
@@ -208,19 +208,19 @@ test("dsh remove uninstalls through the same channel and migrates legacy blocks"
             fs.mkdirSync(path.join(home, "profiles", "web"), { recursive: true });
             fs.writeFileSync(
                 path.join(home, "profiles", "web", "package.json"),
-                JSON.stringify({ name: "dsh-profile-web", dependencies: { "billion-context": "^0.1.120" }, dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "billion-context"] } } }),
+                JSON.stringify({ name: "dsh-profile-web", dependencies: { "sigma": "^0.1.120" }, dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "sigma"] } } }),
             );
-            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/bili")}`);
+            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/sigma")}`);
 
             const removed = pluginRemove("dsh");
-            assert.match(removed, /removed bili from 2 dsh profile/);
+            assert.match(removed, /removed sigma from 2 dsh profile/);
             assert.match(removed, /web: uninstalled via the dsh plugin channel/);
             assert.match(removed, /headless: legacy managed block stripped/);
-            assert.deepEqual(calls.map((c) => c.join(" ")).sort(), [`plugin --profile web remove billion-context`]);
+            assert.deepEqual(calls.map((c) => c.join(" ")).sort(), [`plugin --profile web remove sigma`]);
 
             assert.equal(fs.readFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), "utf8"), `${HEADER}[]\n`);
             const webManifest = JSON.parse(fs.readFileSync(path.join(home, "profiles", "web", "package.json"), "utf8")) as Record<string, unknown>;
-            assert.equal((webManifest.dependencies as Record<string, string>)["billion-context"], undefined);
+            assert.equal((webManifest.dependencies as Record<string, string>)["sigma"], undefined);
             assert.match(pluginStatusAll().find((r) => r.agent === "dsh")?.status ?? "", /not installed/);
             assert.equal(dshNativeInstalled(), false);
 
@@ -234,7 +234,7 @@ test("dsh remove uninstalls through the same channel and migrates legacy blocks"
 });
 
 test("dsh install surfaces channel failures with context", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-fail-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-fail-"));
     try {
         await withEnv({ DSH_HOME: home }, async () => {
             fs.mkdirSync(path.join(home, "profiles", "headless"), { recursive: true });
@@ -250,13 +250,13 @@ test("dsh install surfaces channel failures with context", async () => {
 });
 
 test("dsh status: bundle / mixed / legacy / absent", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-status-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-status-"));
     try {
         await withEnv({ DSH_HOME: home }, async () => {
             fs.mkdirSync(path.join(home, "profiles", "a"), { recursive: true });
             fs.mkdirSync(path.join(home, "profiles", "b"), { recursive: true });
             const st = (): string => pluginStatusAll().find((r) => r.agent === "dsh")?.status ?? "";
-            const bundleManifest = JSON.stringify({ dsh: { profile: { bundles: ["billion-context"] } } });
+            const bundleManifest = JSON.stringify({ dsh: { profile: { bundles: ["sigma"] } } });
 
             assert.match(st(), /not installed/);
             fs.writeFileSync(path.join(home, "profiles", "a", "package.json"), bundleManifest);
@@ -266,10 +266,10 @@ test("dsh status: bundle / mixed / legacy / absent", async () => {
 
             fs.rmSync(path.join(home, "profiles", "a", "package.json"));
             fs.rmSync(path.join(home, "profiles", "b", "package.json"));
-            fs.writeFileSync(path.join(home, "profiles", "a", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/bili")}`);
+            fs.writeFileSync(path.join(home, "profiles", "a", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/sigma")}`);
             assert.match(st(), /legacy managed block in 1\/2 profiles — rerun/);
-            fs.writeFileSync(path.join(home, "profiles", "b", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/bili")}`);
-            assert.match(st(), /legacy managed block — rerun 'bili plugin install dsh' to migrate/);
+            fs.writeFileSync(path.join(home, "profiles", "b", "cordis.patch.yml"), `${HEADER}${legacyBlockOf("/opt/sigma")}`);
+            assert.match(st(), /legacy managed block — rerun 'sigma plugin install dsh' to migrate/);
         });
     } finally {
         fs.rmSync(home, { recursive: true, force: true });
@@ -277,16 +277,16 @@ test("dsh status: bundle / mixed / legacy / absent", async () => {
 });
 
 test("dshNativeInstalled: true iff any profile has the bundle or a legacy managed block", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-installed-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-installed-"));
     try {
         await withEnv({ DSH_HOME: home }, () => {
             fs.mkdirSync(path.join(home, "profiles", "headless"), { recursive: true });
             fs.mkdirSync(path.join(home, "profiles", "web"), { recursive: true });
             assert.equal(dshNativeInstalled(), false);
-            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), legacyBlockOf("/opt/bili"));
+            fs.writeFileSync(path.join(home, "profiles", "headless", "cordis.patch.yml"), legacyBlockOf("/opt/sigma"));
             assert.equal(dshNativeInstalled(), true);
             fs.rmSync(path.join(home, "profiles", "headless", "cordis.patch.yml"));
-            fs.writeFileSync(path.join(home, "profiles", "web", "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["billion-context"] } } }));
+            fs.writeFileSync(path.join(home, "profiles", "web", "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["sigma"] } } }));
             assert.equal(dshNativeInstalled(), true);
         });
         // no profiles root at all — nothing can be installed (keep the env
@@ -300,8 +300,8 @@ test("dshNativeInstalled: true iff any profile has the bundle or a legacy manage
     }
 });
 
-test("dshBundleInstalled: true iff the profile manifest lists billion-context as a bundle", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-bundle-"));
+test("dshBundleInstalled: true iff the profile manifest lists sigma as a bundle", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-bundle-"));
     try {
         fs.mkdirSync(path.join(home, "web"), { recursive: true });
         assert.equal(dshBundleInstalled(path.join(home, "web")), false); // no manifest
@@ -309,7 +309,7 @@ test("dshBundleInstalled: true iff the profile manifest lists billion-context as
         assert.equal(dshBundleInstalled(path.join(home, "web")), false); // no dsh block
         fs.writeFileSync(path.join(home, "web", "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["something-else"] } } }));
         assert.equal(dshBundleInstalled(path.join(home, "web")), false);
-        fs.writeFileSync(path.join(home, "web", "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["billion-context"] } } }));
+        fs.writeFileSync(path.join(home, "web", "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["sigma"] } } }));
         assert.equal(dshBundleInstalled(path.join(home, "web")), true);
     } finally {
         fs.rmSync(home, { recursive: true, force: true });
@@ -317,7 +317,7 @@ test("dshBundleInstalled: true iff the profile manifest lists billion-context as
 });
 
 test("dshProfileDirs: skips node_modules, errors when profiles root is absent", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-dirs-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-dirs-"));
     try {
         await withEnv({ DSH_HOME: home }, () => {
             assert.throws(() => dshProfileDirs(), /run dsh once/);
@@ -336,7 +336,7 @@ test("dshProfileDirs: skips node_modules, errors when profiles root is absent", 
 
 type MockTool = { name: string; description?: string; inputSchema: unknown };
 
-function mockBiliHandler(toolCalls: Array<{ conversationId: string; tool: string; args: unknown }>, statusResponder?: (url: string) => unknown | undefined): (req: http.IncomingMessage, res: http.ServerResponse) => void {
+function mockSigmaHandler(toolCalls: Array<{ conversationId: string; tool: string; args: unknown }>, statusResponder?: (url: string) => unknown | undefined): (req: http.IncomingMessage, res: http.ServerResponse) => void {
     const manifestTools: MockTool[] = [
         {
             name: "compress",
@@ -379,7 +379,7 @@ function mockBiliHandler(toolCalls: Array<{ conversationId: string; tool: string
 }
 
 function startMockProxy(toolCalls: Array<{ conversationId: string; tool: string; args: unknown }>, statusResponder?: (url: string) => unknown | undefined): Promise<{ origin: string; close: () => void }> {
-    const server = http.createServer(mockBiliHandler(toolCalls, statusResponder));
+    const server = http.createServer(mockSigmaHandler(toolCalls, statusResponder));
     return new Promise((resolve) => {
         server.listen(0, "127.0.0.1", () => {
             const addr = server.address() as { port: number };
@@ -445,9 +445,9 @@ function mockCtx() {
 
 test("apply() attach mode: registers manifest tools verbatim, gates headers, forwards with the session id", async () => {
     const proxy = await startMockProxy([]);
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-apply-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-apply-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -477,7 +477,7 @@ test("apply() attach mode: registers manifest tools verbatim, gates headers, for
             const cap = await startMockProxy(calls);
             try {
                 _resetRegisterForTest(cap.origin);
-                process.env.BILLION_CONTEXT_PROXY = cap.origin;
+                process.env.SIGMA_PROXY = cap.origin;
                 const ctx2 = mockCtx();
                 apply(ctx2);
                 await waitFor(() => ctx2.registeredTools.length === 1, "manifest tool registration (ctx2)");
@@ -490,14 +490,14 @@ test("apply() attach mode: registers manifest tools verbatim, gates headers, for
             } finally {
                 cap.close();
                 _resetRegisterForTest(proxy.origin);
-                process.env.BILLION_CONTEXT_PROXY = proxy.origin;
+                process.env.SIGMA_PROXY = proxy.origin;
             }
 
             // /acp prefers the initiator's session, falls back to latest
             ctx.setInitiator({ session: { id: "session-7" } });
             const ok = await ctx.registeredCommands[0].handler();
             assert.equal(ok.kind, "success");
-            assert.ok(ok.text.includes("PANEL-OK") || ok.text.includes("billion-context@"));
+            assert.ok(ok.text.includes("PANEL-OK") || ok.text.includes("sigma@"));
         });
     } finally {
         proxy.close();
@@ -507,15 +507,15 @@ test("apply() attach mode: registers manifest tools verbatim, gates headers, for
 });
 
 test("apply() /acp-cache (#1146): forwards acp_cache bound to the initiator session, falls back to latest", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-cache-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-cache-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: undefined }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: undefined }, async () => {
             const calls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
             const cap = await startMockProxy(calls, (url) =>
                 url.includes("fallback=latest") ? { ok: true, conversationId: "conv-latest", panel: "PANEL-OK" } : undefined);
             try {
                 _resetRegisterForTest(cap.origin);
-                process.env.BILLION_CONTEXT_PROXY = cap.origin;
+                process.env.SIGMA_PROXY = cap.origin;
                 const ctx = mockCtx();
                 apply(ctx);
                 const cacheCmd = ctx.registeredCommands.find((c) => c.name === "acp-cache");
@@ -543,16 +543,16 @@ test("apply() /acp-cache (#1146): forwards acp_cache bound to the initiator sess
 });
 
 test("apply() /acp-cache (#1146): unreachable proxy reports an error", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-cache-down-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-cache-down-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: undefined }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: undefined }, async () => {
             // healthy attach first (so register.base is set), then kill the
             // proxy before the handler runs — a dead preset would instead
             // trigger the #983 spawn fallback, which this test does not want
             const proxy = await startMockProxy([]);
             try {
                 _resetRegisterForTest(proxy.origin);
-                process.env.BILLION_CONTEXT_PROXY = proxy.origin;
+                process.env.SIGMA_PROXY = proxy.origin;
                 const ctx = mockCtx();
                 apply(ctx);
                 await waitFor(() => ctx.registeredTools.length === 1, "tool registration");
@@ -574,14 +574,14 @@ test("apply() /acp-cache (#1146): unreachable proxy reports an error", async () 
 
 test("apply() inactive-context registration failure is silent and terminal (dsh 0.1.5+ teardown)", async () => {
     const proxy = await startMockProxy([]);
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-inactive-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-inactive-"));
     const errors: string[] = [];
     const origErr = console.error;
     console.error = (...args: unknown[]) => {
         errors.push(args.map(String).join(" "));
     };
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             // simulate cordis teardown: the plugin context is inactive, so
@@ -611,9 +611,9 @@ test("apply() inactive-context registration failure is silent and terminal (dsh 
 });
 
 test("apply() is a no-op under the kill switches", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-off-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-off-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PLUGIN: "0" }, () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PLUGIN: "0" }, () => {
             _resetRegisterForTest(undefined);
             const ctx = mockCtx();
             apply(ctx);
@@ -627,9 +627,9 @@ test("apply() is a no-op under the kill switches", async () => {
 
 test("apply() runtime-info (#955): model services stamp model/window/max-output headers", async () => {
     const proxy = await startMockProxy([]);
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-ri-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-ri-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             ctx.setModelServices(
@@ -649,14 +649,14 @@ test("apply() runtime-info (#955): model services stamp model/window/max-output 
             // poll until the window header shows up.
             await waitFor(() => {
                 const headers = _stateHeadersForTest()?.("http://example.test/v1/chat/completions");
-                return headers?.["x-bili-plugin-context-window"] === "262144";
+                return headers?.["x-sigma-plugin-context-window"] === "262144";
             }, "model-info refresh stamped headers");
             const headers = _stateHeadersForTest()?.("http://example.test/v1/chat/completions");
-            assert.equal(headers?.["x-bili-plugin"], "dsh");
-            assert.equal(headers?.["x-bili-plugin-conversation"], "session-ri");
-            assert.equal(headers?.["x-bili-plugin-model"], "qwen-ri");
-            assert.equal(headers?.["x-bili-plugin-context-window"], "262144");
-            assert.equal(headers?.["x-bili-plugin-max-output"], "32768");
+            assert.equal(headers?.["x-sigma-plugin"], "dsh");
+            assert.equal(headers?.["x-sigma-plugin-conversation"], "session-ri");
+            assert.equal(headers?.["x-sigma-plugin-model"], "qwen-ri");
+            assert.equal(headers?.["x-sigma-plugin-context-window"], "262144");
+            assert.equal(headers?.["x-sigma-plugin-max-output"], "32768");
         });
     } finally {
         proxy.close();
@@ -667,9 +667,9 @@ test("apply() runtime-info (#955): model services stamp model/window/max-output 
 
 test("apply() runtime-info (#956): a mid-resolve model switch discards the stale resolve", async () => {
     const proxy = await startMockProxy([]);
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-race-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-race-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             // mutable live selection: A at startup, switched to B mid-resolve
@@ -691,18 +691,18 @@ test("apply() runtime-info (#956): a mid-resolve model switch discards the stale
             ctx.setInitiator({ session: { id: "session-race" } });
             const stamp = () => _stateHeadersForTest()?.("http://example.test/v1/chat/completions");
             // apply()'s inject already started A's async resolve (gated, in flight)
-            assert.equal(stamp()?.["x-bili-plugin-context-window"], undefined);
+            assert.equal(stamp()?.["x-sigma-plugin-context-window"], undefined);
             // switch the LIVE selection to B while A is still resolving
             selection = { provider: "deepseek", model: "qwen-b" };
             releaseA?.({ context: { contextWindow: 999999 }, defaultMaxTokens: 8888 });
             await new Promise((r) => setTimeout(r, 20));
             // the stale A result must NOT have been committed or stamped
-            assert.equal(stamp()?.["x-bili-plugin-context-window"], undefined);
-            assert.notEqual(stamp()?.["x-bili-plugin-model"], "qwen-a");
+            assert.equal(stamp()?.["x-sigma-plugin-context-window"], undefined);
+            assert.notEqual(stamp()?.["x-sigma-plugin-model"], "qwen-a");
             // self-heal: the next refresh re-resolves the LIVE selection (B)
-            await waitFor(() => stamp()?.["x-bili-plugin-context-window"] === "12345", "post-switch re-resolve stamped B");
-            assert.equal(stamp()?.["x-bili-plugin-model"], "qwen-b");
-            assert.equal(stamp()?.["x-bili-plugin-max-output"], "4096");
+            await waitFor(() => stamp()?.["x-sigma-plugin-context-window"] === "12345", "post-switch re-resolve stamped B");
+            assert.equal(stamp()?.["x-sigma-plugin-model"], "qwen-b");
+            assert.equal(stamp()?.["x-sigma-plugin-max-output"], "4096");
         });
     } finally {
         proxy.close();
@@ -725,9 +725,9 @@ test("apply() /acp pre-first-request (#955): renders the runtime-table entry bef
     // (conversationId=dsh&fallback=latest), which the proxy answers from the
     // agent-keyed runtime table pre-first-request
     const proxy = await startMockProxy([], (url) => (url.includes("conversationId=dsh&fallback=latest") ? pre : undefined));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-pre-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-pre-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -762,10 +762,10 @@ test("#983 apply() attach mode: a dead preset falls back to a spawned proxy and 
     console.error = (...args: unknown[]) => {
         errors.push(args.map(String).join(" "));
     };
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-983a-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-983a-"));
     try {
         // port 1 on loopback: connection refused immediately — a stale preset
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: "http://127.0.0.1:1" }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: "http://127.0.0.1:1" }, async () => {
             _resetRegisterForTest("http://127.0.0.1:1");
             const ctx = mockCtx();
             apply(ctx);
@@ -774,7 +774,7 @@ test("#983 apply() attach mode: a dead preset falls back to a spawned proxy and 
             assert.equal(spawnCalls, 1);
             assert.match(errors.join("\n"), /not healthy — falling back/);
             // …and the env is unfrozen so a later re-apply plans spawn, not attach
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, undefined);
+            assert.equal(process.env.SIGMA_PROXY, undefined);
             // tools are live against the fallback origin
             const out = await ctx.registeredTools[0].execute({ summary: "s" }, { agent: { session: { id: "s983" } } });
             assert.equal(out, "compressed 42 tokens");
@@ -797,15 +797,15 @@ test("#983 apply() attach mode: a healthy preset attaches without any spawn", as
         spawnCalls += 1;
         return "http://127.0.0.1:1";
     });
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-983b-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-983b-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
             await waitFor(() => ctx.registeredTools.length === 1, "attach tool registration");
             assert.equal(spawnCalls, 0);
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, proxy.origin);
+            assert.equal(process.env.SIGMA_PROXY, proxy.origin);
         });
     } finally {
         _setSpawnForTest(undefined);
@@ -820,9 +820,9 @@ test("#983 maybeRetry self-heals a base-less register after a failed respawn", a
     const forward = await startMockProxy(calls);
     const answers: Array<string | undefined> = [undefined, forward.origin];
     _setSpawnForTest(async () => answers.shift());
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-983c-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-983c-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: "http://127.0.0.1:1" }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: "http://127.0.0.1:1" }, async () => {
             _resetRegisterForTest("http://127.0.0.1:1");
             const ctx = mockCtx();
             apply(ctx);
@@ -840,7 +840,7 @@ test("#983 maybeRetry self-heals a base-less register after a failed respawn", a
             headersFor("https://api.anthropic.com/v1/messages");
             // toolsReady is set asynchronously after registration; poll for the stamp
             await waitFor(() => headersFor("https://api.anthropic.com/v1/messages") !== undefined, "plugin headers stamped");
-            assert.equal(headersFor("https://api.anthropic.com/v1/messages")?.["x-bili-plugin"], "dsh");
+            assert.equal(headersFor("https://api.anthropic.com/v1/messages")?.["x-sigma-plugin"], "dsh");
         });
     } finally {
         _setSpawnForTest(undefined);
@@ -852,10 +852,10 @@ test("#983 maybeRetry self-heals a base-less register after a failed respawn", a
 
 test("#1117 apply() installs takeoverGate keyed on currentInitiator attribution", async () => {
     const proxy = await startMockProxy([]);
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1117-state-"));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1117-"));
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1117-state-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1117-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -883,10 +883,10 @@ test("#1117 apply() installs takeoverGate keyed on currentInitiator attribution"
 
 test("#1158 apply() gate refusal logs each endpoint once per process with attribution state", async () => {
     const proxy = await startMockProxy([]);
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158-state-"));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158-"));
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158-state-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -929,12 +929,12 @@ test("#1158 apply() gate refusal logs each endpoint once per process with attrib
     }
 });
 
-test("#1158 L2 gate three-state: thrown attribution is a distinct state; counts accumulate; transitions re-print (+bili.log)", async () => {
+test("#1158 L2 gate three-state: thrown attribution is a distinct state; counts accumulate; transitions re-print (+sigma.log)", async () => {
     const proxy = await startMockProxy([]);
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158e-state-"));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158e-home-"));
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158e-state-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158e-home-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: proxy.origin, XDG_STATE_HOME: stateHome }, async () => {
             _resetRegisterForTest(proxy.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -982,10 +982,10 @@ test("#1158 L2 gate three-state: thrown attribution is a distinct state; counts 
                 ctx.setInitiator({ session: { id: "s1158l2" } });
                 assert.equal(gate(url), true);
                 assert.equal(errs.filter((e) => e.includes("takeover gate refused")).length, 3);
-                // the durable copy carries the same lines into bili.log, [dsh-client]-marked
-                const logFile = path.join(stateHome, "billion-context", "bili.log");
+                // the durable copy carries the same lines into sigma.log, [dsh-client]-marked
+                const logFile = path.join(stateHome, "sigma", "sigma.log");
                 const content = fs.readFileSync(logFile, "utf8");
-                assert.match(content, /\[warn\] \[dsh-client\] bili-native-dsh: model request sent DIRECT \(uncompressed\) — takeover gate refused https:\/\/api\.gate-l2\.test\/v1\/chat\/completions: currentInitiator\(\) threw \(agent initiator scope is disposed\) — agent scope disposed\/closing mid-request\? — refusals so far: 5 \(state none→threw\)$/m);
+                assert.match(content, /\[warn\] \[dsh-client\] sigma-native-dsh: model request sent DIRECT \(uncompressed\) — takeover gate refused https:\/\/api\.gate-l2\.test\/v1\/chat\/completions: currentInitiator\(\) threw \(agent initiator scope is disposed\) — agent scope disposed\/closing mid-request\? — refusals so far: 5 \(state none→threw\)$/m);
             } finally {
                 console.error = origErr;
             }
@@ -998,9 +998,9 @@ test("#1158 L2 gate three-state: thrown attribution is a distinct state; counts 
     }
 });
 
-test("#1158 apply() persists bootstrap failures to bili.log (GUI stderr is invisible)", async () => {
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158c-state-"));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158c-home-"));
+test("#1158 apply() persists bootstrap failures to sigma.log (GUI stderr is invisible)", async () => {
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158c-state-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158c-home-"));
     let spawnCalls = 0;
     _setSpawnForTest(async () => {
         spawnCalls += 1;
@@ -1012,17 +1012,17 @@ test("#1158 apply() persists bootstrap failures to bili.log (GUI stderr is invis
         errs.push(args.map(String).join(" "));
     };
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: "http://127.0.0.1:1", XDG_STATE_HOME: stateHome }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: "http://127.0.0.1:1", XDG_STATE_HOME: stateHome }, async () => {
             _resetRegisterForTest("http://127.0.0.1:1");
             const ctx = mockCtx();
             apply(ctx);
             // port 1 on loopback: connection refused immediately — a stale preset
             await waitFor(() => errs.some((e) => e.includes("not healthy")), "attach-unhealthy fallback line");
             assert.equal(spawnCalls, 1, "fallback spawn attempted");
-            // The same fact must exist durably in the shared bili.log in the
+            // The same fact must exist durably in the shared sigma.log in the
             // proxy's own line shape, origin-marked — stderr alone is invisible
             // to GUI hosts, which is exactly how #1158 stayed silent.
-            const logFile = path.join(stateHome, "billion-context", "bili.log");
+            const logFile = path.join(stateHome, "sigma", "sigma.log");
             const content = fs.readFileSync(logFile, "utf8");
             assert.match(content, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[warn\] \[dsh-client\] attach target http:\/\/127\.0\.0\.1:1 is not healthy — falling back to a spawned proxy$/m);
         });
@@ -1035,17 +1035,17 @@ test("#1158 apply() persists bootstrap failures to bili.log (GUI stderr is invis
     }
 });
 
-test("#1158 persistClientEvent: standard line shape into bili.log; broken fs never throws", async () => {
-    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1158d-state-"));
+test("#1158 persistClientEvent: standard line shape into sigma.log; broken fs never throws", async () => {
+    const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1158d-state-"));
     try {
         await withEnv({ XDG_STATE_HOME: stateHome }, async () => {
             persistClientEvent("boom-marker-xyz");
-            const logFile = path.join(stateHome, "billion-context", "bili.log");
+            const logFile = path.join(stateHome, "sigma", "sigma.log");
             const content = fs.readFileSync(logFile, "utf8");
             assert.match(content, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[warn\] \[dsh-client\] boom-marker-xyz$/m);
         });
         // Broken target (state root under a regular file): must swallow, never throw.
-        const blocker = path.join(os.tmpdir(), `bili-dsh-1158d-blocker-${Date.now()}`);
+        const blocker = path.join(os.tmpdir(), `sigma-dsh-1158d-blocker-${Date.now()}`);
         fs.writeFileSync(blocker, "x");
         try {
             await withEnv({ XDG_STATE_HOME: `${blocker}/sub` }, async () => {
@@ -1076,11 +1076,11 @@ test("#1130 apply() attach mode: runtime death of the shared proxy re-probes and
     console.error = (...args: unknown[]) => {
         errors.push(args.map(String).join(" "));
     };
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1130-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1130-"));
     try {
         // terminal B attached to terminal A's launcher proxy at startup —
         // live preset, no spawn
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: shared.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: shared.origin }, async () => {
             _resetRegisterForTest(shared.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -1098,7 +1098,7 @@ test("#1130 apply() attach mode: runtime death of the shared proxy re-probes and
             assert.equal(spawnCalls, 1);
             assert.match(errors.join("\n"), /not healthy — falling back/);
             // the preset env is unfrozen so a later re-apply plans spawn, not attach
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, undefined);
+            assert.equal(process.env.SIGMA_PROXY, undefined);
             // registered tools read the LIVE base — they now forward to the
             // fallback origin without any re-registration
             const out = await ctx.registeredTools[0].execute({ summary: "s" }, { agent: { session: { id: "s1130" } } });
@@ -1109,7 +1109,7 @@ test("#1130 apply() attach mode: runtime death of the shared proxy re-probes and
             assert.ok(headersFor !== undefined, "headersFor installed");
             ctx.setInitiator({ session: { id: "s1130" } });
             await waitFor(() => headersFor("https://api.anthropic.com/v1/messages") !== undefined, "plugin headers stamped");
-            assert.equal(headersFor("https://api.anthropic.com/v1/messages")?.["x-bili-plugin"], "dsh");
+            assert.equal(headersFor("https://api.anthropic.com/v1/messages")?.["x-sigma-plugin"], "dsh");
         });
     } finally {
         console.error = origErr;
@@ -1129,22 +1129,22 @@ test("#1365 apply() attach mode: routed evidence pins the channel — a transien
     const toolCalls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
     const port = await reserveLoopbackPort();
     const origin = `http://127.0.0.1:${port}`;
-    const server = http.createServer(mockBiliHandler(toolCalls));
+    const server = http.createServer(mockSigmaHandler(toolCalls));
     let spawnCalls = 0;
     _setSpawnForTest(async () => {
         spawnCalls += 1;
         return "http://127.0.0.1:2";
     });
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1365a-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1365a-"));
     let upTimer: NodeJS.Timeout | undefined;
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: origin }, async () => {
             _resetRegisterForTest(origin);
             const ctx = mockCtx();
             apply(ctx);
             // the settings overlay baked this origin into the provider baseURL —
             // routed model traffic proves the channel is pinned to it
-            _noteRoutedForTest(`${origin}/bili/${R1365_UPSTREAM}`);
+            _noteRoutedForTest(`${origin}/sigma/${R1365_UPSTREAM}`);
             const up = new Promise<void>((resolve) => {
                 upTimer = setTimeout(() => server.listen(port, "127.0.0.1", () => resolve()), 120);
             });
@@ -1152,7 +1152,7 @@ test("#1365 apply() attach mode: routed evidence pins the channel — a transien
             clearTimeout(upTimer);
             await up;
             assert.equal(spawnCalls, 0, "no second instance may be spawned over a pinned channel");
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, origin, "the user's target stays frozen");
+            assert.equal(process.env.SIGMA_PROXY, origin, "the user's target stays frozen");
             const out = await ctx.registeredTools[0].execute({ summary: "s" }, { agent: { session: { id: "s1365a" } } });
             assert.equal(out, "compressed 42 tokens");
             assert.deepEqual(toolCalls, [{ conversationId: "s1365a", tool: "compress", args: { summary: "s" } }]);
@@ -1171,7 +1171,7 @@ test("#1365 apply() attach mode: routed evidence + persistently dead target — 
     const toolCalls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
     const port = await reserveLoopbackPort();
     const origin = `http://127.0.0.1:${port}`;
-    const server = http.createServer(mockBiliHandler(toolCalls));
+    const server = http.createServer(mockSigmaHandler(toolCalls));
     let spawnCalls = 0;
     _setSpawnForTest(async () => {
         spawnCalls += 1;
@@ -1182,20 +1182,20 @@ test("#1365 apply() attach mode: routed evidence + persistently dead target — 
     console.error = (...args: unknown[]) => {
         errors.push(args.map(String).join(" "));
     };
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1365b-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1365b-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: origin, BILI_ATTACH_HEALTH_DEADLINE_MS: "150" }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: origin, SIGMA_ATTACH_HEALTH_DEADLINE_MS: "150" }, async () => {
             _resetRegisterForTest(origin);
             const ctx = mockCtx();
             apply(ctx);
-            _noteRoutedForTest(`${origin}/bili/${R1365_UPSTREAM}`);
+            _noteRoutedForTest(`${origin}/sigma/${R1365_UPSTREAM}`);
             const t0 = Date.now();
             while (!errors.some((l) => l.includes("refusing to spawn a second instance"))) {
                 if (Date.now() - t0 > 5000) throw new Error("timed out waiting for the loud refusal");
                 await new Promise((r) => setTimeout(r, 10));
             }
             assert.equal(spawnCalls, 0);
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, origin, "the pinned target env must survive");
+            assert.equal(process.env.SIGMA_PROXY, origin, "the pinned target env must survive");
             assert.equal(ctx.registeredTools.length, 0);
             // the external manager restarts the proxy → the next model request re-probes and self-heals
             await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()));
@@ -1218,14 +1218,14 @@ test("#1365 apply() attach mode: routed evidence + persistently dead target — 
     }
 });
 
-test("#1365 apply() attach mode: late routed evidence rebinds the bili tools to where the models actually go", async () => {
+test("#1365 apply() attach mode: late routed evidence rebinds the sigma tools to where the models actually go", async () => {
     const aCalls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
     const bCalls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
     const a = await startMockProxy(aCalls, () => ({ panel: "PANEL-A" }));
     const b = await startMockProxy(bCalls, () => ({ panel: "PANEL-B" }));
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1365c-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1365c-"));
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: a.origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: a.origin }, async () => {
             _resetRegisterForTest(a.origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -1233,7 +1233,7 @@ test("#1365 apply() attach mode: late routed evidence rebinds the bili tools to 
             const before = await ctx.registeredCommands[0].handler();
             assert.ok(before.text.includes("PANEL-A"), "status reads go to the attached origin first");
             // another launcher's overlay won the race: models are baked against B
-            _noteRoutedForTest(`${b.origin}/bili/${R1365_UPSTREAM}`);
+            _noteRoutedForTest(`${b.origin}/sigma/${R1365_UPSTREAM}`);
             const t0 = Date.now();
             for (;;) {
                 const st = await ctx.registeredCommands[0].handler();
@@ -1259,17 +1259,17 @@ test("#1365 apply() attach mode: runtime death with routed evidence — waits th
     const toolCalls: Array<{ conversationId: string; tool: string; args: unknown }> = [];
     const port = await reserveLoopbackPort();
     const origin = `http://127.0.0.1:${port}`;
-    const server = http.createServer(mockBiliHandler(toolCalls));
+    const server = http.createServer(mockSigmaHandler(toolCalls));
     await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()));
     let spawnCalls = 0;
     _setSpawnForTest(async () => {
         spawnCalls += 1;
         return "http://127.0.0.1:2";
     });
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-1365d-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-1365d-"));
     let upTimer: NodeJS.Timeout | undefined;
     try {
-        await withEnv({ DSH_HOME: home, BILLION_CONTEXT_PROXY: origin }, async () => {
+        await withEnv({ DSH_HOME: home, SIGMA_PROXY: origin }, async () => {
             _resetRegisterForTest(origin);
             const ctx = mockCtx();
             apply(ctx);
@@ -1279,7 +1279,7 @@ test("#1365 apply() attach mode: runtime death with routed evidence — waits th
             // the external manager restarts the proxy: hard down, then back on the same port
             server.closeAllConnections();
             await new Promise<void>((resolve) => server.close(() => resolve()));
-            _noteRoutedForTest(`${origin}/bili/${R1365_UPSTREAM}`);
+            _noteRoutedForTest(`${origin}/sigma/${R1365_UPSTREAM}`);
             const recoveredPromise = respawn();
             const up = new Promise<void>((resolve) => {
                 upTimer = setTimeout(() => server.listen(port, "127.0.0.1", () => resolve()), 100);
@@ -1289,7 +1289,7 @@ test("#1365 apply() attach mode: runtime death with routed evidence — waits th
             await up;
             assert.equal(recovered, origin, "recovery lands back on the pinned origin");
             assert.equal(spawnCalls, 0);
-            assert.equal(process.env.BILLION_CONTEXT_PROXY, origin);
+            assert.equal(process.env.SIGMA_PROXY, origin);
             const out = await ctx.registeredTools[0].execute({ summary: "s" }, { agent: { session: { id: "s1365d" } } });
             assert.equal(out, "compressed 42 tokens");
             assert.deepEqual(toolCalls, [{ conversationId: "s1365d", tool: "compress", args: { summary: "s" } }]);

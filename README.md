@@ -4,7 +4,7 @@
 
 An agent session that runs for a month accumulates hundreds of thousands of tokens of tool output, reasoning, and file reads. You cannot keep that in a context window, and you cannot throw it away either — the work is still depending on it. sigma sits between your agent and its model provider, compresses the old part of the conversation into a compact summary, and hands back a context that still works.
 
-> **Upstream credit.** sigma is a fork of [billion-context](https://github.com/ranxianglei/billion-context) by **ranxianglei** (MIT, © 2026). The compression core, the ACP wire format, the per-host adapters, and the 12-agent compatibility surface are upstream's work. This fork is named `sigma`, and it exists to carry that code inside the sovereign monorepo, to translate the documentation into a single working language, and to keep the upstream pull mechanical rather than archaeological. See [FORK-NOTES.md](./FORK-NOTES.md) for exactly what we changed.
+> **Upstream credit.** sigma is a fork of [sigma](https://github.com/ranxianglei/sigma) by **ranxianglei** (MIT, © 2026). The compression core, the ACP wire format, the per-host adapters, and the 12-agent compatibility surface are upstream's work. This fork is named `sigma`, and it exists to carry that code inside the sovereign monorepo, to translate the documentation into a single working language, and to keep the upstream pull mechanical rather than archaeological. See [FORK-NOTES.md](./FORK-NOTES.md) for exactly what we changed.
 
 ---
 
@@ -22,7 +22,7 @@ sigma does three things differently:
 
 ### Measured, not claimed
 
-Numbers from the proxy log of a real month-long session (`~/.local/state/billion-context/bili.log`, 698 usage samples, 14 compress events):
+Numbers from the proxy log of a real month-long session (`~/.local/state/sigma/sigma.log`, 698 usage samples, 14 compress events):
 
 | What | Measured |
 |------|----------|
@@ -39,11 +39,11 @@ The cache hit rate is the number that matters. A naive proxy that rewrites the r
 ## Install
 
 ```bash
-npm install -g billion-context     # upstream name; the binary is `bili`
-bili plugin install pi             # wire it into your agent
+npm install -g sigma     # upstream name; the binary is `sigma`
+sigma plugin install pi             # wire it into your agent
 ```
 
-sigma ships as the `bili` binary and is a drop-in for the upstream package. The fork's own name is `sigma`; the binary name is unchanged on purpose, so an existing `bili` install keeps working when you point it at this build.
+sigma ships as the `sigma` binary and is a drop-in for the upstream package. The fork's own name is `sigma`; the binary name is unchanged on purpose, so an existing `sigma` install keeps working when you point it at this build.
 
 Requires **Node >= 20**. One runtime dependency, twelve dev dependencies.
 
@@ -59,7 +59,7 @@ sigma speaks the protocol, not the product, so the adapter list is long and spec
 | Codex | `codex-compact.ts`, `codex-models.ts` | model snapshot pinned |
 | OpenCode | `opencode-acp-command.ts`, `opencode-legacy.ts`, `opencode-native.ts`, `opencode-v2.ts` | four generations of the protocol, detected at runtime |
 | pi | `pi.ts`, `pi-native.ts` | |
-| omp | `omp.ts`, `omp-native.ts` | `BILLION_CONTEXT_NATIVE=omp` selects the native path |
+| omp | `omp.ts`, `omp-native.ts` | `SIGMA_NATIVE=omp` selects the native path |
 | Gemini CLI | `src/loop/adapter-google.ts` | |
 | Kimi | `src/kimi/` | |
 | Qwen Code, Copilot CLI, TRAE, CodeBuddy, Qoder, Zcode | `src/loop/` + `src/zcode/` | |

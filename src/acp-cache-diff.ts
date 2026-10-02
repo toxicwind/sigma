@@ -446,7 +446,7 @@ function classifyPair(index: number, tsA: number, tsB: number, aOut: DumpContent
         }
         category = usage && usage.missedPrefix > MISS_ABS_FLOOR && usage.missedPrefix > MISS_REL_FLOOR * usage.inputA ? "prefix-stable-miss" : "pure-append";
     }
-    if (category === "pure-append" && !usageAvailable) notes.push("no [acp-usage] data — verify hit rate via bili.log");
+    if (category === "pure-append" && !usageAvailable) notes.push("no [acp-usage] data — verify hit rate via sigma.log");
     if (hasLegacy) notes.push("legacy INCOMING filename (no session id) — paired by timestamp proximity");
     return {
         index, tsA, tsB, category, attribution,
@@ -491,7 +491,7 @@ export function runDiff(root: string, opts: DiffOptions = {}): DiffReport {
     let logSource: string | null = null;
     let usageBySession = new Map<string, UsageSample[]>();
     if (!opts.noLog) {
-        const candidates = opts.logFile ? [path.resolve(opts.logFile)] : [path.join(rootResolved, "bili.log"), defaultLogFile()];
+        const candidates = opts.logFile ? [path.resolve(opts.logFile)] : [path.join(rootResolved, "sigma.log"), defaultLogFile()];
         for (const c of candidates) {
             try {
                 if (fs.statSync(c).isFile()) { logSource = c; usageBySession = parseUsageLog(c); break; }
@@ -596,7 +596,7 @@ function describePair(p: PairReport): string {
 
 export function renderText(r: DiffReport): string {
     const lines: string[] = [];
-    lines.push(`bili acp-cache diff — ${r.dir}`);
+    lines.push(`sigma acp-cache diff — ${r.dir}`);
     lines.push(`log: ${r.logSource ?? "none"}${r.logSource ? ` (${r.usageSamples} [acp-usage] samples)` : ""}`);
     lines.push(`sessions: ${r.sessions.length} · pairs: ${r.totalPairs} · pure-append: ${r.byCategory["pure-append"]} · mid-stream-rewrite: ${r.byCategory["mid-stream-rewrite"]} · prefix-stable-miss: ${r.byCategory["prefix-stable-miss"]}`);
     if (r.worst.length > 0) {

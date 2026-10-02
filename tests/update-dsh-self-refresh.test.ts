@@ -1,5 +1,5 @@
-// #1196: a billion-context copy installed through dsh's plugin market has no
-// global bili driving refreshDshProfileBundles — the process running FROM the
+// #1196: a sigma copy installed through dsh's plugin market has no
+// global sigma driving refreshDshProfileBundles — the process running FROM the
 // profile copy must drive dsh's own plugin channel itself. isDshProfileCopy
 // classifies install dirs; refreshDshProfileCopy gates on staleness, the
 // shared update lock, and registry-vs-local pins before spawning dsh.
@@ -14,7 +14,7 @@ import type { DshPlan } from "../src/dsh-channel.ts";
 
 // LOCK_FILE is frozen at update.ts module load — redirect the cache tree
 // BEFORE importing it (same discipline as auto-restart.test.ts).
-const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bili-dsh-selfrefresh-")));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sigma-dsh-selfrefresh-")));
 process.env.XDG_CACHE_HOME = path.join(root, "cache");
 
 const { refreshDshProfileCopy } = await import("../src/update.ts");
@@ -32,18 +32,18 @@ test("isDshProfileCopy: dsh profile layouts yes, everything else no", () => {
     try {
         const dshHome = path.join(base, "dsh");
         // dsh profile bundle as pnpm materializes it (literal store path)
-        const storeCopy = path.join(dshHome, "profiles", "web", "node_modules", ".pnpm", "billion-context@0.1.139", "node_modules", "billion-context");
+        const storeCopy = path.join(dshHome, "profiles", "web", "node_modules", ".pnpm", "sigma@0.1.139", "node_modules", "sigma");
         assert.equal(isDshProfileCopy(storeCopy, { DSH_HOME: dshHome }), true);
         // profile top-level node_modules (hoisted / symlinked dev pin)
-        assert.equal(isDshProfileCopy(path.join(dshHome, "profiles", "web", "node_modules", "billion-context"), { DSH_HOME: dshHome }), true);
+        assert.equal(isDshProfileCopy(path.join(dshHome, "profiles", "web", "node_modules", "sigma"), { DSH_HOME: dshHome }), true);
         // DSH_HOME relocation is honored
-        assert.equal(isDshProfileCopy(path.join(base, "elsewhere", "profiles", "a", "node_modules", "billion-context"), { DSH_HOME: path.join(base, "elsewhere") }), true);
+        assert.equal(isDshProfileCopy(path.join(base, "elsewhere", "profiles", "a", "node_modules", "sigma"), { DSH_HOME: path.join(base, "elsewhere") }), true);
         // pnpm global outside a dsh home
-        assert.equal(isDshProfileCopy(path.join(base, "pnpm", "global", "5", ".pnpm", "billion-context@0.1.139", "node_modules", "billion-context"), { DSH_HOME: dshHome }), false);
+        assert.equal(isDshProfileCopy(path.join(base, "pnpm", "global", "5", ".pnpm", "sigma@0.1.139", "node_modules", "sigma"), { DSH_HOME: dshHome }), false);
         // npm global layout
-        assert.equal(isDshProfileCopy(path.join(base, "home", ".local", "lib", "node_modules", "billion-context"), { DSH_HOME: dshHome }), false);
+        assert.equal(isDshProfileCopy(path.join(base, "home", ".local", "lib", "node_modules", "sigma"), { DSH_HOME: dshHome }), false);
         // dsh home WITHOUT the profiles segment is not a profile copy
-        assert.equal(isDshProfileCopy(path.join(dshHome, "plugins", "billion-context"), { DSH_HOME: dshHome }), false);
+        assert.equal(isDshProfileCopy(path.join(dshHome, "plugins", "sigma"), { DSH_HOME: dshHome }), false);
     } finally {
         fs.rmSync(base, { recursive: true, force: true });
     }
@@ -52,11 +52,11 @@ test("isDshProfileCopy: dsh profile layouts yes, everything else no", () => {
 test("isDshProfileCopy: follows symlinked copies into the profiles tree", () => {
     const base = fs.mkdtempSync(path.join(root, "classify-sym-"));
     try {
-        // a pnpm-style profile: node_modules/billion-context is a symlink to
+        // a pnpm-style profile: node_modules/sigma is a symlink to
         // the .pnpm virtual store — the REALPATH must still classify.
         const dshHome = path.join(base, "dsh");
-        const real = path.join(dshHome, "profiles", "web", "node_modules", ".pnpm", "billion-context@0.1.139", "node_modules", "billion-context");
-        const link = path.join(dshHome, "profiles", "web", "node_modules", "billion-context");
+        const real = path.join(dshHome, "profiles", "web", "node_modules", ".pnpm", "sigma@0.1.139", "node_modules", "sigma");
+        const link = path.join(dshHome, "profiles", "web", "node_modules", "sigma");
         fs.mkdirSync(real, { recursive: true });
         fs.symlinkSync(real, link, "dir");
         assert.equal(isDshProfileCopy(link, { DSH_HOME: dshHome }), true);
@@ -81,18 +81,18 @@ function makeFixture(version: string): Fixture {
     const base = fs.mkdtempSync(path.join(root, "fx-"));
     const dshHome = path.join(base, "dsh");
     const aDir = path.join(dshHome, "profiles", "a");
-    const installDir = path.join(aDir, "node_modules", "billion-context");
+    const installDir = path.join(aDir, "node_modules", "sigma");
     fs.mkdirSync(installDir, { recursive: true });
     fs.mkdirSync(path.join(dshHome, "profiles", "b"), { recursive: true });
     fs.writeFileSync(
         path.join(aDir, "package.json"),
-        JSON.stringify({ private: true, dependencies: { "billion-context": `^${version}` } }),
+        JSON.stringify({ private: true, dependencies: { "sigma": `^${version}` } }),
     );
     fs.writeFileSync(
         path.join(dshHome, "profiles", "b", "package.json"),
-        JSON.stringify({ private: true, dependencies: { "billion-context": `link:${path.join(base, "dev-bc")}` } }),
+        JSON.stringify({ private: true, dependencies: { "sigma": `link:${path.join(base, "dev-bc")}` } }),
     );
-    fs.writeFileSync(path.join(installDir, "package.json"), JSON.stringify({ name: "billion-context", version }));
+    fs.writeFileSync(path.join(installDir, "package.json"), JSON.stringify({ name: "sigma", version }));
     return {
         base,
         dshHome,
@@ -136,7 +136,7 @@ function makeLog(): { log: Logger; entries: string[] } {
     return { log: (level, msg) => { entries.push(`${level}: ${msg}`); }, entries };
 }
 
-const OPTS = { packageName: "billion-context", currentVersion: "0.1.139", autoUpdate: true };
+const OPTS = { packageName: "sigma", currentVersion: "0.1.139", autoUpdate: true };
 
 test("refreshDshProfileCopy: stale registry-pinned profile refreshes via dsh's channel; link: pins untouched", async () => {
     const fx = makeFixture("0.1.139");
@@ -148,7 +148,7 @@ test("refreshDshProfileCopy: stale registry-pinned profile refreshes via dsh's c
             await refreshDshProfileCopy(fx.installDir, OPTS, fx.env, log);
             assert.equal(fetches.count, 1, "one registry lookup");
         });
-        assert.deepEqual(calls, ["plugin --profile a add billion-context@0.1.140"]);
+        assert.deepEqual(calls, ["plugin --profile a add sigma@0.1.140"]);
         assert.ok(entries.some((l) => l.includes("stale (0.1.139") && l.includes("0.1.140")), "stale transition logged");
     } finally {
         _setDshRunnersForTest(undefined);
@@ -193,9 +193,9 @@ test("refreshDshProfileCopy: registry unreachable → warn, no spawn, no throw",
 test("refreshDshProfileCopy: non-dsh install dir returns before any registry fetch", async () => {
     const base = fs.mkdtempSync(path.join(root, "noop-"));
     try {
-        const installDir = path.join(base, "lib", "node_modules", "billion-context");
+        const installDir = path.join(base, "lib", "node_modules", "sigma");
         fs.mkdirSync(installDir, { recursive: true });
-        fs.writeFileSync(path.join(installDir, "package.json"), JSON.stringify({ name: "billion-context", version: "0.1.139" }));
+        fs.writeFileSync(path.join(installDir, "package.json"), JSON.stringify({ name: "sigma", version: "0.1.139" }));
         const env = { ...process.env, DSH_HOME: path.join(base, "dsh") };
         const calls: string[] = [];
         _setDshRunnersForTest({ async: recordingAsyncRunner(calls) });
@@ -214,7 +214,7 @@ test("refreshDshProfileCopy: a live update lock defers the refresh to the next c
     const fx = makeFixture("0.1.139");
     const calls: string[] = [];
     const { log, entries } = makeLog();
-    const lockDir = path.join(process.env.XDG_CACHE_HOME!, "billion-context");
+    const lockDir = path.join(process.env.XDG_CACHE_HOME!, "sigma");
     const lockFile = path.join(lockDir, ".update-lock");
     fs.mkdirSync(lockDir, { recursive: true });
     fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: "wx" });

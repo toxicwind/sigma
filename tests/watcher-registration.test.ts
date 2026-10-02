@@ -48,7 +48,7 @@ test("registerWatcherDefault: maps HTTP outcomes to ok / refused / failed (#1322
 
     const refused = await stubWatcher(409);
     try {
-        // A daemon proxy (no BILI_PARENT_PID) refuses — that is the #1322 case.
+        // A daemon proxy (no SIGMA_PARENT_PID) refuses — that is the #1322 case.
         assert.equal(await registerWatcherDefault(refused.origin, 4242), "refused");
     } finally {
         await refused.close();

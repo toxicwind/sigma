@@ -9,8 +9,8 @@
    - Valid JSON throughout, **not split on carriage returns**.
 2. **The wire layer flattens**: the Responses API `input` is a flat list of entries (message / function_call / function_call_output, each at the top level). There is no anthropic-style "one message with mixed blocks" expression, so when omp serializes, each text block becomes its own message item. A whitespace text block (the `\n\n` the model emits before a tool call) therefore becomes a standalone empty message. This is forced by the protocol, not an omp bug.
 3. **pi comparison** (6 real sessions): an anthropic-wire content field is already a block array, so a whitespace block sits inside a mixed message as-is → 162 whitespace blocks, all internal to mixed messages, **0 standalone empty messages**. pi is unaffected.
-4. **Three layers of responsibility**: the model emits `\n\n` (a SGLang habit, normal) / omp flattens (forced by the protocol) / **bili stamps a 42-character tag plus a number onto 1-token whitespace (the only layer worth fixing)**.
-5. **A stickiness finding**: replaying the request dumps (`~/.local/state/billion-context/dumps/req-*-9d41f1d8aa9cd4f3.json`, 8 of them) showed a plain `trim()` emptiness check dropped 0 items, because the tag stamped in an earlier round had already turned the whitespace into 43 characters of "non-empty" text that omp replays verbatim → the tag must be **stripped before the emptiness check**.
+4. **Three layers of responsibility**: the model emits `\n\n` (a SGLang habit, normal) / omp flattens (forced by the protocol) / **sigma stamps a 42-character tag plus a number onto 1-token whitespace (the only layer worth fixing)**.
+5. **A stickiness finding**: replaying the request dumps (`~/.local/state/sigma/dumps/req-*-9d41f1d8aa9cd4f3.json`, 8 of them) showed a plain `trim()` emptiness check dropped 0 items, because the tag stamped in an earlier round had already turned the whitespace into 43 characters of "non-empty" text that omp replays verbatim → the tag must be **stripped before the emptiness check**.
 
 ### Fix
 

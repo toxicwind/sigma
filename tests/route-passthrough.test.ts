@@ -34,7 +34,7 @@ test("findRoute: mitm:// key matches only MITM traffic to that host (ZCode case)
     const routes = { "mitm://zcode.z.ai": { passthrough: true } };
     const mitmHit = findRoute(routes, "mitm://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages");
     assert.equal(mitmHit?.passthrough, true, "MITM traffic to zcode.z.ai matches the mitm:// key");
-    assert.equal(findRoute(routes, "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages"), undefined, "https:// (API-key /bili/) traffic must NOT match a mitm:// key");
+    assert.equal(findRoute(routes, "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages"), undefined, "https:// (API-key /sigma/) traffic must NOT match a mitm:// key");
     assert.equal(findRoute(routes, "mitm://zcode.z.ai.evil/"), undefined, "host boundary: sibling host must not match");
 });
 
@@ -102,7 +102,7 @@ async function postMessages(proxyPort: number, upstreamHost: string, sessionId: 
                 host: "127.0.0.1",
                 port: proxyPort,
                 method: "POST",
-                path: `/bili/http://${upstreamHost}/v1/messages`,
+                path: `/sigma/http://${upstreamHost}/v1/messages`,
                 headers: {
                     "content-type": "application/json",
                     host: upstreamHost,
@@ -122,7 +122,7 @@ async function postMessages(proxyPort: number, upstreamHost: string, sessionId: 
     });
 }
 
-test("route passthrough: body forwarded verbatim (bili's prompt_cache_key stripped, #1403), response piped verbatim, kernel bypassed", async () => {
+test("route passthrough: body forwarded verbatim (sigma's prompt_cache_key stripped, #1403), response piped verbatim, kernel bypassed", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
 
@@ -145,7 +145,7 @@ test("route passthrough: body forwarded verbatim (bili's prompt_cache_key stripp
         const out = await postMessages(proxyPort, upstreamHost, "route-passthrough-test");
         assert.equal(out.status, 200, `client must see the upstream 200; got ${out.status}: ${out.body}`);
         const sent = JSON.parse(capture.body) as Record<string, unknown>;
-        assert.ok(!("prompt_cache_key" in sent), "bili's own prompt_cache_key must be stripped from verbatim anthropic forwards (#1403)");
+        assert.ok(!("prompt_cache_key" in sent), "sigma's own prompt_cache_key must be stripped from verbatim anthropic forwards (#1403)");
         assert.deepEqual(sent, JSON.parse(ANTHROPIC_BODY_NO_PCK), "every other field must survive intact (only the pck removal, no re-shaping)");
         assert.ok(!capture.body.includes("\x3cacp "), "no ACP render tags may be injected");
         assert.equal(out.body, ANTHROPIC_RESPONSE, "response must be piped verbatim to the client");
@@ -247,7 +247,7 @@ test("route passthrough: global passthrough=false still compresses OTHER routes"
         assert.equal(outBypass.status, 200);
         assert.equal(outNormal.status, 200);
         const bypassSent = JSON.parse(bypassCapture.body) as Record<string, unknown>;
-        assert.ok(!("prompt_cache_key" in bypassSent), "bypassed route: bili's prompt_cache_key stripped (#1403)");
+        assert.ok(!("prompt_cache_key" in bypassSent), "bypassed route: sigma's prompt_cache_key stripped (#1403)");
         assert.deepEqual(bypassSent, JSON.parse(ANTHROPIC_BODY_NO_PCK), "bypassed route: every other field intact");
         assert.notEqual(normalCapture.body, ANTHROPIC_BODY, "non-bypassed route: kernel round-trip still active");
         assert.ok(!bypassCapture.body.includes("\x3cacp "), "bypassed route: no tags");

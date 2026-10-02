@@ -14,7 +14,7 @@ import {
     KIMI_MANAGED_BEGIN,
     KIMI_PROVIDER,
     applyKimiManagedConfig,
-    extractBiliUpstream,
+    extractSigmaUpstream,
     kimiProxiedBaseUrl,
     resolveKimiRoute,
     stampKimiPluginHeader,
@@ -84,15 +84,15 @@ function reasonOf(res: ReturnType<typeof resolveKimiRoute>): string {
 
 test("planNativeKimi: kill-switches > attach > spawn (#963)", () => {
     assert.deepEqual(planNativeKimi({}), { mode: "spawn" });
-    assert.deepEqual(planNativeKimi({ BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeKimi({ BILI_NATIVE_KIMI: "0" }), { mode: "off" });
-    assert.deepEqual(planNativeKimi({ BILI_PROVIDER_REWRITES: "1" }), { mode: "off" });
-    assert.deepEqual(planNativeKimi({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:8787" });
+    assert.deepEqual(planNativeKimi({ SIGMA_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeKimi({ SIGMA_NATIVE_KIMI: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeKimi({ SIGMA_PROVIDER_REWRITES: "1" }), { mode: "off" });
+    assert.deepEqual(planNativeKimi({ SIGMA_PROXY: "http://127.0.0.1:8787/" }), { mode: "attach", attachOrigin: "http://127.0.0.1:8787" });
     assert.deepEqual(
-        planNativeKimi({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:9999", BILLION_CONTEXT_ATTACH: "http://127.0.0.1:8787/" }),
+        planNativeKimi({ SIGMA_PROXY: "http://127.0.0.1:9999", SIGMA_ATTACH: "http://127.0.0.1:8787/" }),
         { mode: "attach", attachOrigin: "http://127.0.0.1:8787" },
     );
-    assert.deepEqual(planNativeKimi({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:8787", BILLION_CONTEXT_PLUGIN: "0" }), { mode: "off" });
+    assert.deepEqual(planNativeKimi({ SIGMA_PROXY: "http://127.0.0.1:8787", SIGMA_PLUGIN: "0" }), { mode: "off" });
 });
 
 test("applyKimiManagedConfig routes the active model and records the previous default (#963)", () => {
@@ -101,7 +101,7 @@ test("applyKimiManagedConfig routes the active model and records the previous de
     assert.ok(applied.includes(`[providers.${KIMI_PROVIDER}]`));
     assert.ok(applied.includes(`base_url = "${kimiProxiedBaseUrl(9999, STATE.upstream)}"`));
     assert.equal(count(applied, 'storage = "file"'), 2, "oauth sub-table cloned verbatim into the managed block");
-    assert.ok(applied.includes('# bili prev-default-model = "kimi-k3"'));
+    assert.ok(applied.includes('# sigma prev-default-model = "kimi-k3"'));
     assert.ok(applied.includes('[providers."managed:kimi-code"]'), "user content preserved");
 });
 
@@ -109,7 +109,7 @@ test("applyKimiManagedConfig is idempotent and keeps the pre-native default acro
     const onceApplied = applyKimiManagedConfig(SAMPLE_CONFIG, STATE);
     const twiceApplied = applyKimiManagedConfig(onceApplied, STATE);
     assert.equal(twiceApplied, onceApplied);
-    assert.ok(twiceApplied.includes('# bili prev-default-model = "kimi-k3"'));
+    assert.ok(twiceApplied.includes('# sigma prev-default-model = "kimi-k3"'));
     assert.equal(unrouteKimiConfig(twiceApplied), SAMPLE_CONFIG);
 });
 
@@ -117,7 +117,7 @@ test("re-apply respects a default_model the user switched to by hand (#963)", ()
     const applied = applyKimiManagedConfig(SAMPLE_CONFIG, STATE).replace(`default_model = "${KIMI_ALIAS}"`, 'default_model = "kimi-k2"');
     const reapplied = applyKimiManagedConfig(applied, STATE);
     assert.ok(reapplied.startsWith('default_model = "kimi-k2"\n'), "user's manual switch must not be yanked back to the alias");
-    assert.ok(reapplied.includes('# bili prev-default-model = "kimi-k3"'));
+    assert.ok(reapplied.includes('# sigma prev-default-model = "kimi-k3"'));
     assert.ok(unrouteKimiConfig(reapplied).startsWith('default_model = "kimi-k2"'));
 });
 
@@ -132,13 +132,13 @@ test("unrouteKimiConfig keeps a manual default_model change made during native m
     assert.ok(!reverted.includes(KIMI_MANAGED_BEGIN));
 });
 
-test("applyKimiManagedConfig refuses a user-owned [providers.bili] or [models.bili-kimi] (#963)", () => {
-    assert.throws(() => applyKimiManagedConfig(`${SAMPLE_CONFIG}\n[providers.bili]\ntype = "kimi"\n`, STATE), /already defines \[providers\.bili\]/);
-    assert.throws(() => applyKimiManagedConfig(`${SAMPLE_CONFIG}\n[models.bili-kimi]\nmodel = "x"\n`, STATE), /already defines \[models\.bili-kimi\]/);
+test("applyKimiManagedConfig refuses a user-owned [providers.sigma] or [models.sigma-kimi] (#963)", () => {
+    assert.throws(() => applyKimiManagedConfig(`${SAMPLE_CONFIG}\n[providers.sigma]\ntype = "kimi"\n`, STATE), /already defines \[providers\.sigma\]/);
+    assert.throws(() => applyKimiManagedConfig(`${SAMPLE_CONFIG}\n[models.sigma-kimi]\nmodel = "x"\n`, STATE), /already defines \[models\.sigma-kimi\]/);
 });
 
 test("stripKimiManagedBlock rejects tampered markers instead of guessing (#963)", () => {
-    assert.throws(() => stripKimiManagedBlock(`${SAMPLE_CONFIG}# bili end\n`), /stray/);
+    assert.throws(() => stripKimiManagedBlock(`${SAMPLE_CONFIG}# sigma end\n`), /stray/);
     assert.throws(() => stripKimiManagedBlock(`${SAMPLE_CONFIG}${KIMI_MANAGED_BEGIN}\n`), /truncated/);
 });
 
@@ -183,8 +183,8 @@ test("resolveKimiRoute is idempotent on an already-routed config (#963)", () => 
 test("resolveKimiRoute fails closed on a corrupted managed block (#963)", () => {
     const applied = applyKimiManagedConfig(SAMPLE_CONFIG, STATE);
     const brokenUrl = applied.replace(kimiProxiedBaseUrl(9999, STATE.upstream), "https://api.kimi.com/coding/v1");
-    assert.match(reasonOf(resolveKimiRoute(brokenUrl, {})), /no longer embeds a bili route/);
-    const brokenAuth = applied.replace('api_key = ""\n[providers.bili.oauth]\nstorage = "file"\nkey = "managed:kimi-code"\noauth_host = "https://api.kimi.com"\n', "");
+    assert.match(reasonOf(resolveKimiRoute(brokenUrl, {})), /no longer embeds a sigma route/);
+    const brokenAuth = applied.replace('api_key = ""\n[providers.sigma.oauth]\nstorage = "file"\nkey = "managed:kimi-code"\noauth_host = "https://api.kimi.com"\n', "");
     assert.match(reasonOf(resolveKimiRoute(brokenAuth, {})), /lost its credentials/);
 });
 
@@ -193,16 +193,16 @@ test("stampKimiPluginHeader inserts then replaces in place, no-op without a bloc
     const stamped = stampKimiPluginHeader(applied);
     const lines = stamped.split("\n");
     const sectionIdx = lines.findIndex((l) => l.trim() === `[providers.${KIMI_PROVIDER}]`);
-    assert.equal(lines[sectionIdx + 1], 'custom_headers = { x-bili-plugin = "kimi" }');
-    assert.equal(count(stamped, "x-bili-plugin"), 1);
+    assert.equal(lines[sectionIdx + 1], 'custom_headers = { x-sigma-plugin = "kimi" }');
+    assert.equal(count(stamped, "x-sigma-plugin"), 1);
     assert.equal(stampKimiPluginHeader(stamped), stamped);
     assert.equal(stampKimiPluginHeader(SAMPLE_CONFIG), SAMPLE_CONFIG);
 });
 
-test("kimiProxiedBaseUrl / extractBiliUpstream round-trip (#963)", () => {
-    assert.equal(extractBiliUpstream(kimiProxiedBaseUrl(8787, "https://api.kimi.com/coding/v1")), "https://api.kimi.com/coding/v1");
-    assert.equal(kimiProxiedBaseUrl(8787, "https://x.example/"), "http://127.0.0.1:8787/bili/https://x.example");
-    assert.equal(extractBiliUpstream("https://api.kimi.com/coding/v1"), undefined);
+test("kimiProxiedBaseUrl / extractSigmaUpstream round-trip (#963)", () => {
+    assert.equal(extractSigmaUpstream(kimiProxiedBaseUrl(8787, "https://api.kimi.com/coding/v1")), "https://api.kimi.com/coding/v1");
+    assert.equal(kimiProxiedBaseUrl(8787, "https://x.example/"), "http://127.0.0.1:8787/sigma/https://x.example");
+    assert.equal(extractSigmaUpstream("https://api.kimi.com/coding/v1"), undefined);
 });
 
 interface FakeHome { home: string; cleanup: () => void }
@@ -211,7 +211,7 @@ interface FakeHome { home: string; cleanup: () => void }
  *  a dir holding a `kimi --version` shim, so host-installed Kimi Code can't
  *  leak into these tests. */
 function fakeKimiHome(version: string | null): FakeHome {
-    const home = path.join(tmpdir(), `bili-kimi-home-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const home = path.join(tmpdir(), `sigma-kimi-home-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     mkdirSync(home, { recursive: true });
     if (version !== null) {
         const bin = path.join(home, "fakebin");
@@ -244,33 +244,33 @@ function fakeKimiHome(version: string | null): FakeHome {
 test("pluginInstall / pluginRemove round-trip for kimi under a fake home (#963)", () => {
     const fake = fakeKimiHome("2.0.1");
     try {
-        assert.match(pluginInstall("kimi"), /wrote the billion-context plugin into/);
-        const dir = path.join(fake.home, "plugins", "managed", "billion-context");
+        assert.match(pluginInstall("kimi"), /wrote the sigma plugin into/);
+        const dir = path.join(fake.home, "plugins", "managed", "sigma");
         interface KimiManifest {
             name: string;
-            mcpServers: { bili: { command: string; args: string[]; cwd: string } };
+            mcpServers: { sigma: { command: string; args: string[]; cwd: string } };
             hooks: Array<{ event: string; command: string; timeout: number }>;
         }
         const manifest = JSON.parse(readFileSync(path.join(dir, "kimi.plugin.json"), "utf8")) as KimiManifest;
-        assert.equal(manifest.name, "billion-context");
-        assert.equal(manifest.mcpServers.bili.command, "node");
-        assert.equal(manifest.mcpServers.bili.args.length, 1);
-        assert.ok(manifest.mcpServers.bili.args[0].endsWith(path.join("dist", "kimi", "native-mcp.js")));
-        assert.equal(manifest.mcpServers.bili.cwd, "./");
+        assert.equal(manifest.name, "sigma");
+        assert.equal(manifest.mcpServers.sigma.command, "node");
+        assert.equal(manifest.mcpServers.sigma.args.length, 1);
+        assert.ok(manifest.mcpServers.sigma.args[0].endsWith(path.join("dist", "kimi", "native-mcp.js")));
+        assert.equal(manifest.mcpServers.sigma.cwd, "./");
         assert.equal(manifest.hooks[0].event, "SessionStart");
         // The MCP args above keep the platform separator (they cross as an argv
         // array, nothing re-parses them). The hook is the one place kimi hands a
         // shell a STRING, and a Windows path is eaten there as escapes. Exact
         // equality against the portable form (derived from the shared root) so
         // spaced install paths — which quote the argument — still pass.
-        const bootstrapArg = manifest.mcpServers.bili.args[0].replace(/native-mcp\.js$/, "bootstrap-hook.js");
+        const bootstrapArg = manifest.mcpServers.sigma.args[0].replace(/native-mcp\.js$/, "bootstrap-hook.js");
         assert.equal(manifest.hooks[0].command, portableHookCommand("node", [bootstrapArg]));
         assert.ok(!manifest.hooks[0].command.includes("\\"), manifest.hooks[0].command);
         interface KimiRegistry { version: number; plugins: Array<{ id: string; root: string; source: string; enabled: boolean }> }
         const reg = JSON.parse(readFileSync(path.join(fake.home, "plugins", "installed.json"), "utf8")) as KimiRegistry;
         assert.equal(reg.version, 1);
         assert.equal(reg.plugins.length, 1);
-        assert.equal(reg.plugins[0].id, "billion-context");
+        assert.equal(reg.plugins[0].id, "sigma");
         assert.equal(reg.plugins[0].root, dir);
         assert.equal(reg.plugins[0].source, "local-path");
         assert.equal(reg.plugins[0].enabled, true);
@@ -307,11 +307,11 @@ test("pluginInstall kimi enforces the v2 engine floor and binary presence (#963)
 test("bootstrapKimiNative routes config.toml through a live proxy, stamps, reports, unreoutes (#963)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = mkdtempSync(path.join(tmpdir(), "bili-kimi-native-"));
-    const biliCfg = path.join(root, "billion-context.json");
+    const root = mkdtempSync(path.join(tmpdir(), "sigma-kimi-native-"));
+    const biliCfg = path.join(root, "sigma.json");
     writeFileSync(biliCfg, '{"providers":{}}', "utf8");
-    const prevCfgFile = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliCfg;
+    const prevCfgFile = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliCfg;
     const home = path.join(root, "kimi-home");
     mkdirSync(home);
     const cfgPath = path.join(home, "config.toml");
@@ -361,7 +361,7 @@ test("bootstrapKimiNative routes config.toml through a live proxy, stamps, repor
 
         const written = readFileSync(cfgPath, "utf8");
         assert.ok(written.includes(`base_url = "${kimiProxiedBaseUrl(Number(new URL(origin).port), "https://api.kimi.com/coding/v1")}"`));
-        assert.equal(readFileSync(path.join(home, "config.toml.bili-bak"), "utf8"), SAMPLE_CONFIG);
+        assert.equal(readFileSync(path.join(home, "config.toml.sigma-bak"), "utf8"), SAMPLE_CONFIG);
 
         // A second bootstrap must be a byte-stable no-op (idempotent re-apply).
         const again = await bootstrapKimiNative({ env: {}, kimiHome: home, log: () => {}, ensureProxy: async () => ({ origin, attached: false }) });
@@ -369,31 +369,31 @@ test("bootstrapKimiNative routes config.toml through a live proxy, stamps, repor
         assert.equal(again.mode === "active" ? again.routed?.upstream : undefined, "https://api.kimi.com/coding/v1");
 
         await activateKimiPluginMode(mode.routed, { env: {}, kimiHome: home, log: () => {} });
-        assert.ok(readFileSync(cfgPath, "utf8").includes('custom_headers = { x-bili-plugin = "kimi" }'));
+        assert.ok(readFileSync(cfgPath, "utf8").includes('custom_headers = { x-sigma-plugin = "kimi" }'));
         assert.equal(runtimeInfo.length, 1);
         assert.deepEqual(runtimeInfo[0], { agent: "kimi", model: "kimi-k3", baseURL: "https://api.kimi.com/coding/v1", source: "native-bootstrap" });
 
         unrouteKimi({ env: {}, kimiHome: home, log: () => {} });
         assert.equal(readFileSync(cfgPath, "utf8"), SAMPLE_CONFIG);
-        assert.equal(existsSync(path.join(home, "config.toml.bili-bak")), false);
+        assert.equal(existsSync(path.join(home, "config.toml.sigma-bak")), false);
     } finally {
         globalThis.fetch = realFetch;
-        if (prevCfgFile === undefined) delete process.env.BILI_CONFIG_FILE;
-        else process.env.BILI_CONFIG_FILE = prevCfgFile;
+        if (prevCfgFile === undefined) delete process.env.SIGMA_CONFIG_FILE;
+        else process.env.SIGMA_CONFIG_FILE = prevCfgFile;
         proxy.closeAllConnections?.();
         await new Promise<void>((resolve, reject) => proxy.close((err) => (err ? reject(err) : resolve())));
         rmSync(root, { recursive: true, force: true });
     }
 });
 
-test("BILI_NATIVE_KIMI=0 leaves everything untouched (#963)", async () => {
-    const home = mkdtempSync(path.join(tmpdir(), "bili-kimi-off-"));
+test("SIGMA_NATIVE_KIMI=0 leaves everything untouched (#963)", async () => {
+    const home = mkdtempSync(path.join(tmpdir(), "sigma-kimi-off-"));
     const cfgPath = path.join(home, "config.toml");
     writeFileSync(cfgPath, SAMPLE_CONFIG, "utf8");
     let spawned = false;
     try {
         const mode = await bootstrapKimiNative({
-            env: { BILI_NATIVE_KIMI: "0" },
+            env: { SIGMA_NATIVE_KIMI: "0" },
             kimiHome: home,
             log: () => {},
             ensureProxy: async () => { spawned = true; return { origin: "http://127.0.0.1:9", attached: false }; },
@@ -407,12 +407,12 @@ test("BILI_NATIVE_KIMI=0 leaves everything untouched (#963)", async () => {
 });
 
 test("bootstrapKimiNative attach waits for health and fails closed on a dead target (#963)", async () => {
-    const home = mkdtempSync(path.join(tmpdir(), "bili-kimi-attach-"));
+    const home = mkdtempSync(path.join(tmpdir(), "sigma-kimi-attach-"));
     const cfgPath = path.join(home, "config.toml");
     writeFileSync(cfgPath, SAMPLE_CONFIG, "utf8");
     try {
         await assert.rejects(
-            bootstrapKimiNative({ env: { BILLION_CONTEXT_ATTACH: "http://127.0.0.1:1" }, kimiHome: home, log: () => {}, healthDeadlineMs: 500 }),
+            bootstrapKimiNative({ env: { SIGMA_ATTACH: "http://127.0.0.1:1" }, kimiHome: home, log: () => {}, healthDeadlineMs: 500 }),
             /is not healthy/,
         );
         assert.equal(readFileSync(cfgPath, "utf8"), SAMPLE_CONFIG);

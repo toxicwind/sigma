@@ -1,4 +1,4 @@
-// `bili doctor` (#1235): one read-only command that audits every install lane
+// `sigma doctor` (#1235): one read-only command that audits every install lane
 // (global + per-host) and every registered proxy process: which copy each lane
 // loads, who owns its updates, and how fresh it is against the registry. Turns
 // the #991/#1196 single-writer & install-lane contract into an auditable
@@ -116,9 +116,9 @@ export async function runDoctor(opts: DoctorOpts): Promise<DoctorReport> {
         lastCheckTime: lastCheck,
         verdict: globalVerdict({ form, diskVersion, registryVersion }),
     };
-    if (g.verdict === "frozen") g.reason = "source checkout — rebuild manually (npm run build); bili refuses to auto-update a working tree (#580)";
-    else if (g.verdict === "stale") g.reason = managed !== undefined ? `newer on registry ${tag}: update through ${managed.owner}'s updater` : `newer on registry ${tag}: run 'bili update'`;
-    else if (form !== "unknown" && staleInstallStatus(diskVersion, opts.runningVersion) === "restart") g.reason = `running process is behind the on-disk install (v${opts.runningVersion} → v${diskVersion}) — restart bili`;
+    if (g.verdict === "frozen") g.reason = "source checkout — rebuild manually (npm run build); sigma refuses to auto-update a working tree (#580)";
+    else if (g.verdict === "stale") g.reason = managed !== undefined ? `newer on registry ${tag}: update through ${managed.owner}'s updater` : `newer on registry ${tag}: run 'sigma update'`;
+    else if (form !== "unknown" && staleInstallStatus(diskVersion, opts.runningVersion) === "restart") g.reason = `running process is behind the on-disk install (v${opts.runningVersion} → v${diskVersion}) — restart sigma`;
     if (registryVersion === undefined) g.reason = g.reason ? `${g.reason}; registry unreachable — freshness unknown` : "registry unreachable — freshness unknown";
 
     const lanes: DoctorLane[] = [];
@@ -174,7 +174,7 @@ function laneRowsFor(agent: PluginAgent, presence: ReturnType<typeof inspectLane
                 verdict: laneVerdict({ installed: true, targetMissing: missing, frozen: p.pinned, copyVersion: p.copyVersion, registryVersion }),
             };
             if (row.verdict === "frozen") row.reason = "local-pin dep spec — no live update path; point it at a registry version or rebuild manually (AGENTS.md install-lane contract)";
-            else if (row.verdict === "broken") row.reason = "profile depends on billion-context but the bundle copy is missing — rerun 'bili plugin install dsh'";
+            else if (row.verdict === "broken") row.reason = "profile depends on sigma but the bundle copy is missing — rerun 'sigma plugin install dsh'";
             return row;
         });
     }
@@ -208,7 +208,7 @@ function verdictText(v: LaneVerdict, row: { oldVersion?: string; registryVersion
 export function renderDoctorReport(report: DoctorReport): string {
     const lines: string[] = [];
     const g = report.global;
-    lines.push(`bili doctor — ${report.packageName} (running v${g.runningVersion})`);
+    lines.push(`sigma doctor — ${report.packageName} (running v${g.runningVersion})`);
     lines.push(`generated ${fmtTime(report.generatedAt)}`);
     lines.push("");
     lines.push("global");

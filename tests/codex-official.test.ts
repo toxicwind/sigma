@@ -63,7 +63,7 @@ test("Codex official transport preserves OAuth headers, decodes bodies, and reba
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     const sessionId = "019fdc81-a420-7a00-bbd1-0a64e3eb772c";
     const requestBody = {
         model: "gpt-5",

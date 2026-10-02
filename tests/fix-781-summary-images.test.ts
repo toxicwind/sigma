@@ -13,7 +13,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { listSessions } from "../src/session.ts";
 import { IMAGE_PLACEHOLDER, imagePlaceholders, messageImages } from "../src/image-note.ts";
 
-// Issue #781: renderRange only read m.text while images ride BiliMessage
+// Issue #781: renderRange only read m.text while images ride SigmaMessage
 // sidecars — so every image in a folded range vanished from the tier-1 summary
 // input (openai image-only messages were skipped outright, responses dropped
 // image-only items at toCore, anthropic left a bare information-free "[image]").
@@ -191,7 +191,7 @@ async function startProxy(upstreamPort: number, model: string, path: string): Pr
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
-    return { proxy, url: `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}${path}` };
+    return { proxy, url: `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}${path}` };
 }
 
 async function closeAll(...servers: http.Server[]): Promise<void> {

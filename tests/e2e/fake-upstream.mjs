@@ -1,9 +1,9 @@
 // Deterministic fake Responses-API upstream for the real-codex E2E (#686): drives
-// REAL `codex` through bili so compression ACTUALLY happens in-process, no model/network.
+// REAL `codex` through sigma so compression ACTUALLY happens in-process, no model/network.
 // Two contracts observed against codex-cli 0.147.0:
 //   stream:true -> Responses SSE assistant turn; stream:false -> plain JSON body, which
-//   bili's summarization call parses via extractSummaryText -> json.output[].content[].text.
-// A summarization request is recognised by bili's exact TASK text in `instructions`; its
+//   sigma's summarization call parses via extractSummaryText -> json.output[].content[].text.
+// A summarization request is recognised by sigma's exact TASK text in `instructions`; its
 // reply is a faithful summary preserving the sentinel numbers found in the segment.
 // Every /v1/responses request is appended to FAKE_REQLOG (JSONL) as the assertion oracle.
 
@@ -60,7 +60,7 @@ function buildFakeSummary(content) {
 	return text;
 }
 
-// Only bili's summarization calls carry this exact task text in instructions.
+// Only sigma's summarization calls carry this exact task text in instructions.
 function isSummaryRequest(parsed) {
 	const ins = typeof parsed.instructions === "string" ? parsed.instructions : "";
 	return /must be compressed because the session context exceeds|Write a \*?\*?(tier-1|\d+-tier) compression summary/.test(ins);

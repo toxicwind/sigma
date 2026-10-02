@@ -147,7 +147,7 @@ test("getSession: evicts an idle session to make room when at MAX", () => {
 });
 
 test("getSession: evict-then-revisit reload enforces MAX_SESSIONS (#1064)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-sesscap-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-sesscap-"));
     _setStoreForTest(new SessionStore({ dir, debounceMs: 5, enabled: true }));
     _resetSessionsForTest(1);
     try {

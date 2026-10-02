@@ -5,7 +5,7 @@
 // line diff of the change — instead of letting the changed head invalidate the
 // whole cached prefix. Also covers the interop contract: a third-party client
 // that already implements its own version (constant system + in-history update
-// messages) must pass through with ZERO bili-side injection — and that
+// messages) must pass through with ZERO sigma-side injection — and that
 // plugin-mode agents are never anchored at all (owner scope: plain-proxy only).
 // Session D (anthropic wire): client-sent cache_control breakpoints must ride
 // on the SAME logical blocks across turns and never land on an injected note
@@ -128,8 +128,8 @@ test("e2e #1085: changed head system stays anchored; updates ride as trailing no
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const chatUrl = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
-    const respUrl = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`;
+    const chatUrl = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+    const respUrl = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`;
 
     async function chatTurn(sessionId: string, model: string, body: Record<string, unknown>): Promise<string> {
         const res = await fetch(chatUrl, {
@@ -177,7 +177,7 @@ test("e2e #1085: changed head system stays anchored; updates ride as trailing no
 
         // --- Session B: interop — a third-party client already keeps its system
         // constant and records instruction changes as ordinary in-history user
-        // messages (opencode-style). bili must add NOTHING of its own. ---
+        // messages (opencode-style). sigma must add NOTHING of its own. ---
         const SYS_T = "THIRD-PARTY-CONSTANT-SYSTEM";
         const TP_UPDATE = "These instructions replace all previously loaded ambient instructions.\n\nNEW-RULES-FROM-CLIENT";
         const histB: ChatMsg[] = [];
@@ -190,7 +190,7 @@ test("e2e #1085: changed head system stays anchored; updates ride as trailing no
         const [b1, b2, b3] = captured.slice(3, 6);
         assert.ok(b1 && b2 && b3, "expected 3 captured interop requests");
         for (const [i, body] of [b1!, b2!, b3!].entries()) {
-            assert.equal(markerMessages(body).length, 0, `interop request ${i + 1}: bili must not inject its own update notes`);
+            assert.equal(markerMessages(body).length, 0, `interop request ${i + 1}: sigma must not inject its own update notes`);
             assert.equal(leadingSystem(body), leadingSystem(b1!), "interop head system must stay byte-identical across turns");
         }
         // Parse before substring checks: the raw body is JSON, where newlines
@@ -245,7 +245,7 @@ test("e2e #1085: changed head system stays anchored; updates ride as trailing no
         // (>=70% shared lines) so the anchor is kept and a diff note appended.
         const SYS_D1 = "ANTHROPIC-AMBIENT-V1\nline two\nline three\nline four";
         const SYS_D2 = "ANTHROPIC-AMBIENT-V2\nline two\nline three\nline four";
-        const antUrl = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+        const antUrl = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
         const CC = { type: "ephemeral" };
         let histD: Array<Record<string, unknown>> = [];
         for (const [sysText, userText] of [[SYS_D1, "d-hello-1"], [SYS_D2, "d-hello-2"], [SYS_D2, "d-hello-3"]] as Array<[string, string]>) {
@@ -309,12 +309,12 @@ test("e2e #1085: changed head system stays anchored; updates ride as trailing no
 
         // --- Session E: plugin-mode agent — anchoring is plain-proxy scope
         // only (#1085 owner decision); a registered agent keeps full control
-        // of its own head, so bili must forward changes verbatim, no notes. ---
+        // of its own head, so sigma must forward changes verbatim, no notes. ---
         const histE: ChatMsg[] = [];
         async function pluginTurn(body: Record<string, unknown>): Promise<string> {
             const res = await fetch(chatUrl, {
                 method: "POST",
-                headers: { "content-type": "application/json", "x-acp-session": "plugin-e2e", "x-bili-plugin": "e2e-agent" },
+                headers: { "content-type": "application/json", "x-acp-session": "plugin-e2e", "x-sigma-plugin": "e2e-agent" },
                 body: JSON.stringify({ model: "gpt-test", stream: false, ...body }),
             });
             if (!res.ok) throw new Error(`plugin turn failed: HTTP ${res.status}: ${await res.text()}`);

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    BILI_ACP_TOOLS_ANTHROPIC,
-    BILI_ACP_TOOLS_OPENAI,
-    BILI_ACP_TOOLS_RESPONSES,
-    BILI_ACP_TOOLS_GOOGLE,
+    SIGMA_ACP_TOOLS_ANTHROPIC,
+    SIGMA_ACP_TOOLS_OPENAI,
+    SIGMA_ACP_TOOLS_RESPONSES,
+    SIGMA_ACP_TOOLS_GOOGLE,
 } from "../src/compress-tool.js";
 
 /**
@@ -14,7 +14,7 @@ import {
  * uses (a) a union `type` array (e.g. `type: ["array", "string"]`) or (b) an
  * `anyOf` alternative without an explicit scalar `type`. The kernel fix
  * (acp-kernel #448, released 0.0.95) replaced both with explicit typed
- * alternatives; this test walks Bili's full outgoing ACP tool surface across
+ * alternatives; this test walks Sigma's full outgoing ACP tool surface across
  * all four wire shapes so a schema regression fails here instead of in
  * production traffic to Copilot Gemini.
  */
@@ -49,10 +49,10 @@ function schemaOf(tool: {
 }
 
 const surfaces: ReadonlyArray<readonly [string, ReadonlyArray<{ name?: string; function?: { name?: string } } | unknown>]> = [
-    ["anthropic", BILI_ACP_TOOLS_ANTHROPIC as unknown as ReadonlyArray<unknown>],
-    ["openai", BILI_ACP_TOOLS_OPENAI as unknown as ReadonlyArray<unknown>],
-    ["responses", BILI_ACP_TOOLS_RESPONSES as unknown as ReadonlyArray<unknown>],
-    ["google", BILI_ACP_TOOLS_GOOGLE as unknown as ReadonlyArray<unknown>],
+    ["anthropic", SIGMA_ACP_TOOLS_ANTHROPIC as unknown as ReadonlyArray<unknown>],
+    ["openai", SIGMA_ACP_TOOLS_OPENAI as unknown as ReadonlyArray<unknown>],
+    ["responses", SIGMA_ACP_TOOLS_RESPONSES as unknown as ReadonlyArray<unknown>],
+    ["google", SIGMA_ACP_TOOLS_GOOGLE as unknown as ReadonlyArray<unknown>],
 ];
 
 for (const [wire, tools] of surfaces) {

@@ -1,7 +1,7 @@
 // Shared /acp command hooks for the OpenCode 1.x plugin surface (V1 `.server()`
 // hooks). Extracted from src/agent/opencode.ts so both deployments register
-// the identical command: the launcher-gated plugin (BILLION_CONTEXT_PROXY set
-// by `bili opencode`) and the native V1 entry (src/agent/opencode-native.ts,
+// the identical command: the launcher-gated plugin (SIGMA_PROXY set
+// by `sigma opencode`) and the native V1 entry (src/agent/opencode-native.ts,
 // self-spawned/attached proxy whose origin resolves asynchronously).
 //
 // The proxy base is read through a getter because the native entry learns its
@@ -54,7 +54,7 @@ export async function showAcpText(ctx: { client?: OpencodeClient }, sid: string,
     // Direct method call — `const p = ctx.client.session.prompt; p(...)` loses `this` (this._client) and throws.
     const session = ctx.client?.session;
     if (!session || typeof session.prompt !== "function") {
-        console.error("[bili-opencode] /acp render failed: session.prompt unavailable");
+        console.error("[sigma-opencode] /acp render failed: session.prompt unavailable");
         return;
     }
     try {
@@ -63,7 +63,7 @@ export async function showAcpText(ctx: { client?: OpencodeClient }, sid: string,
             body: { noReply: true, parts: [{ type: "text", text, ignored: true }] },
         });
     } catch (err) {
-        console.error(`[bili-opencode] /acp render failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`[sigma-opencode] /acp render failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -77,7 +77,7 @@ export function createAcpCommandHooks(getProxyBase: () => string | undefined, ct
             opencodeConfig.command ??= {};
             opencodeConfig.command["acp"] = {
                 template: "",
-                description: "Show ACP status (billion-context proxy)",
+                description: "Show ACP status (sigma proxy)",
             };
             // #1146: same report as the acp_cache tool; the [acp-cache] wrap at
             // render time is what lets the proxy strip it from model context
@@ -94,8 +94,8 @@ export function createAcpCommandHooks(getProxyBase: () => string | undefined, ct
             let text: string;
             if (proxyBase === undefined || proxyBase.length === 0) {
                 text = input.command === "acp-cache"
-                    ? "bili: no bili proxy detected — /acp-cache needs the proxy to run the cache report (launch opencode through `bili opencode` or install the native plugin)"
-                    : "bili: proxy not running (native bootstrap failed) — model traffic goes direct";
+                    ? "sigma: no sigma proxy detected — /acp-cache needs the proxy to run the cache report (launch opencode through `sigma opencode` or install the native plugin)"
+                    : "sigma: proxy not running (native bootstrap failed) — model traffic goes direct";
             } else if (input.command === "acp-cache") {
                 const toolArgs = /(^|\s)(--)?full(\s|$)/.test(input.arguments ?? "") ? { detail: "full" as const } : {};
                 try {
@@ -104,11 +104,11 @@ export function createAcpCommandHooks(getProxyBase: () => string | undefined, ct
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
                     text = msg.includes("no model request has arrived")
-                        ? "bili: no ACP session yet for this conversation (send a model request first, then run /acp-cache)"
-                        : `bili: cache report failed (${msg})`;
+                        ? "sigma: no ACP session yet for this conversation (send a model request first, then run /acp-cache)"
+                        : `sigma: cache report failed (${msg})`;
                     await showAcpText(ctx, sid, text);
                 }
-                throw new Error("__BILI_ACP_HANDLED__");
+                throw new Error("__SIGMA_ACP_HANDLED__");
             } else {
                 try {
                     const res = await fetch(`${proxyBase}/__bili/plugin/status?conversationId=${encodeURIComponent(sid)}&fallback=latest`);
@@ -125,14 +125,14 @@ export function createAcpCommandHooks(getProxyBase: () => string | undefined, ct
                         }
                         text = version !== undefined ? armedIdleNotice(version) : noSessionWarning();
                     } else {
-                        text = "bili: proxy returned no status panel";
+                        text = "sigma: proxy returned no status panel";
                     }
                 } catch (err) {
-                    text = `bili: /acp failed (${err instanceof Error ? err.message : String(err)})`;
+                    text = `sigma: /acp failed (${err instanceof Error ? err.message : String(err)})`;
                 }
             }
             await showAcpText(ctx, sid, text);
-            throw new Error("__BILI_ACP_HANDLED__");
+            throw new Error("__SIGMA_ACP_HANDLED__");
         },
     };
 }

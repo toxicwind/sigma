@@ -1,6 +1,6 @@
 # 匿名请求的会话身份判定
 
-设计记录:billion-context 如何判定一个**匿名**请求(无 `session_id` 头或 body
+设计记录:sigma 如何判定一个**匿名**请求(无 `session_id` 头或 body
 字段、无 `prompt_cache_key`)属于哪个会话。在 tail-window reattach 移除(#1115)
 之后撰写,作为未来参考。实现:`src/prefix-affinity.ts`;行为测试:
 `tests/truncation-fork.test.ts`、`tests/prefix-affinity.test.ts`。

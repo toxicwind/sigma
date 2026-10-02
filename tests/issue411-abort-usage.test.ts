@@ -101,7 +101,7 @@ async function startRig(mode: UpstreamMode = "drip"): Promise<Rig> {
     return {
         proxyPort,
         proxyUrl: (path) => `http://127.0.0.1:${proxyPort}${path}`,
-        modelUrl: () => `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+        modelUrl: () => `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
         closeAll: async () => {
             await close(proxy);
             await close(upstream);

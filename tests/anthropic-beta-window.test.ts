@@ -107,7 +107,7 @@ async function startRig(): Promise<Rig> {
 }
 
 function url(rig: Rig): string {
-    return `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+    return `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
 }
 
 // The EMERGENCY nudge is rendered as a trailing user message whose text begins
@@ -182,7 +182,7 @@ test("plugin: effectiveContextLimit honors anthropic-beta context-1m, per-reques
         const base: Record<string, string> = {
             "content-type": "application/json",
             "x-acp-session": "plugin-sess",
-            "x-bili-plugin": "test-agent",
+            "x-sigma-plugin": "test-agent",
         };
         // With the beta header → the window reported to the plugin is 1M.
         await (await fetch(url(rig), { method: "POST", headers: { ...base, "anthropic-beta": BETA }, body: JSON.stringify({ model: MODEL, max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }) })).text();

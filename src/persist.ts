@@ -34,14 +34,14 @@ import type { WireProtocol } from "./util.js";
  *    debounced writes keep the on-disk state within ~debounce of in-memory.
  *  - Forward-compat: `mergeState` fills any fields missing on a file written
  *    by an older version, so a schema change never breaks old files.
- *  - Disable with BILI_PERSIST=0 for ephemeral/test runs.
+ *  - Disable with SIGMA_PERSIST=0 for ephemeral/test runs.
  *  - Storage encoding at rest: via the kernel store's codec hook, every file
- *    is optionally zstd-compressed when BILI_PERSIST_ZSTD=1/true (default
- *    off — plain JSON; #1080, BILIZSTD1 envelope) and, independently,
+ *    is optionally zstd-compressed when SIGMA_PERSIST_ZSTD=1/true (default
+ *    off — plain JSON; #1080, SIGMAZSTD1 envelope) and, independently,
  *    AES-256-GCM-encrypted when
- *    BILI_ENCRYPTION_KEY (hex/base64, exactly 32 bytes) is set (#708,
- *    BILIENC1 envelope) — the body-mode byte records compression even inside
- *    BILIENC1, so the two stay separately configurable. Legacy plaintext
+ *    SIGMA_ENCRYPTION_KEY (hex/base64, exactly 32 bytes) is set (#708,
+ *    SIGMAENC1 envelope) — the body-mode byte records compression even inside
+ *    SIGMAENC1, so the two stay separately configurable. Legacy plaintext
  *    files are NEVER rewritten at boot (downgrade safety — see
  *    sweepStaleTemps); they convert organically on their next save. Key
  *    material never touches disk or logs.
@@ -62,7 +62,7 @@ import type { WireProtocol } from "./util.js";
  *  - No fsync of temp file or directory entry — a power loss can lose the
  *    most recent debounce window. Process crashes (SIGKILL) are safe up to
  *    the last successful write.
- *  - No cross-process lock — two proxy processes sharing BILI_SESSIONS_DIR
+ *  - No cross-process lock — two proxy processes sharing SIGMA_SESSIONS_DIR
  *    will clobber each other's writes. Single-instance only.
  *  - All writes within a process are serialized per-session by the kernel
  *    store's write chains; there is no per-session *request* serialization
@@ -75,7 +75,7 @@ import type { WireProtocol } from "./util.js";
 const PERSIST_VERSION = 3;
 /** Dotfile (invisible to the kernel's .json walk): written after the first
  *  successful #286 migration pass so later boots skip the scan entirely. */
-const MIGRATION_MARKER = ".bili-migration-286.done";
+const MIGRATION_MARKER = ".sigma-migration-286.done";
 
 const STALE_WARN_THROTTLE_MS = 60_000;
 
@@ -141,7 +141,7 @@ interface PersistedSession {
     blockContents: Record<string, BlockContent>;
     /** Latest folded-view conversation snapshot (v3+): prune() rendered
      *  summaries in place of folded ranges, then truncated to the newest
-     *  BILI_PERSIST_TAIL_TOKENS tokens (#401) — the raw full history is NOT
+     *  SIGMA_PERSIST_TAIL_TOKENS tokens (#401) — the raw full history is NOT
      *  persisted (it duplicated 63% of the corpus; originals of folded
      *  ranges remain available offline via blockContents). Absent on v2
      *  files and when the tail budget is 0 — export falls back to
@@ -241,17 +241,17 @@ export class SessionStore {
         this.log = baseLog;
         // #708/#1080: env-only storage policy (a key file next to the data
         // sits on the same untrusted filesystem). Compression is OPT-IN
-        // (owner decision, #1080): BILI_PERSIST_ZSTD=1/true enables it, the
+        // (owner decision, #1080): SIGMA_PERSIST_ZSTD=1/true enables it, the
         // default stays plain JSON. Invalid key values throw here — fail
         // fast at startup instead of running silently unencrypted.
-        const keyEnv = process.env.BILI_ENCRYPTION_KEY;
+        const keyEnv = process.env.SIGMA_ENCRYPTION_KEY;
         let key: Buffer | null = null;
         if (keyEnv) key = parseEncryptionKey(keyEnv);
         this.codec = createStorageCodec({ key, compress: persistZstdEnabled() });
         if (key) {
             baseLog("info", "[persist] session-file encryption enabled (AES-256-GCM)");
         } else if (this.codec) {
-            baseLog("info", "[persist] session-file compression enabled (zstd, BILIZSTD1)");
+            baseLog("info", "[persist] session-file compression enabled (zstd, SIGMAZSTD1)");
         }
         const epermAlert = new PersistEpermAlert({
             dir: this.dir,
@@ -561,7 +561,7 @@ export class SessionStore {
         try {
             const raw = await readFile(file);
             // Format-agnostic (GC #1082 review): try plain JSON first, then any
-            // codec framing (BILIENC1 encryption, plus opt-in zstd body per
+            // codec framing (SIGMAENC1 encryption, plus opt-in zstd body per
             // #1083). Enumerating magic bytes here would re-create the cross-PR
             // drift this method exists to avoid — every new on-disk frame would
             // silently no-op the sweep. Framed files fail the utf8 parse on
@@ -577,7 +577,7 @@ export class SessionStore {
     }
 
     /** #405 fix #4: dual-instance rollback guard. When two proxy processes
-     *  share BILI_SESSIONS_DIR, whoever saves last used to win — an instance
+     *  share SIGMA_SESSIONS_DIR, whoever saves last used to win — an instance
      *  holding a STALE in-memory copy would roll counters back (requests:3 →
      *  2). Both signals below are monotonic per session id, so either being
      *  strictly smaller proves staleness. Returns the fresher-on-disk payload
@@ -608,7 +608,7 @@ export class SessionStore {
                 this.staleWarnAt.set(record.id, now);
                 this.log(
                     "warn",
-                    `[persist] rejected stale snapshot for session ${record.id}: in-memory copy is older than the on-disk one (another bili instance holds newer state) — keeping disk state, no rollback (#405)`,
+                    `[persist] rejected stale snapshot for session ${record.id}: in-memory copy is older than the on-disk one (another sigma instance holds newer state) — keeping disk state, no rollback (#405)`,
                 );
             }
             // Rewrite the disk's own payload: content-identical no-op that
@@ -794,7 +794,7 @@ function defaultDir(): string {
 }
 
 function defaultDebounce(): number {
-    const env = process.env.BILI_PERSIST_DEBOUNCE_MS;
+    const env = process.env.SIGMA_PERSIST_DEBOUNCE_MS;
     if (env) {
         const n = Number.parseInt(env, 10);
         if (Number.isFinite(n) && n >= 0) return n;
@@ -803,17 +803,17 @@ function defaultDebounce(): number {
 }
 
 function persistEnabled(): boolean {
-    const env = process.env.BILI_PERSIST;
+    const env = process.env.SIGMA_PERSIST;
     if (env === "0" || env === "false") return false;
     return true;
 }
 
 /** #1080 (owner decision): session files stay plain JSON by default —
  *  recoverability (jq/grep-debuggable, no downgrade tail risk) beats silent
- *  disk savings. Only BILI_PERSIST_ZSTD=1/true opts into zstd (BILIZSTD1);
+ *  disk savings. Only SIGMA_PERSIST_ZSTD=1/true opts into zstd (SIGMAZSTD1);
  *  anything else (0/false/unset) keeps plain JSON. */
 function persistZstdEnabled(): boolean {
-    const env = process.env.BILI_PERSIST_ZSTD;
+    const env = process.env.SIGMA_PERSIST_ZSTD;
     return env === "1" || env === "true";
 }
 
@@ -839,11 +839,11 @@ async function walkJsonFiles(dir: string): Promise<string[]> {
 
 /** Token budget for the persisted folded-view snapshot (#401). The raw full
  *  history is never persisted — prune() first replaces folded ranges with
- *  their summaries (exactly what `bili export` renders by default), then the
+ *  their summaries (exactly what `sigma export` renders by default), then the
  *  OLDEST messages are dropped until the view fits. 0 disables message
  *  persistence entirely (block summaries + blockContents survive). */
 function persistTailTokens(): number {
-    const env = process.env.BILI_PERSIST_TAIL_TOKENS;
+    const env = process.env.SIGMA_PERSIST_TAIL_TOKENS;
     if (env) {
         const n = Number.parseInt(env, 10);
         if (Number.isFinite(n) && n >= 0) return n;
@@ -879,7 +879,7 @@ function boundedFoldedSnapshot(session: Session): CoreMessage[] | undefined {
 }
 
 function epermAlertThreshold(): number {
-    const env = process.env.BILI_PERSIST_EPERM_ALERT_THRESHOLD;
+    const env = process.env.SIGMA_PERSIST_EPERM_ALERT_THRESHOLD;
     if (env) {
         const n = Number.parseInt(env, 10);
         if (Number.isFinite(n) && n > 0) return n;
@@ -888,7 +888,7 @@ function epermAlertThreshold(): number {
 }
 
 function epermAlertRepeatMs(): number {
-    const env = process.env.BILI_PERSIST_EPERM_ALERT_REPEAT_MS;
+    const env = process.env.SIGMA_PERSIST_EPERM_ALERT_REPEAT_MS;
     if (env) {
         const n = Number.parseInt(env, 10);
         if (Number.isFinite(n) && n >= 0) return n;

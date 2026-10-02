@@ -57,17 +57,17 @@ jobs:
               run: |
                   npm pack
                   PR_NUM="${{ github.event.pull_request.number }}"
-                  TARBALL=$(ls billion-context-*.tgz | head -1)
+                  TARBALL=$(ls sigma-*.tgz | head -1)
                   if [ -n "$PR_NUM" ] && [ -n "$TARBALL" ]; then
-                    cp "$TARBALL" "billion-context-pr${PR_NUM}.tgz"
+                    cp "$TARBALL" "sigma-pr${PR_NUM}.tgz"
                   fi
 
             - name: Upload artifact
               uses: actions/upload-artifact@v4
               with:
-                  name: billion-context-pr-${{ github.event.pull_request.number }}
+                  name: sigma-pr-${{ github.event.pull_request.number }}
                   path: |
-                      billion-context-pr*.tgz
+                      sigma-pr*.tgz
                       dist/
                   retention-days: 30
 
@@ -98,7 +98,7 @@ jobs:
                           '### Option A — Install this exact build (recommended)',
                           '',
                           '```bash',
-                          'npm install -g billion-context@' + publishedVersion,
+                          'npm install -g sigma@' + publishedVersion,
                           '```',
                           '',
                           'This exact version is immutable and reproducible. The rolling `pr` tag tracks the newest test build across all PRs.',
@@ -110,7 +110,7 @@ jobs:
                           '2. Extract the tarball and install:',
                           '',
                           '```bash',
-                          'tar xzf billion-context-pr' + prNumber + '.tgz',
+                          'tar xzf sigma-pr' + prNumber + '.tgz',
                           'npm install -g package',
                           '```',
                           '',

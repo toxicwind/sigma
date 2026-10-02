@@ -1,25 +1,25 @@
 // Native dsh (deepseek-harness) cordis plugin (#941): full plugin-mode
 // compression for dsh WITHOUT a launcher — bare `dsh` with this plugin
-// installed via `bili plugin install dsh` (cordis.patch.yml entry) or
-// injected by the `bili dsh` launcher through the same --patch overlay that
+// installed via `sigma plugin install dsh` (cordis.patch.yml entry) or
+// injected by the `sigma dsh` launcher through the same --patch overlay that
 // used to carry dsh-acp.ts. Architecture mirrors pi-native.ts:
-//   1. plan: attach (BILLION_CONTEXT_ATTACH ?? BILLION_CONTEXT_PROXY — the
+//   1. plan: attach (SIGMA_ATTACH ?? SIGMA_PROXY — the
 //      launcher preset, or a user-supplied external proxy; #983: the preset
 //      is probed and a dead one falls back to spawn; #1130: runtime death of
 //      the shared proxy re-runs the same probe+fallback) or spawn the
 //      package's own proxy (ensureProxyRunning, ephemeral port, parent-pid
 //      watchdog = this dsh process);
 //   2. patch globalThis.fetch (native-intercept.ts) — model-API URLs are
-//      rewritten to `<proxy>/bili/<url>` in BOTH modes (attach shares
+//      rewritten to `<proxy>/sigma/<url>` in BOTH modes (attach shares
 //      #809 rewrite semantics; a loopback proxy target is never proxied,
-//      so launcher MITM envs are simply bypassed); already-routed `/bili/`
+//      so launcher MITM envs are simply bypassed); already-routed `/sigma/`
 //      URLs pass through untouched except for header stamping;
 //   3. register the proxy's tool manifest (compress/decompress/acp_status)
 //      as native dsh tools — parameters pass through verbatim (the manifest
 //      serves real JSON Schema, and ctx.tools.register projects
 //      definition.parameters as-is onto the wire);
 //   4. headersFor gates plugin mode exactly like pi.ts's
-//      before_provider_headers stamp: no x-bili-plugin headers until the
+//      before_provider_headers stamp: no x-sigma-plugin headers until the
 //      tools are registered, so round 1 rides the proxy's wire mode instead
 //      of arriving tool-less. The conversation id comes from
 //      ctx.agents.currentInitiator() — dsh's AsyncLocalStorage attribution,
@@ -40,7 +40,7 @@ import { markNativeHost, nativeAttachOrigin, nativeBootstrapGate, nativeProxyScr
 import { installNativeFetchIntercept, noteRoutedOrigin, observeRoutedOrigin, type NativeInterceptState } from "./native-intercept.js";
 import { fetchManifest, fetchProxyVersion, fetchStatus, fetchStatusLatest, forwardTool, reportRuntimeInfo, waitForProxyVersion, type ManifestTool } from "./shared.js";
 
-export const name = "bili-native";
+export const name = "sigma-native";
 export const inject = ["tools", "commands", "agents"];
 
 const RETRY_INTERVAL_MS = 10000;
@@ -72,19 +72,19 @@ type PluginContext = {
 
 /** Decides whether the native bootstrap should run in this process. */
 export function shouldBootstrapNativeDsh(env: NodeJS.ProcessEnv): boolean {
-    return nativeBootstrapGate(env, "BILI_NATIVE_DSH");
+    return nativeBootstrapGate(env, "SIGMA_NATIVE_DSH");
 }
 
 /** Native posture (#809 precedence, opencode plan shape): kill-switches >
- *  attach (BILLION_CONTEXT_ATTACH ?? BILLION_CONTEXT_PROXY) > spawn. A preset
- *  BILLION_CONTEXT_PROXY is the `bili dsh` launcher (or a user attach):
+ *  attach (SIGMA_ATTACH ?? SIGMA_PROXY) > spawn. A preset
+ *  SIGMA_PROXY is the `sigma dsh` launcher (or a user attach):
  *  routing is already owned (proxy envs / settings overlay), so we attach —
  *  probe first (#983), stamp plugin headers, rewrite raw model URLs like
  *  spawn mode, and fall back to spawning when the attach target is dead
  *  (at startup, #983, or at runtime, #1130). */
 export function planNativeDsh(env: NodeJS.ProcessEnv): { mode: "off" | "attach" | "spawn"; attachOrigin?: string } {
-    if (env.BILLION_CONTEXT_PLUGIN === "0" || env.BILI_NATIVE_DSH === "0") return { mode: "off" };
-    if (env.BILI_PROVIDER_REWRITES !== undefined) return { mode: "off" };
+    if (env.SIGMA_PLUGIN === "0" || env.SIGMA_NATIVE_DSH === "0") return { mode: "off" };
+    if (env.SIGMA_PROVIDER_REWRITES !== undefined) return { mode: "off" };
     const attachOrigin = nativeAttachOrigin(env) ?? proxyEnvOrigin(env);
     if (attachOrigin !== undefined) return { mode: "attach", attachOrigin };
     return { mode: "spawn" };
@@ -179,7 +179,7 @@ function errMessage(err: unknown): string {
 // #1158: GUI hosts swallow process stderr, so a bootstrap failure that only
 // console.errors vanishes together with the symptom it causes (silent
 // direct-send degradation — zero interception, zero trace). Append the same
-// fact to the shared bili.log in the proxy's own line shape, origin-marked
+// fact to the shared sigma.log in the proxy's own line shape, origin-marked
 // [dsh-client], best-effort: a failed append must never break the host.
 // appendFileSync reopens by path on every call, so the proxy's 10MB rotation
 // (rename to .old) can't strand these writes on a renamed inode.
@@ -201,7 +201,7 @@ async function bootstrap(): Promise<string | undefined> {
         );
         state.origin = handle.origin;
         register.base = handle.origin;
-        // #983: do NOT write BILLION_CONTEXT_PROXY — dsh has no reader for it
+        // #983: do NOT write SIGMA_PROXY — dsh has no reader for it
         // here (tools use register.base, /acp uses it too), and a frozen env
         // turns a later same-process re-apply (cordis deactivate/reactivate)
         // into an unverified attach to a possibly-dead origin. Reuse across
@@ -210,7 +210,7 @@ async function bootstrap(): Promise<string | undefined> {
     } catch (err) {
         const msg = `proxy bootstrap failed — model traffic goes direct (uncompressed): ${errMessage(err)}`;
         persistClientEvent(msg);
-        console.error(`bili-native-dsh: ${msg}`);
+        console.error(`sigma-native-dsh: ${msg}`);
         return undefined;
     }
 }
@@ -227,17 +227,17 @@ export function _setSpawnForTest(fn?: () => Promise<string | undefined>): void {
 }
 
 /** #983/#1130/#1365: the attached origin can go stale — at startup (the
- *  `bili dsh` launcher's proxy died, or a pre-#983 build froze its spawned
+ *  `sigma dsh` launcher's proxy died, or a pre-#983 build froze its spawned
  *  origin into process.env and cordis re-activated this plugin in the same
  *  process) or at runtime (the owning launcher of a SHARED proxy exits while
  *  this session still rides it). Probe before trusting it: healthy → attach
- *  as planned. DEAD + routed-channel evidence (#1365: /bili/-baked model
+ *  as planned. DEAD + routed-channel evidence (#1365: /sigma/-baked model
  *  traffic was observed at some origin) → the session's context lives at
  *  THAT origin, so wait for the pinned target to come back (bounded by
- *  BILI_ATTACH_HEALTH_DEADLINE_MS) instead of spawning — a second instance
+ *  SIGMA_ATTACH_HEALTH_DEADLINE_MS) instead of spawning — a second instance
  *  would serve tools while the model channel stays pinned elsewhere and
- *  every bili tool call 404s against it (unrecoverable split). DEAD with no
- *  evidence after the grace window (BILI_ATTACH_EVIDENCE_GRACE_MS) → unfreeze
+ *  every sigma tool call 404s against it (unrecoverable split). DEAD with no
+ *  evidence after the grace window (SIGMA_ATTACH_EVIDENCE_GRACE_MS) → unfreeze
  *  the preset env and fall back to spawning our own proxy (instance
  *  discovery may find another healthy one first). Resolves to the origin the
  *  plugin should use — the (recovered) attach origin, the fallback origin,
@@ -263,20 +263,20 @@ async function verifyAttachAndRecover(attachOrigin: string): Promise<string | un
             state.origin = back;
             register.base = back;
             persistClientEvent(`attach target ${pinned} recovered while waiting — attached, no second instance spawned`);
-            console.log(`bili-native-dsh: attach target ${pinned} is healthy again — attached, no second instance spawned`);
+            console.log(`sigma-native-dsh: attach target ${pinned} is healthy again — attached, no second instance spawned`);
             return back;
         }
         persistClientEvent(`attach target ${pinned} unreachable within the health deadline — NOT spawning a second instance (model channel is pinned to it); re-checks continue`);
-        console.error(`bili-native-dsh: attach target ${pinned} is down and this process's model channel is pinned to it — refusing to spawn a second instance (bili tools would 404 against the other one). Start your proxy at ${pinned} or unset BILLION_CONTEXT_PROXY; bili keeps re-checking and self-heals when it comes back.`);
+        console.error(`sigma-native-dsh: attach target ${pinned} is down and this process's model channel is pinned to it — refusing to spawn a second instance (sigma tools would 404 against the other one). Start your proxy at ${pinned} or unset SIGMA_PROXY; sigma keeps re-checking and self-heals when it comes back.`);
         register.base = undefined;
         register.toolsReady = false;
         return undefined;
     }
     persistClientEvent(`attach target ${attachOrigin} is not healthy — falling back to a spawned proxy`);
-    console.error(`bili-native-dsh: attach target ${attachOrigin} is not healthy — falling back to a spawned proxy`);
-    // Unfreeze: only the preset (BILLION_CONTEXT_PROXY) freezes future
-    // plans; an explicit BILLION_CONTEXT_ATTACH never touches the preset.
-    delete process.env.BILLION_CONTEXT_PROXY;
+    console.error(`sigma-native-dsh: attach target ${attachOrigin} is not healthy — falling back to a spawned proxy`);
+    // Unfreeze: only the preset (SIGMA_PROXY) freezes future
+    // plans; an explicit SIGMA_ATTACH never touches the preset.
+    delete process.env.SIGMA_PROXY;
     state.attach = false;
     state.origin = undefined;
     markNativeHost(process.env, "dsh");
@@ -315,11 +315,11 @@ function toolDefinition(tool: ManifestTool): ToolDefinition {
             // the origin, and a captured base would keep firing at a dead port.
             const base = register.base;
             if (base === undefined) {
-                throw new Error("bili: proxy is down — recovery in progress, retry shortly");
+                throw new Error("sigma: proxy is down — recovery in progress, retry shortly");
             }
             const sid = exec.agent?.session?.id;
             if (typeof sid !== "string" || sid.length === 0) {
-                throw new Error(`bili tool ${tool.name} requires an owning agent session`);
+                throw new Error(`sigma tool ${tool.name} requires an owning agent session`);
             }
             return forwardTool(base, sid, tool.name, args, exec.signal);
         },
@@ -345,7 +345,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
                 return;
             }
             register.retryAt = Date.now() + RETRY_INTERVAL_MS;
-            console.error(`bili-native-dsh: manifest registration failed (${errMessage(err)}) — retrying; requests stay in wire mode until it succeeds`);
+            console.error(`sigma-native-dsh: manifest registration failed (${errMessage(err)}) — retrying; requests stay in wire mode until it succeeds`);
         })
         .finally(() => {
             register.pending = undefined;
@@ -410,7 +410,7 @@ async function statusOutcome(ctx: PluginContext): Promise<CommandOutcome> {
     if (!base) {
         return {
             kind: "error",
-            text: "bili: no proxy detected — install via `bili plugin install dsh` or launch through `bili dsh`.",
+            text: "sigma: no proxy detected — install via `sigma plugin install dsh` or launch through `sigma dsh`.",
         };
     }
     maybeRetry(ctx);
@@ -432,19 +432,19 @@ async function statusOutcome(ctx: PluginContext): Promise<CommandOutcome> {
         const version = await fetchProxyVersion(base);
         return {
             kind: "success",
-            text: `billion-context${version ? `@${version}` : ""} — proxy connected, compression armed. Runtime info${typeof ri.source === "string" ? ` (${ri.source})` : ""}: ${parts.join(" ")}. No model request yet; send one, then run /acp again for the full panel.`,
+            text: `sigma${version ? `@${version}` : ""} — proxy connected, compression armed. Runtime info${typeof ri.source === "string" ? ` (${ri.source})` : ""}: ${parts.join(" ")}. No model request yet; send one, then run /acp again for the full panel.`,
         };
     }
     const version = await fetchProxyVersion(base);
     if (version) {
         return {
             kind: "success",
-            text: `billion-context@${version} — proxy connected, compression armed. No model request seen yet; send one, then run /acp again.`,
+            text: `sigma@${version} — proxy connected, compression armed. No model request seen yet; send one, then run /acp again.`,
         };
     }
     return {
         kind: "error",
-        text: `bili: proxy not reachable at ${base} — is the bili proxy still running?`,
+        text: `sigma: proxy not reachable at ${base} — is the sigma proxy still running?`,
     };
 }
 
@@ -458,7 +458,7 @@ async function cacheOutcome(ctx: PluginContext): Promise<CommandOutcome> {
     if (!base) {
         return {
             kind: "error",
-            text: "bili: no proxy detected — install via `bili plugin install dsh` or launch through `bili dsh`.",
+            text: "sigma: no proxy detected — install via `sigma plugin install dsh` or launch through `sigma dsh`.",
         };
     }
     maybeRetry(ctx);
@@ -480,11 +480,11 @@ async function cacheOutcome(ctx: PluginContext): Promise<CommandOutcome> {
             version = undefined;
         }
         if (version) {
-            return { kind: "success", text: `billion-context@${version} — proxy connected, compression armed. No model request seen yet; send one, then run /acp-cache again.` };
+            return { kind: "success", text: `sigma@${version} — proxy connected, compression armed. No model request seen yet; send one, then run /acp-cache again.` };
         }
         return {
             kind: "error",
-            text: `bili: proxy not reachable at ${base} — is the bili proxy still running?`,
+            text: `sigma: proxy not reachable at ${base} — is the sigma proxy still running?`,
         };
     }
     try {
@@ -492,9 +492,9 @@ async function cacheOutcome(ctx: PluginContext): Promise<CommandOutcome> {
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("no model request has arrived")) {
-            return { kind: "success", text: "bili: no ACP session yet for this conversation (send a model request first, then run /acp-cache)" };
+            return { kind: "success", text: "sigma: no ACP session yet for this conversation (send a model request first, then run /acp-cache)" };
         }
-        return { kind: "error", text: `bili: cache report failed: ${msg}` };
+        return { kind: "error", text: `sigma: cache report failed: ${msg}` };
     }
 }
 
@@ -532,7 +532,7 @@ export function apply(ctx: PluginContext): void {
                     if (version === undefined || register.base === origin) return;
                     register.base = origin;
                     state.origin = origin;
-                    const line = `bili-native-dsh: model channel pinned to ${origin} — rebinding bili tools there`;
+                    const line = `sigma-native-dsh: model channel pinned to ${origin} — rebinding sigma tools there`;
                     persistClientEvent(line);
                     console.warn(line);
                 });
@@ -584,7 +584,7 @@ export function apply(ctx: PluginContext): void {
                         ? "initiator present but missing session id"
                         : "no active initiator attribution (agentless/background lane, third-party in-process caller, or stale attribution after host resume?)";
             const suffix = prev !== undefined ? ` (state ${prev.state}→${attr.state})` : "";
-            const line = `bili-native-dsh: model request sent DIRECT (uncompressed) — takeover gate refused ${key}: ${reason} — refusals so far: ${count}${suffix}`;
+            const line = `sigma-native-dsh: model request sent DIRECT (uncompressed) — takeover gate refused ${key}: ${reason} — refusals so far: ${count}${suffix}`;
             console.error(line);
             persistClientEvent(line);
         }
@@ -610,7 +610,7 @@ export function apply(ctx: PluginContext): void {
         if (unroutedEndpoints.has(key)) return;
         if (unroutedEndpoints.size >= 256) return;
         unroutedEndpoints.add(key);
-        const line = `bili-native-dsh: request sent DIRECT (uncompressed) — ${key} is not a recognized model endpoint, so bili did not route it through the proxy. bili only compresses known protocol paths (/chat/completions, /v1/messages, /responses, …); a custom-wire endpoint needs its own support.`;
+        const line = `sigma-native-dsh: request sent DIRECT (uncompressed) — ${key} is not a recognized model endpoint, so sigma did not route it through the proxy. sigma only compresses known protocol paths (/chat/completions, /v1/messages, /responses, …); a custom-wire endpoint needs its own support.`;
         console.error(line);
         persistClientEvent(line);
     };
@@ -621,11 +621,11 @@ export function apply(ctx: PluginContext): void {
         const sid = sessionIdOf(ctx);
         if (sid === undefined) return undefined;
         refreshModelInfo(register.base);
-        const headers: Record<string, string> = { "x-bili-plugin": "dsh", "x-bili-plugin-conversation": sid };
+        const headers: Record<string, string> = { "x-sigma-plugin": "dsh", "x-sigma-plugin-conversation": sid };
         if (modelInfo.cached !== undefined) {
-            headers["x-bili-plugin-model"] = modelInfo.cached.model;
-            if (modelInfo.cached.contextWindow !== undefined) headers["x-bili-plugin-context-window"] = String(modelInfo.cached.contextWindow);
-            if (modelInfo.cached.maxOutput !== undefined) headers["x-bili-plugin-max-output"] = String(modelInfo.cached.maxOutput);
+            headers["x-sigma-plugin-model"] = modelInfo.cached.model;
+            if (modelInfo.cached.contextWindow !== undefined) headers["x-sigma-plugin-context-window"] = String(modelInfo.cached.contextWindow);
+            if (modelInfo.cached.maxOutput !== undefined) headers["x-sigma-plugin-max-output"] = String(modelInfo.cached.maxOutput);
         }
         return headers;
     };
@@ -670,7 +670,7 @@ export function apply(ctx: PluginContext): void {
 
     ctx.commands.register({
         name: "acp",
-        description: "Show bili context-compression status",
+        description: "Show sigma context-compression status",
         handler: () => statusOutcome(ctx),
     });
     ctx.commands.register({

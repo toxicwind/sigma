@@ -1,6 +1,6 @@
 /**
  * Tee logger: writes every log line to BOTH a file (append, default
- * ~/.local/state/billion-context/bili.log) and stderr (so a foreground `bili`
+ * ~/.local/state/sigma/sigma.log) and stderr (so a foreground `sigma`
  * still shows output in the terminal).
  *
  * A single WriteStream is held open for the life of the process (opening the

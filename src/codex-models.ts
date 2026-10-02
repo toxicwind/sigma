@@ -71,7 +71,7 @@ function longestPrefixMatch(model: string): CodexModelEntry | undefined {
 
 /** The context window codex BELIEVES a model has (its own bundled table +
  *  272K fallback). codex auto-compacts at 90% of this and hard-stops at 95%,
- *  so bili must never budget a codex client above it (#321 PR-E1). */
+ *  so sigma must never budget a codex client above it (#321 PR-E1). */
 export function codexWindowForModel(model: string): number {
     return lookupWindow(model);
 }

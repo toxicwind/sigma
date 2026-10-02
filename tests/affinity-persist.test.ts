@@ -48,7 +48,7 @@ test("flush writes the snapshot file; hydrate reattaches after a restart", () =>
     prefixAffinity.note(aff.sessionId, aff.incomingDepth, aff.tailHash, aff.itemHashes);
     flushPrefixAffinity();
 
-    const file = path.join(tmp, "billion-context", "prefix-affinity.json");
+    const file = path.join(tmp, "sigma", "prefix-affinity.json");
     assert.ok(fs.existsSync(file));
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { version: number; entries: unknown[] };
     assert.equal(parsed.version, 1);
@@ -64,7 +64,7 @@ test("flush writes the snapshot file; hydrate reattaches after a restart", () =>
 
 test("hydrate on a missing or corrupt file is a no-op", () => {
     hydratePrefixAffinity();
-    const file = path.join(tmp, "billion-context", "prefix-affinity.json");
+    const file = path.join(tmp, "sigma", "prefix-affinity.json");
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "{not json");
     hydratePrefixAffinity();

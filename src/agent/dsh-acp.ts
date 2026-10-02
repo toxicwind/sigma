@@ -1,5 +1,5 @@
 // Native dsh (deepseek-harness) cordis plugin: registers the `/acp` command.
-// Injected by the `bili dsh` launcher through a `--patch` overlay that
+// Injected by the `sigma dsh` launcher through a `--patch` overlay that
 // inserts this module (as a file:// URL) into the loader entry tree — the
 // same plugin shape as dsh-command-compact. Pure protocol client, same
 // discipline as the other agent plugins: no acp-kernel import, every byte of
@@ -7,7 +7,7 @@
 
 import { proxyBaseFromEnv, fetchProxyVersion, fetchStatusLatest, forwardTool, armedIdleNotice } from "./shared.js";
 
-export const name = "bili-acp";
+export const name = "sigma-acp";
 export const inject = ["commands"];
 
 type CommandOutcome = { kind: "success" | "error"; text: string };
@@ -26,7 +26,7 @@ async function statusOutcome(): Promise<CommandOutcome> {
     if (!base) {
         return {
             kind: "error",
-            text: "bili: no proxy detected — launch dsh through `bili dsh` so /acp can read context status.",
+            text: "sigma: no proxy detected — launch dsh through `sigma dsh` so /acp can read context status.",
         };
     }
     const status = await fetchStatusLatest(base);
@@ -40,7 +40,7 @@ async function statusOutcome(): Promise<CommandOutcome> {
     }
     return {
         kind: "error",
-        text: `bili: proxy not reachable at ${base} — is the bili proxy still running?`,
+        text: `sigma: proxy not reachable at ${base} — is the sigma proxy still running?`,
     };
 }
 
@@ -54,7 +54,7 @@ async function cacheOutcome(): Promise<CommandOutcome> {
     if (!base) {
         return {
             kind: "error",
-            text: "bili: no proxy detected — launch dsh through `bili dsh` so /acp-cache can read the cache report.",
+            text: "sigma: no proxy detected — launch dsh through `sigma dsh` so /acp-cache can read the cache report.",
         };
     }
     let status: Record<string, unknown> | undefined;
@@ -72,11 +72,11 @@ async function cacheOutcome(): Promise<CommandOutcome> {
             version = undefined;
         }
         if (version) {
-            return { kind: "success", text: `billion-context@${version} — proxy connected, compression armed. No model request yet; send one, then run /acp-cache again.` };
+            return { kind: "success", text: `sigma@${version} — proxy connected, compression armed. No model request yet; send one, then run /acp-cache again.` };
         }
         return {
             kind: "error",
-            text: `bili: proxy not reachable at ${base} — is the bili proxy still running?`,
+            text: `sigma: proxy not reachable at ${base} — is the sigma proxy still running?`,
         };
     }
     try {
@@ -84,16 +84,16 @@ async function cacheOutcome(): Promise<CommandOutcome> {
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("no model request has arrived")) {
-            return { kind: "success", text: "bili: no ACP session yet for this conversation (send a model request first, then run /acp-cache)" };
+            return { kind: "success", text: "sigma: no ACP session yet for this conversation (send a model request first, then run /acp-cache)" };
         }
-        return { kind: "error", text: `bili: cache report failed: ${msg}` };
+        return { kind: "error", text: `sigma: cache report failed: ${msg}` };
     }
 }
 
 export function apply(ctx: PluginContext): void {
     ctx.commands.register({
         name: "acp",
-        description: "Show bili context-compression status",
+        description: "Show sigma context-compression status",
         handler: statusOutcome,
     });
     ctx.commands.register({

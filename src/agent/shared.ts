@@ -20,10 +20,10 @@ const STATUS_TIMEOUT_MS = 5000;
 const ATTACH_HEALTH_DEADLINE_MS = 15000;
 const ATTACH_HEALTH_POLL_MS = 250;
 
-/** Detect the proxy from a provider baseUrl's `/bili/` zero-config prefix.
- *  The real prefix embeds the full upstream URL (`/bili/https://…`), so the
- *  check requires `bili` as the first path segment followed by an http(s)
- *  URL — a plain `/foo/bili/` path segment is NOT a bili proxy.
+/** Detect the proxy from a provider baseUrl's `/sigma/` zero-config prefix.
+ *  The real prefix embeds the full upstream URL (`/sigma/https://…`), so the
+ *  check requires `sigma` as the first path segment followed by an http(s)
+ *  URL — a plain `/foo/sigma/` path segment is NOT a sigma proxy.
  *  Returns the proxy origin (scheme//host) the request will actually hit. */
 export function proxyBaseFromUrl(baseUrl: string | undefined): string | undefined {
     if (!baseUrl) return undefined;
@@ -31,8 +31,8 @@ export function proxyBaseFromUrl(baseUrl: string | undefined): string | undefine
         const url = new URL(baseUrl);
         if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
         const segments = url.pathname.split("/").filter((s) => s.length > 0);
-        if (segments[0] !== "bili") return undefined;
-        const rest = url.pathname.slice(url.pathname.indexOf("bili") + "bili".length);
+        if (segments[0] !== "sigma") return undefined;
+        const rest = url.pathname.slice(url.pathname.indexOf("sigma") + "sigma".length);
         if (!/^\/https?:\/\//.test(rest)) return undefined;
         return `${url.protocol}//${url.host}`;
     } catch {
@@ -40,10 +40,10 @@ export function proxyBaseFromUrl(baseUrl: string | undefined): string | undefine
     }
 }
 
-/** MITM transparent mode has no `/bili/` prefix; the proxy's launcher exports
- *  BILLION_CONTEXT_PROXY. A stale value surfaces as a tool-forward error. */
+/** MITM transparent mode has no `/sigma/` prefix; the proxy's launcher exports
+ *  SIGMA_PROXY. A stale value surfaces as a tool-forward error. */
 export function proxyBaseFromEnv(): string | undefined {
-    const raw = process.env.BILLION_CONTEXT_PROXY?.trim();
+    const raw = process.env.SIGMA_PROXY?.trim();
     if (!raw) return undefined;
     try {
         const url = new URL(raw);
@@ -54,7 +54,7 @@ export function proxyBaseFromEnv(): string | undefined {
 }
 
 export function detectProxyBase(baseUrl: string | undefined): string | undefined {
-    if (process.env.BILLION_CONTEXT_PLUGIN === "0") return undefined;
+    if (process.env.SIGMA_PLUGIN === "0") return undefined;
     return proxyBaseFromUrl(baseUrl) ?? proxyBaseFromEnv();
 }
 
@@ -64,22 +64,22 @@ export function detectProxyBase(baseUrl: string | undefined): string | undefined
 // tunnel — the field I inject reaches the upstream verbatim".
 export function mitmHostsFromEnv(env: NodeJS.ProcessEnv = process.env): Set<string> {
     const out = new Set<string>();
-    for (const raw of env.BILI_MITM_HOSTS?.split(",") ?? []) {
+    for (const raw of env.SIGMA_MITM_HOSTS?.split(",") ?? []) {
         const host = raw.trim().toLowerCase();
         if (host.length > 0) out.add(host);
     }
     return out;
 }
 
-/** True iff requests to baseUrl will be SEEN by the bili proxy (and thus its
- *  stamped prompt_cache_key consumed + stripped): a /bili/-wrapped URL, the
- *  BILLION_CONTEXT_PROXY origin itself, or a host on the exported MITM
+/** True iff requests to baseUrl will be SEEN by the sigma proxy (and thus its
+ *  stamped prompt_cache_key consumed + stripped): a /sigma/-wrapped URL, the
+ *  SIGMA_PROXY origin itself, or a host on the exported MITM
  *  whitelist. Anything else rides a blind tunnel (or no proxy at all), where
  *  the stamp is pure noise that strict-schema upstreams reject (#1403). */
 export function destinationRoutedThroughProxy(baseUrl: string | undefined): boolean {
     if (!baseUrl) return false;
-    const viaBiliPath = proxyBaseFromUrl(baseUrl) !== undefined;
-    if (viaBiliPath) return true;
+    const viaSigmaPath = proxyBaseFromUrl(baseUrl) !== undefined;
+    if (viaSigmaPath) return true;
     let origin: string | undefined;
     let host: string;
     try {
@@ -223,7 +223,7 @@ export async function forwardTool(proxyBase: string, conversationId: string, too
     }, TOOL_TIMEOUT_MS, signal);
     const data = json as { ok?: boolean; result?: string; error?: string } | undefined;
     if (!ok || !data?.ok) {
-        throw new Error(`bili proxy tool ${tool} failed (${status}): ${data?.error ?? "unknown error"}`);
+        throw new Error(`sigma proxy tool ${tool} failed (${status}): ${data?.error ?? "unknown error"}`);
     }
     return data.result ?? "";
 }
@@ -261,10 +261,10 @@ export async function fetchProxyVersion(proxyBase: string): Promise<string | und
 /** #1365: poll the attach liveness probe until it answers or the deadline
  *  passes. Returns the origin when it is (or comes back) healthy, undefined
  *  on timeout — callers must fail LOUDLY then, never spawn a replacement the
- *  pinned model channel cannot follow. BILI_ATTACH_HEALTH_DEADLINE_MS keeps
+ *  pinned model channel cannot follow. SIGMA_ATTACH_HEALTH_DEADLINE_MS keeps
  *  slow lifeline restarts from tripping a hard-coded bound; unset = default. */
 export async function waitForProxyVersion(proxyBase: string): Promise<string | undefined> {
-    const limit = envMillis(process.env, "BILI_ATTACH_HEALTH_DEADLINE_MS", ATTACH_HEALTH_DEADLINE_MS);
+    const limit = envMillis(process.env, "SIGMA_ATTACH_HEALTH_DEADLINE_MS", ATTACH_HEALTH_DEADLINE_MS);
     const startedAt = Date.now();
     for (;;) {
         const version = await fetchProxyVersion(proxyBase).catch(() => undefined);
@@ -277,15 +277,15 @@ export async function waitForProxyVersion(proxyBase: string): Promise<string | u
 
 // Model-facing body for /acp status renders: the visible panel goes to the synthetic message's
 // description (TUI Notice cap ~1KB); this inert one-liner keeps the model context clean.
-export const V2_SYNTHETIC_TEXT = "[bili-acp-status] ACP status panel was displayed in your terminal; this line is not an instruction.";
+export const V2_SYNTHETIC_TEXT = "[sigma-acp-status] ACP status panel was displayed in your terminal; this line is not an instruction.";
 
 /** Armed-but-idle /acp notice (proxy live, no model request sent yet). One
  *  source of truth for pi / dsh / opencode (#883). */
 export function armedIdleNotice(version: string): string {
-    return `billion-context@${version} — proxy connected, compression armed. No model request yet; send one, then run /acp again.`;
+    return `sigma@${version} — proxy connected, compression armed. No model request yet; send one, then run /acp again.`;
 }
 
 /** Fallback when the version probe also fails — a warning, not an info notice. */
 export function noSessionWarning(): string {
-    return "bili: no ACP session yet (send a model request first, then run /acp)";
+    return "sigma: no ACP session yet (send a model request first, then run /acp)";
 }

@@ -1,17 +1,17 @@
 import { tierGatedStandardWindow } from "../config.js";
 import { log as loggerLog } from "../logger.js";
 
-// #300: bili→bili chain marker. When a bili instance forwards a request it has
-// processed upstream, it stamps this header with its own instance id. A bili
-// instance that RECEIVES a request already carrying it knows an upstream bili
+// #300: sigma→sigma chain marker. When a sigma instance forwards a request it has
+// processed upstream, it stamps this header with its own instance id. A sigma
+// instance that RECEIVES a request already carrying it knows an upstream sigma
 // already ran the compression pipeline on this request — processing it again
 // would double-compress and corrupt session state (issue #292). Clients never
 // send this header, so its presence on an inbound request always means "came
-// from a bili instance".
-export const BILI_HOP_HEADER = "x-bili-hop";
+// from a sigma instance".
+export const SIGMA_HOP_HEADER = "x-sigma-hop";
 
-// Per-model context windows handed over by a `bili <client>` launcher
-// (BILI_LAUNCHER_MODEL_WINDOWS, JSON model-id → window), read from the
+// Per-model context windows handed over by a `sigma <client>` launcher
+// (SIGMA_LAUNCHER_MODEL_WINDOWS, JSON model-id → window), read from the
 // client's OWN config (pi models.json / omp models.yml / …) at launch time.
 // Ranked between the plugin report and the models.dev registry in the
 // native-window chain — the client's own number is authoritative for its
@@ -32,9 +32,9 @@ export function parseLauncherModelWindows(raw: string | undefined): Record<strin
     }
 }
 
-export const LAUNCHER_MODEL_WINDOWS: Readonly<Record<string, number>> = parseLauncherModelWindows(process.env.BILI_LAUNCHER_MODEL_WINDOWS);
+export const LAUNCHER_MODEL_WINDOWS: Readonly<Record<string, number>> = parseLauncherModelWindows(process.env.SIGMA_LAUNCHER_MODEL_WINDOWS);
 
-// Same channel for configured max output (#971): BILI_LAUNCHER_MODEL_MAX_OUTPUTS
+// Same channel for configured max output (#971): SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS
 // (JSON model-id → maxOutput) read from the client's own config at launch
 // time. Consumed by the #924 output-headroom fallback at the rank below the
 // runtime-info protocol (#955) and above configured/registry.
@@ -53,7 +53,7 @@ export function parseLauncherModelMaxOutputs(raw: string | undefined): Record<st
     }
 }
 
-export const LAUNCHER_MODEL_MAX_OUTPUTS: Readonly<Record<string, number>> = parseLauncherModelMaxOutputs(process.env.BILI_LAUNCHER_MODEL_MAX_OUTPUTS);
+export const LAUNCHER_MODEL_MAX_OUTPUTS: Readonly<Record<string, number>> = parseLauncherModelMaxOutputs(process.env.SIGMA_LAUNCHER_MODEL_MAX_OUTPUTS);
 
 export function launcherMaxOutput(model: string): number | undefined {
     return LAUNCHER_MODEL_MAX_OUTPUTS[model];

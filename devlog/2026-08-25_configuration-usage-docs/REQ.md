@@ -13,6 +13,6 @@ where `--help` covered something the docs did not to be filled.
   has no MITM; omp/opencode use isolated config). The parts of the old README table that had gone
   stale were not copied over.
 - The environment variable table gained 17 rows (ACP_SESSION_HEADER / ACP_REASONING_KEEP /
-  ACP_LOG_FILE / ACP_DUMP_SSE / BILI_UPSTREAM_PROXY / BILI_PERSIST* / BILI_MAX_SESSIONS /
-  BILI_SESSIONS_DIR / BILLION_CONTEXT_PROXY / BILLION_CONTEXT_PLUGIN / BILI_LAUNCHER_PLUGIN /
-  BILI_LAUNCHER_DIRECT / BILI_CLAUDE_UPSTREAM, plus BILI_REPLAY_* on the Chinese side).
+  ACP_LOG_FILE / ACP_DUMP_SSE / SIGMA_UPSTREAM_PROXY / SIGMA_PERSIST* / SIGMA_MAX_SESSIONS /
+  SIGMA_SESSIONS_DIR / SIGMA_PROXY / SIGMA_PLUGIN / SIGMA_LAUNCHER_PLUGIN /
+  SIGMA_LAUNCHER_DIRECT / SIGMA_CLAUDE_UPSTREAM, plus SIGMA_REPLAY_* on the Chinese side).

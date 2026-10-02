@@ -82,7 +82,7 @@ def fig2():
     for rho, ls in [(0.4, '--'), (0.5, '-'), (0.6, '--')]:
         ax.plot(k, rho ** k, ls, color='tab:red', lw=1.0,
                 label=f'threshold compaction, ρ={rho}')
-    ax.axhline(1 / 8, color='tab:green', lw=2.0, label='billion-context ρ₁ ≈ 1/8 (constant)')
+    ax.axhline(1 / 8, color='tab:green', lw=2.0, label='sigma ρ₁ ≈ 1/8 (constant)')
     ax.axhline(1 / 24, color='tab:green', lw=1.0, ls=':', label='tool-dominated blocks ~1/24')
     ax.axhline(0, color='tab:gray', lw=1.2, label='sliding window: R ≡ 0')
     ax.annotate('after 4 rounds:\nonly 3–13% remains', xy=(4, 0.13), xytext=(5.2, 0.30),

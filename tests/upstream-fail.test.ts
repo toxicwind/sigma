@@ -127,10 +127,10 @@ test("fetchWithRetry: idle-budget timeout is NOT replayed (#1263 — never stack
     }
 });
 
-test("fetchWithRetry: BILI_REPLAY_RETRY_MAX=1 keeps legacy fail-fast for network failures (#1263)", async () => {
+test("fetchWithRetry: SIGMA_REPLAY_RETRY_MAX=1 keeps legacy fail-fast for network failures (#1263)", async () => {
     _resetFetchUtilForTest();
-    const prev = process.env.BILI_REPLAY_RETRY_MAX;
-    process.env.BILI_REPLAY_RETRY_MAX = "1";
+    const prev = process.env.SIGMA_REPLAY_RETRY_MAX;
+    process.env.SIGMA_REPLAY_RETRY_MAX = "1";
     let hits = 0;
     const upstream = http.createServer((req, res) => {
         hits += 1;
@@ -152,8 +152,8 @@ test("fetchWithRetry: BILI_REPLAY_RETRY_MAX=1 keeps legacy fail-fast for network
         assert.equal(hits, 1, "legacy fail-fast: no replay when the retry budget is 1");
         assert.equal(retries.length, 0);
     } finally {
-        if (prev === undefined) delete process.env.BILI_REPLAY_RETRY_MAX;
-        else process.env.BILI_REPLAY_RETRY_MAX = prev;
+        if (prev === undefined) delete process.env.SIGMA_REPLAY_RETRY_MAX;
+        else process.env.SIGMA_REPLAY_RETRY_MAX = prev;
         await close(upstream);
     }
 });
@@ -187,8 +187,8 @@ test("fetchWithRetry: external abort is never replayed", async () => {
 
 test("fetchWithRetry: connect-phase timeout and DNS failures are replayed within the budget (#1453)", async () => {
     _resetFetchUtilForTest();
-    const prevBase = process.env.BILI_REPLAY_RETRY_BASE_MS;
-    process.env.BILI_REPLAY_RETRY_BASE_MS = "0";
+    const prevBase = process.env.SIGMA_REPLAY_RETRY_BASE_MS;
+    process.env.SIGMA_REPLAY_RETRY_BASE_MS = "0";
     const origFetch = globalThis.fetch;
     try {
         for (const [code, label] of [["UND_ERR_CONNECT_TIMEOUT", "connect-timeout"], ["ENOTFOUND", "dns"]] as const) {
@@ -208,8 +208,8 @@ test("fetchWithRetry: connect-phase timeout and DNS failures are replayed within
         }
     } finally {
         globalThis.fetch = origFetch;
-        if (prevBase === undefined) delete process.env.BILI_REPLAY_RETRY_BASE_MS;
-        else process.env.BILI_REPLAY_RETRY_BASE_MS = prevBase;
+        if (prevBase === undefined) delete process.env.SIGMA_REPLAY_RETRY_BASE_MS;
+        else process.env.SIGMA_REPLAY_RETRY_BASE_MS = prevBase;
     }
 });
 
@@ -225,19 +225,19 @@ test("formatUpstreamError: kind and hint lead/trail the line; masking intact", (
 });
 
 test("proxyKeepAliveMaxMs: 55s default, env-tunable, 0 = uncapped", () => {
-    const prev = process.env.BILI_PROXY_KEEPALIVE_MAX_MS;
+    const prev = process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS;
     try {
-        delete process.env.BILI_PROXY_KEEPALIVE_MAX_MS;
+        delete process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS;
         assert.equal(proxyKeepAliveMaxMs(), PROXY_KEEPALIVE_MAX_MS);
         assert.equal(PROXY_KEEPALIVE_MAX_MS, 55_000);
-        process.env.BILI_PROXY_KEEPALIVE_MAX_MS = "0";
+        process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS = "0";
         assert.equal(proxyKeepAliveMaxMs(), 0);
-        process.env.BILI_PROXY_KEEPALIVE_MAX_MS = "30000";
+        process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS = "30000";
         assert.equal(proxyKeepAliveMaxMs(), 30_000);
-        process.env.BILI_PROXY_KEEPALIVE_MAX_MS = "garbage";
+        process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS = "garbage";
         assert.equal(proxyKeepAliveMaxMs(), PROXY_KEEPALIVE_MAX_MS);
     } finally {
-        if (prev === undefined) delete process.env.BILI_PROXY_KEEPALIVE_MAX_MS;
-        else process.env.BILI_PROXY_KEEPALIVE_MAX_MS = prev;
+        if (prev === undefined) delete process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS;
+        else process.env.SIGMA_PROXY_KEEPALIVE_MAX_MS = prev;
     }
 });

@@ -1,11 +1,11 @@
-"""billion-context native plugin for Hermes (#958).
+"""sigma native plugin for Hermes (#958).
 
-Installed by ``bili plugin install hermes`` — a plain ``hermes`` session then becomes a full
-billion-context client with no launcher, no env vars and no fixed port:
+Installed by ``sigma plugin install hermes`` — a plain ``hermes`` session then becomes a full
+sigma client with no launcher, no env vars and no fixed port:
 
-* spawns its own bili proxy on an ephemeral port (or attaches to a healthy one) and routes
+* spawns its own sigma proxy on an ephemeral port (or attaches to a healthy one) and routes
   model traffic through it via ``HTTPS_PROXY`` + ``SSL_CERT_FILE`` (combined CA bundle) —
-  the same wire path the ``bili hermes`` launcher uses (CONNECT + certificate MITM);
+  the same wire path the ``sigma hermes`` launcher uses (CONNECT + certificate MITM);
 * registers the proxy's ACP tools (compress / decompress / acp_status) as native Hermes tools;
 * stamps plugin-mode headers on every LLM request once the tools are ready — round 1 rides
   wire mode so strict backends see a clean head;
@@ -36,13 +36,13 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-logger = logging.getLogger("billion_context.hermes")
+logger = logging.getLogger("sigma.hermes")
 
 AGENT_NAME = "hermes"
-PLUGIN_ID = "billion-context"
-OPT_OUT_ENV = "BILI_NATIVE_HERMES"
-ATTACH_ENV = "BILLION_CONTEXT_ATTACH"
-ATTACH_EXTERNAL_ENV = "BILI_NATIVE_ATTACH_EXTERNAL"
+PLUGIN_ID = "sigma"
+OPT_OUT_ENV = "SIGMA_NATIVE_HERMES"
+ATTACH_ENV = "SIGMA_ATTACH"
+ATTACH_EXTERNAL_ENV = "SIGMA_NATIVE_ATTACH_EXTERNAL"
 MANIFEST_TIMEOUT_S = 5.0
 TOOL_TIMEOUT_S = 60.0
 RUNTIME_INFO_TIMEOUT_S = 5.0
@@ -85,13 +85,13 @@ def state_dir() -> Path:
     # Mirrors src/paths.ts: XDG_STATE_HOME replaces ~/.local/state wholesale.
     raw = os.environ.get("XDG_STATE_HOME", "").strip()
     base = Path(raw).expanduser() if raw else Path.home() / ".local" / "state"
-    return base / "billion-context"
+    return base / "sigma"
 
 
 def data_dir() -> Path:
     raw = os.environ.get("XDG_DATA_HOME", "").strip()
     base = Path(raw).expanduser() if raw else Path.home() / ".local" / "share"
-    return base / "billion-context"
+    return base / "sigma"
 
 
 def hermes_home() -> Path:
@@ -100,11 +100,11 @@ def hermes_home() -> Path:
 
 
 def sidecar_path() -> Path:
-    return Path(__file__).resolve().parent / "bili.json"
+    return Path(__file__).resolve().parent / "sigma.json"
 
 
 def load_sidecar() -> Optional[Dict[str, str]]:
-    """The installer's sidecar: which bili dist + node binary to spawn."""
+    """The installer's sidecar: which sigma dist + node binary to spawn."""
     try:
         data = json.loads(sidecar_path().read_text(encoding="utf-8"))
     except Exception:
@@ -124,15 +124,15 @@ def load_sidecar() -> Optional[Dict[str, str]]:
 
 def gated_off(env: Dict[str, str]) -> bool:
     """Mirror nativeBootstrapGate (src/agent/native-bootstrap.ts): an explicit owner of this
-    client's wire (launcher-set BILLION_CONTEXT_PROXY, provider rewrites) means someone else
+    client's wire (launcher-set SIGMA_PROXY, provider rewrites) means someone else
     already does the routing — stand down."""
-    if env.get("BILLION_CONTEXT_PLUGIN", "") == "0":
+    if env.get("SIGMA_PLUGIN", "") == "0":
         return True
     if env.get(OPT_OUT_ENV, "") == "0":
         return True
-    if (env.get("BILLION_CONTEXT_PROXY") or "").strip():
+    if (env.get("SIGMA_PROXY") or "").strip():
         return True
-    if env.get("BILI_PROVIDER_REWRITES") is not None:
+    if env.get("SIGMA_PROVIDER_REWRITES") is not None:
         return True
     return False
 
@@ -145,7 +145,7 @@ def _opener() -> urllib.request.OpenerDirector:
 
 def http_get_json(url: str, timeout: float) -> Optional[Any]:
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": f"billion-context-{AGENT_NAME}"})
+        req = urllib.request.Request(url, headers={"User-Agent": f"sigma-{AGENT_NAME}"})
         with _opener().open(req, timeout=timeout) as resp:
             body = resp.read()
             return json.loads(body.decode("utf-8")) if body else None
@@ -158,7 +158,7 @@ def http_post_json(url: str, payload: Dict[str, Any], timeout: float) -> Tuple[O
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url, data=data, method="POST",
-            headers={"Content-Type": "application/json", "User-Agent": f"billion-context-{AGENT_NAME}"},
+            headers={"Content-Type": "application/json", "User-Agent": f"sigma-{AGENT_NAME}"},
         )
         try:
             with _opener().open(req, timeout=timeout) as resp:
@@ -181,18 +181,18 @@ def probe_proxy(origin: str) -> bool:
 
 
 def config_file_path() -> Path:
-    """Same file src/paths.ts configFile() reads: BILI_CONFIG_FILE override, else
-    XDG config dir /billion-context/billion-context.json."""
-    env = os.environ.get("BILI_CONFIG_FILE", "").strip()
+    """Same file src/paths.ts configFile() reads: SIGMA_CONFIG_FILE override, else
+    XDG config dir /sigma/sigma.json."""
+    env = os.environ.get("SIGMA_CONFIG_FILE", "").strip()
     if env:
         return Path(env).expanduser()
     raw = os.environ.get("XDG_CONFIG_HOME", "").strip()
     base = Path(raw).expanduser() if raw else Path.home() / ".config"
-    return base / "billion-context" / "billion-context.json"
+    return base / "sigma" / "sigma.json"
 
 
 def resolve_attach_external() -> bool:
-    """#1335/#1338 escape hatch: env BILI_NATIVE_ATTACH_EXTERNAL > bili config
+    """#1335/#1338 escape hatch: env SIGMA_NATIVE_ATTACH_EXTERNAL > sigma config
     native.attachExternal > False — mirrors resolveNativeAttachExternal (src/config.ts)."""
     val = (os.environ.get(ATTACH_EXTERNAL_ENV) or "").strip().lower()
     if val in ("1", "true"):
@@ -220,24 +220,24 @@ def watchdog_armed(origin: str) -> Optional[bool]:
 
 def register_watcher(origin: str) -> None:
     """Register this host pid as a watchdog owner of a shared proxy (#1199). The spawner's
-    BILI_PARENT_PID watches only the FIRST session's process; without this, the shared proxy
+    SIGMA_PARENT_PID watches only the FIRST session's process; without this, the shared proxy
     exits when that session dies while this one still runs. Same policy as the TS launcher:
     409 = daemon proxy (no watchdog) → nothing to do; any other failure degrades to the
     single-owner watchdog and never blocks session start."""
     try:
         status, _body = http_post_json(origin + "/__bili/watcher", {"pid": os.getpid()}, HEALTH_PROBE_TIMEOUT_S)
         if status is None:
-            logger.warning("billion-context: watcher registration failed (no response from %s) — "
+            logger.warning("sigma: watcher registration failed (no response from %s) — "
                            "the shared proxy may exit when its first owner does", origin)
         elif status != 200 and status != 409:
-            logger.warning("billion-context: watcher registration returned HTTP %s — "
+            logger.warning("sigma: watcher registration returned HTTP %s — "
                            "the shared proxy may exit when its first owner does", status)
     except Exception as exc:
-        logger.warning("billion-context: watcher registration failed (%s) — "
+        logger.warning("sigma: watcher registration failed (%s) — "
                        "the shared proxy may exit when its first owner does", exc)
 
 
-# — instance discovery (written by the bili proxy itself) ----------------------
+# — instance discovery (written by the sigma proxy itself) ----------------------
 
 def read_instance_file() -> Optional[Dict[str, Any]]:
     try:
@@ -297,7 +297,7 @@ def discover_instance() -> Optional[str]:
     # #1338: the Python twin of #1335's attach gate (src/launcher.ts
     # pickAttachable). Discovery must not ride a lifecycle-less listener —
     # unarmed (or unverifiable: older build, field absent) => refuse and fall
-    # through to a session-owned spawn. Explicit BILLION_CONTEXT_ATTACH stays
+    # through to a session-owned spawn. Explicit SIGMA_ATTACH stays
     # exempt: user-directed, like the TS lanes' explicit-attach paths.
     if not resolve_attach_external():
         armed = watchdog_armed(inst["origin"])
@@ -305,13 +305,13 @@ def discover_instance() -> Optional[str]:
             if inst["origin"] not in _state["refused"]:
                 _state["refused"].add(inst["origin"])
                 logger.warning(
-                    "billion-context: refusing to attach to %s — it reports %s (#1322/#1335). "
+                    "sigma: refusing to attach to %s — it reports %s (#1322/#1335). "
                     "Starting a session-owned proxy instead; set native.attachExternal=true "
                     "or %s=1 to attach anyway.",
                     inst["origin"],
-                    "NO session-lifecycle watchdog (started without BILI_PARENT_PID, e.g. manual `bili start`)"
+                    "NO session-lifecycle watchdog (started without SIGMA_PARENT_PID, e.g. manual `sigma start`)"
                     if armed is False
-                    else "no watchdog state (older bili build) — its lifecycle is unverifiable",
+                    else "no watchdog state (older sigma build) — its lifecycle is unverifiable",
                     ATTACH_EXTERNAL_ENV,
                 )
             return None
@@ -388,7 +388,7 @@ def pick_port() -> Optional[int]:
 
 def mitm_domains_from_config() -> List[str]:
     """https hosts of the hermes providers (best effort) — the CONNECT+MITM whitelist that lets
-    bili see (and compress) the model traffic instead of blind-tunneling it."""
+    sigma see (and compress) the model traffic instead of blind-tunneling it."""
     cfg = hermes_home() / "config.yaml"
     try:
         text = cfg.read_text(encoding="utf-8")
@@ -432,13 +432,13 @@ def mitm_domains_from_config() -> List[str]:
 
 
 def _spawn_child(sidecar: Dict[str, str], port: int, token: str) -> Optional[subprocess.Popen]:
-    log_path = os.path.join(tempfile.gettempdir(), f"bili-proxy-{port}.log")
+    log_path = os.path.join(tempfile.gettempdir(), f"sigma-proxy-{port}.log")
     env = {k: v for k, v in os.environ.items() if k not in _PROXY_ENV_KEYS}
-    env["BILI_LAUNCH_TOKEN"] = token
-    env["BILI_PARENT_PID"] = str(os.getpid())
+    env["SIGMA_LAUNCH_TOKEN"] = token
+    env["SIGMA_PARENT_PID"] = str(os.getpid())
     domains = mitm_domains_from_config()
     if domains:
-        env["BILI_MITM_DOMAINS"] = ",".join(domains)
+        env["SIGMA_MITM_DOMAINS"] = ",".join(domains)
     argv = [sidecar["node"], sidecar["script"], "start", "--port", str(port)]
     try:
         log_fh = open(log_path, "ab")
@@ -449,7 +449,7 @@ def _spawn_child(sidecar: Dict[str, str], port: int, token: str) -> Optional[sub
         log_fh.close()
         return proc
     except Exception as exc:
-        logger.warning("billion-context: failed to spawn the proxy (%s)", exc)
+        logger.warning("sigma: failed to spawn the proxy (%s)", exc)
         return None
 
 
@@ -467,7 +467,7 @@ def ensure_origin(sidecar: Dict[str, str]) -> Optional[str]:
     if attach:
         if probe_proxy(attach):
             return _attach(attach)
-        logger.warning("billion-context: %s %s is not healthy — falling back to local bootstrap", ATTACH_ENV, attach)
+        logger.warning("sigma: %s %s is not healthy — falling back to local bootstrap", ATTACH_ENV, attach)
 
     found = discover_instance()
     if found:
@@ -503,12 +503,12 @@ def ensure_origin(sidecar: Dict[str, str]) -> Optional[str]:
                 _state.update(origin=inst["origin"], mode="spawn")
                 return inst["origin"]
             if child.poll() is not None:
-                logger.warning("billion-context: proxy child exited before becoming healthy "
+                logger.warning("sigma: proxy child exited before becoming healthy "
                                "(code %s); log: %s", child.returncode,
-                               os.path.join(tempfile.gettempdir(), f"bili-proxy-{port}.log"))
+                               os.path.join(tempfile.gettempdir(), f"sigma-proxy-{port}.log"))
                 return None
             time.sleep(SPAWN_POLL_S)
-        logger.warning("billion-context: proxy did not become healthy within %ss", SPAWN_WAIT_S)
+        logger.warning("sigma: proxy did not become healthy within %ss", SPAWN_WAIT_S)
         try:
             child.terminate()
         except Exception:
@@ -523,7 +523,7 @@ def ensure_origin(sidecar: Dict[str, str]) -> Optional[str]:
 
 def apply_env(origin: str) -> None:
     """Route hermes's model traffic through the proxy. Only called once the proxy is healthy —
-    the same pair `bili hermes` sets for the launched process."""
+    the same pair `sigma hermes` sets for the launched process."""
     os.environ["HTTPS_PROXY"] = origin
     os.environ["https_proxy"] = origin
     ca_dir = data_dir() / "ca"
@@ -545,7 +545,7 @@ def make_tool_handler(tool_name: str) -> Callable[..., str]:
         origin = _state.get("origin")
         conversation = kwargs.get("session_id") or (args or {}).get("conversation_id")
         if not origin:
-            return json.dumps({"error": "billion-context proxy is not available in this session"})
+            return json.dumps({"error": "sigma proxy is not available in this session"})
         if not conversation:
             return json.dumps({"error": "no hermes session id — cannot bind the compression conversation"})
         status, payload = http_post_json(
@@ -557,7 +557,7 @@ def make_tool_handler(tool_name: str) -> Callable[..., str]:
             result = payload.get("result")
             return result if isinstance(result, str) else json.dumps(result)
         detail = payload.get("error") if isinstance(payload, dict) else None
-        return json.dumps({"error": f"billion-context tool failed (http {status}): {detail or 'unknown error'}"})
+        return json.dumps({"error": f"sigma tool failed (http {status}): {detail or 'unknown error'}"})
     return handler
 
 
@@ -573,14 +573,14 @@ def on_llm_request(request: Optional[Dict[str, Any]] = None, **context: Any) -> 
             return None
         headers = request.get("extra_headers")
         merged = dict(headers) if isinstance(headers, dict) else {}
-        merged["x-bili-plugin"] = AGENT_NAME
-        merged["x-bili-plugin-conversation"] = str(session_id)
+        merged["x-sigma-plugin"] = AGENT_NAME
+        merged["x-sigma-plugin-conversation"] = str(session_id)
         model = context.get("model")
         if model:
-            merged["x-bili-plugin-model"] = str(model)[:256]
+            merged["x-sigma-plugin-model"] = str(model)[:256]
         max_output = _state["max_output"].get(str(session_id))
         if isinstance(max_output, (int, float)) and max_output > 0:
-            merged["x-bili-plugin-max-output"] = str(int(max_output))
+            merged["x-sigma-plugin-max-output"] = str(int(max_output))
         updated = dict(request)
         updated["extra_headers"] = merged
         return {"request": updated, "source": PLUGIN_ID, "reason": "plugin-mode headers"}
@@ -638,19 +638,19 @@ def register(ctx: Any) -> None:
             return
         sidecar = load_sidecar()
         if not sidecar:
-            logger.warning("billion-context: no usable bili.json sidecar next to the hermes plugin "
-                           "(run `bili plugin install hermes`) — staying inert")
+            logger.warning("sigma: no usable sigma.json sidecar next to the hermes plugin "
+                           "(run `sigma plugin install hermes`) — staying inert")
             return
         origin = ensure_origin(sidecar)
         if not origin:
-            logger.warning("billion-context: could not reach or start a bili proxy — staying inert "
+            logger.warning("sigma: could not reach or start a sigma proxy — staying inert "
                            "(hermes talks to the upstream directly)")
             return
         apply_env(origin)
         manifest = http_get_json(origin.rstrip("/") + "/__bili/plugin/manifest", MANIFEST_TIMEOUT_S)
         tools = manifest.get("tools", {}).get("anthropic") if isinstance(manifest, dict) else None
         if not isinstance(tools, list) or not tools:
-            logger.warning("billion-context: proxy manifest had no tool definitions — staying inert")
+            logger.warning("sigma: proxy manifest had no tool definitions — staying inert")
             return
         names: List[str] = []
         for tool in tools:
@@ -667,7 +667,7 @@ def register(ctx: Any) -> None:
         ctx.register_middleware("llm_request", on_llm_request)
         ctx.register_hook("pre_api_request", on_pre_api_request)
         _state["tools_ready"] = True
-        logger.info("billion-context: hermes native mode active (%s, tools: %s)",
+        logger.info("sigma: hermes native mode active (%s, tools: %s)",
                     _state.get("mode"), ", ".join(names))
     except Exception as exc:
-        logger.warning("billion-context: plugin registration failed (%s) — staying inert", exc)
+        logger.warning("sigma: plugin registration failed (%s) — staying inert", exc)

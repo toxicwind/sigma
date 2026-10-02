@@ -144,7 +144,7 @@ async function testProxy(window: number, run: (url: string, forwarded: RequestBo
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
     try {
-        await run(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses`, forwarded, summaries);
+        await run(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses`, forwarded, summaries);
     } finally {
         for (const server of [proxy, upstream]) {
             server.closeAllConnections();
@@ -169,7 +169,7 @@ test("host Responses path forwards tool screenshots without false preflight, in 
             const input = screenshotItems();
             const response = await fetch(url, {
                 method: "POST",
-                headers: { "content-type": "application/json", ...(plugin ? { "x-bili-plugin": "test-agent" } : {}) },
+                headers: { "content-type": "application/json", ...(plugin ? { "x-sigma-plugin": "test-agent" } : {}) },
                 body: JSON.stringify({ model: "image-test", stream: true, session_id: `tool-image-forward-${plugin}`, input }),
             });
             assert.equal(response.status, 200);

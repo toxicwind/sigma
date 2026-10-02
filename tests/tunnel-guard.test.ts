@@ -12,7 +12,7 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { classifyIp, checkTunnelDestination, tunnelAllowlistFromEnv, parseIpLiteral, normalizeIpLiteral, type ResolveHost } from "../src/tunnel-guard.ts";
 
-/** #409: the /bili/<absolute-url> tunnel must not reach the proxy's own
+/** #409: the /sigma/<absolute-url> tunnel must not reach the proxy's own
  *  management plane, link-local metadata, or (for remote clients) any
  *  loopback/private destination — while LOCAL clients keep the self-hosted
  *  upstream case (sglang/ollama on 127.0.0.1:<other port>). */
@@ -159,9 +159,9 @@ test("checkTunnelDestination: default ports by scheme", async () => {
 });
 
 test("tunnelAllowlistFromEnv: comma parsing, case normalization, blanks dropped", () => {
-    assert.deepEqual(tunnelAllowlistFromEnv({ BILI_TUNNEL_ALLOWED_HOSTS: "127.0.0.1:8199, LANRELAY.EXAMPLE , ,10.0.0.5" }), ["127.0.0.1:8199", "lanrelay.example", "10.0.0.5"]);
+    assert.deepEqual(tunnelAllowlistFromEnv({ SIGMA_TUNNEL_ALLOWED_HOSTS: "127.0.0.1:8199, LANRELAY.EXAMPLE , ,10.0.0.5" }), ["127.0.0.1:8199", "lanrelay.example", "10.0.0.5"]);
     assert.deepEqual(tunnelAllowlistFromEnv({}), []);
-    assert.deepEqual(tunnelAllowlistFromEnv({ BILI_TUNNEL_ALLOWED_HOSTS: "  " }), []);
+    assert.deepEqual(tunnelAllowlistFromEnv({ SIGMA_TUNNEL_ALLOWED_HOSTS: "  " }), []);
 });
 
 // ---------------------------------------------------------------------------
@@ -186,12 +186,12 @@ function get(port: number, reqPath: string, headers: Record<string, string> = {}
 test("integration: tunnel cannot reach the proxy's own management plane (#409 PoC)", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-tunnel-self-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-tunnel-self-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
         port: 0,
         host: "127.0.0.1",
@@ -215,19 +215,19 @@ test("integration: tunnel cannot reach the proxy's own management plane (#409 Po
     if (!proxy.listening) await once(proxy, "listening");
     const selfPort = (proxy.address() as { port: number }).port;
     try {
-        const poc = await get(selfPort, `/bili/http://127.0.0.1:${selfPort}/__bili/config`);
+        const poc = await get(selfPort, `/sigma/http://127.0.0.1:${selfPort}/__bili/config`);
         assert.equal(poc.status, 403, "the issue's PoC GET must be denied");
         assert.match(poc.body, /tunnel_destination_denied/);
-        const pocPut = await get(selfPort, `/bili/http://127.0.0.1:${selfPort}/__bili/config`);
+        const pocPut = await get(selfPort, `/sigma/http://127.0.0.1:${selfPort}/__bili/config`);
         assert.equal(pocPut.status, 403);
         // Direct loopback management access still works (marker not present).
         const direct = await get(selfPort, "/__bili/config", { host: `127.0.0.1:${selfPort}` });
         assert.equal(direct.status, 200);
         // Spoofed marker on a direct request only locks the spoofer out.
-        const spoof = await get(selfPort, "/__bili/config", { host: `127.0.0.1:${selfPort}`, "x-bili-tunnel": "1" });
+        const spoof = await get(selfPort, "/__bili/config", { host: `127.0.0.1:${selfPort}`, "x-sigma-tunnel": "1" });
         assert.equal(spoof.status, 403, "admin gate rejects any request carrying the tunnel marker");
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         proxy.closeAllConnections?.();
         await close(proxy);
         try { rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -237,17 +237,17 @@ test("integration: tunnel cannot reach the proxy's own management plane (#409 Po
 test("integration: metadata destination never contacted (403 before any socket); local upstream still proxied + marker stamped", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-tunnel-meta-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-tunnel-meta-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const biliConfig = path.join(root, "billion-context.json");
+    const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const prevConfig = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
 
     // Echo upstream: captures headers, replies 200.
     let sawMarker: string | string[] | undefined;
     const echo = http.createServer((req, res) => {
-        sawMarker = req.headers["x-bili-tunnel"];
+        sawMarker = req.headers["x-sigma-tunnel"];
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
     });
@@ -278,15 +278,15 @@ test("integration: metadata destination never contacted (403 before any socket);
     if (!proxy.listening) await once(proxy, "listening");
     const selfPort = (proxy.address() as { port: number }).port;
     try {
-        const meta = await get(selfPort, "/bili/http://169.254.169.254/latest/meta-data/");
+        const meta = await get(selfPort, "/sigma/http://169.254.169.254/latest/meta-data/");
         assert.equal(meta.status, 403);
         assert.match(meta.body, /"detail":"linkLocal"/);
         // Self-hosted upstream on a DIFFERENT port still works for the local client.
-        const local = await get(selfPort, `/bili/http://127.0.0.1:${echoPort}/v1/models`);
+        const local = await get(selfPort, `/sigma/http://127.0.0.1:${echoPort}/v1/models`);
         assert.equal(local.status, 200, `loopback client → loopback upstream must pass (got ${local.status}: ${local.body})`);
-        assert.equal(sawMarker, "1", "tunnel forward stamps x-bili-tunnel: 1");
+        assert.equal(sawMarker, "1", "tunnel forward stamps x-sigma-tunnel: 1");
     } finally {
-        process.env.BILI_CONFIG_FILE = prevConfig;
+        process.env.SIGMA_CONFIG_FILE = prevConfig;
         proxy.closeAllConnections?.();
         await close(proxy);
         echo.closeAllConnections?.();

@@ -1,3 +1,3 @@
-import { createBiliPlugin } from "./pi.js";
+import { createSigmaPlugin } from "./pi.js";
 
-export default createBiliPlugin("omp");
+export default createSigmaPlugin("omp");

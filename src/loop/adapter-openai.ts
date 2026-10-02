@@ -514,7 +514,7 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
             // #1455: present the failure AS a failure (see the anthropic twin). The
             // legacy shape — error text + finish_reason "stop" + [DONE] — read as a
             // normal completion to clients and suppressed their retry logic. The
-            // default now rides the top-level `error` frame bili's own parser already
+            // default now rides the top-level `error` frame sigma's own parser already
             // recognizes (same shape #721's truncation path emits); compat.
             // streamErrorShape="completion" restores the legacy shape.
             if (errorShape === "completion") {

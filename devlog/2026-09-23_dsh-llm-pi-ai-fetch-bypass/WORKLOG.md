@@ -40,7 +40,7 @@ it is populated. Consequences, all applied here:
   for ANY cause producing tool-calls-without-model-requests.
 - src/agent/dsh-native.ts: `takeoverGate` now logs each DISTINCT endpoint it
   refuses ONCE PER PROCESS via console.error (host stdout/stderr, not
-  bili.log): refused origin+pathname (query stripped — keys can ride there) +
+  sigma.log): refused origin+pathname (query stripped — keys can ride there) +
   attribution state at refusal time (no initiator vs initiator-without-session
   id). This makes the owner's local repro one-pass diagnosable: a refused line
   with "no active initiator attribution" during an attributed chat turn pins
@@ -55,21 +55,21 @@ it is populated. Consequences, all applied here:
   own lines, attributed traffic claims silently.
 - README zh/en entry reworded to "reported, under investigation" with the two
   detection signals and the launcher workaround (robust under BOTH hypotheses:
-  settings-overlay `/bili/` URLs reach the proxy directly, needing neither the
+  settings-overlay `/sigma/` URLs reach the proxy directly, needing neither the
   fetch patch nor the gate).
 
-### Commit 3 — persist bootstrap failures to bili.log (GUI stderr is invisible)
-Owner's Linux repro (dsh 0.1.7-alpha.2 + bili native plugin + llm-pi-ai custom
+### Commit 3 — persist bootstrap failures to sigma.log (GUI stderr is invisible)
+Owner's Linux repro (dsh 0.1.7-alpha.2 + sigma native plugin + llm-pi-ai custom
 provider, mock upstream; BOTH `dsh headless` and real chromium-driven `dsh web`)
 could NOT reproduce the symptom — all llm-pi-ai traffic (incl. side requests)
-routed through the proxy with `x-bili-hop`/`x-bili-tunnel` stamps. Combined
+routed through the proxy with `x-sigma-hop`/`x-sigma-tunnel` stamps. Combined
 with their source review (pi-ai constructs `new OpenAI({fetch: undefined})` per
 request in 0.82.1 AND 0.87.1; openai SDK 6.26.0/6.40.0 both resolve globalThis
 fetch at call time), the transport-shape hypothesis is dead on Linux; residual
 top suspect = Windows-specific spawn/attach bootstrap failure degrading
 silently: the only output is a one-shot console.error, invisible in GUI process
 stderr — matching "zero interception, zero logs" exactly. Consequence (owner's
-ask): bootstrap failures must also land in the shared bili.log file.
+ask): bootstrap failures must also land in the shared sigma.log file.
 - src/agent/dsh-native.ts: new `persistClientEvent(msg)` — best-effort
   appendFileSync of `<ISO ts> [warn] [dsh-client] <msg>` into `defaultLogFile()`
   (paths.ts, XDG-overridable, same file+shape as the proxy's tee logger;
@@ -82,7 +82,7 @@ ask): bootstrap failures must also land in the shared bili.log file.
   console.error lines unchanged (dual channel: durable file + stderr when
   visible).
 - tests/dsh-native.test.ts: integration test (dead preset + failing fallback
-  spawn under XDG_STATE_HOME → bili.log contains the standard-shaped
+  spawn under XDG_STATE_HOME → sigma.log contains the standard-shaped
   [dsh-client] line) + unit test (line shape regex; broken fs target swallows
   without throwing or partial dir trees).
 - Scope note: the generic native-intercept "proxy not ready" stderr line was
@@ -91,7 +91,7 @@ ask): bootstrap failures must also land in the shared bili.log file.
   failure.
 
 ## Behavior / compatibility changes (disclosure)
-- NEW durable log (shared bili.log file): up to one
+- NEW durable log (shared sigma.log file): up to one
   `<ISO ts> [warn] [dsh-client] …` line per degradation event (bootstrap
   failure, unhealthy attach target, respawn give-up) where previously the only
   trace was a one-shot console.error invisible to GUI hosts. Old → new:
@@ -105,7 +105,7 @@ ask): bootstrap failures must also land in the shared bili.log file.
 - Wire: the `/__bili/plugin/tool` 404 `error` string for unknown conversations
   grows a guidance suffix; status code, JSON shape, and both matched substrings
   are unchanged.
-- NEW client-side log (dsh process): up to one `bili-native-dsh: model request
+- NEW client-side log (dsh process): up to one `sigma-native-dsh: model request
   sent DIRECT (uncompressed) — takeover gate refused <origin+path>: …` line per
   distinct endpoint per process lifetime where previously there was none.
   Deliberate deviation from #1117's silent refusals, scoped by the per-endpoint
@@ -121,13 +121,13 @@ ask): bootstrap failures must also land in the shared bili.log file.
 - Full E2E not run: no commit touches the request pipeline (server.ts /
   src/loop/* / adapters / preflight) or any wire shape — diagnostics only on
   already-failing paths. Local repro of the original symptom is impossible here
-  (needs Windows + dsh web GUI); the owner is building a real dsh + bili + mock
+  (needs Windows + dsh web GUI); the owner is building a real dsh + sigma + mock
   upstream harness and will post runtime results, which the new gate-refusal
   log is designed to make conclusive in one pass.
 
 ## Ceiling notes / deferred
 - Generic interception of an arbitrary SDK-injected fetch is infeasible from
-  bili's side (the function reference is private to the host module graph; pnpm
+  sigma's side (the function reference is private to the host module graph; pnpm
   isolation defeats cross-module patching; undici-internals patching too
   invasive). IF the transport-fetch-shape hypothesis survives the runtime
   evidence, the real fix belongs in dsh (lazy globalThis fetch resolution or a
@@ -143,8 +143,8 @@ ask): bootstrap failures must also land in the shared bili.log file.
 
 Root cause was pinned by the reporter's runtime evidence (dsh-http-proxy
 settings-refresh re-arm overwrites `globalThis.fetch` with its frozen
-pre-bili capture, evicting bili from the chain); the owner shipped the L1
-self-heal separately (#1187, guarded accessor + `BILI_RECLAIM_FETCH_PATCH`).
+pre-sigma capture, evicting sigma from the chain); the owner shipped the L1
+self-heal separately (#1187, guarded accessor + `SIGMA_RECLAIM_FETCH_PATCH`).
 This follow-up delivers the agreed L2 instrument in `src/agent/dsh-native.ts`:
 
 - `attributionOf(ctx)`: three states — `ok` (usable session id), `none`
@@ -156,7 +156,7 @@ This follow-up delivers the agreed L2 instrument in `src/agent/dsh-native.ts`:
   transition (none↔threw) re-prints with `(state none→threw)`. Bounded noise
   — #1117's per-request silence preserved; the 256-endpoint cap now clears
   only when a NEW endpoint would overflow (existing counts survive).
-- Every printed line is additionally appended to bili.log via
+- Every printed line is additionally appended to sigma.log via
   `persistClientEvent` (`[warn] [dsh-client] …`) so GUI hosts that swallow
   stderr leave a durable trace.
 
@@ -166,7 +166,7 @@ Behavior change disclosure (old → new):
 - NEW log lines appear on attribution-state transitions
   (`(state none→threw)` / `(state threw→none)`) carrying the accumulated
   count — previously only one flat line per endpoint ever existed.
-- NEW durable lines in `~/.local/state/billion-context/bili.log`
+- NEW durable lines in `~/.local/state/sigma/sigma.log`
   (`[dsh-client]`-marked) mirroring every printed refusal line — previously
   refusals were stderr-only and invisible in GUI hosts.
 - No change to gate decision logic, wire shapes, config schema, or persistence
@@ -178,5 +178,5 @@ Verification (head 2a6778df, based on master incl. merged #1187):
 - `npm test`: 2359 total, 2357 pass, 0 fail, 2 skipped (gated E2E);
   dsh-native 31/31 (+1 new three-state test covering silent counting,
   both transition directions, attributed-silent claim, and the durable
-  bili.log copy).
+  sigma.log copy).
 - `npm run build`: success.

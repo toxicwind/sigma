@@ -1,18 +1,18 @@
 import { homedir } from "node:os";
 import path from "node:path";
 
-/** XDG base-directory paths for billion-context.
+/** XDG base-directory paths for sigma.
  *
  *  Follows the XDG Base Directory Specification so the proxy lands in the
- *  conventional Linux/macOS locations instead of a bespoke ~/.bili/:
+ *  conventional Linux/macOS locations instead of a bespoke ~/.sigma/:
  *
  *    config (user-edited, dotfile-managed):
- *      $XDG_CONFIG_HOME/billion-context/billion-context.json
- *      default: ~/.config/billion-context/billion-context.json
+ *      $XDG_CONFIG_HOME/sigma/sigma.json
+ *      default: ~/.config/sigma/sigma.json
  *
  *    data (persisted session state, grows over time):
- *      $XDG_DATA_HOME/billion-context/sessions/
- *      default: ~/.local/share/billion-context/sessions/
+ *      $XDG_DATA_HOME/sigma/sessions/
+ *      default: ~/.local/share/sigma/sessions/
  *
  *  Env overrides (highest priority) are kept so test runners and container
  *  setups can relocate everything without touching the config file. */
@@ -25,41 +25,41 @@ function xdg(envVar: string, fallback: string): string {
 
 /** Root config dir: user-editable configuration lives here. */
 export function configDir(): string {
-    return path.join(xdg("XDG_CONFIG_HOME", ".config"), "billion-context");
+    return path.join(xdg("XDG_CONFIG_HOME", ".config"), "sigma");
 }
 
 /** Main config file path. */
 export function configFile(): string {
-    const env = process.env.BILI_CONFIG_FILE;
+    const env = process.env.SIGMA_CONFIG_FILE;
     if (env && env.length > 0) return path.resolve(env);
-    return path.join(configDir(), "billion-context.json");
+    return path.join(configDir(), "sigma.json");
 }
 
 /** Root data dir: persistent session state lives here. */
 export function dataDir(): string {
-    return path.join(xdg("XDG_DATA_HOME", ".local/share"), "billion-context");
+    return path.join(xdg("XDG_DATA_HOME", ".local/share"), "sigma");
 }
 
 /** Sessions dir: one JSON file per session. */
 export function sessionsDir(): string {
-    const env = process.env.BILI_SESSIONS_DIR;
+    const env = process.env.SIGMA_SESSIONS_DIR;
     if (env && env.length > 0) return path.resolve(env);
     return path.join(dataDir(), "sessions");
 }
 
 /** Root cache dir: transient/ephemeral data (update-check throttle, etc.). */
 export function cacheDir(): string {
-    return path.join(xdg("XDG_CACHE_HOME", ".cache"), "billion-context");
+    return path.join(xdg("XDG_CACHE_HOME", ".cache"), "sigma");
 }
 
 /** Root state dir: log files and other per-host state. */
 export function stateDir(): string {
-    return path.join(xdg("XDG_STATE_HOME", ".local/state"), "billion-context");
+    return path.join(xdg("XDG_STATE_HOME", ".local/state"), "sigma");
 }
 
 /** Default log file path. */
 export function defaultLogFile(): string {
-    return path.join(stateDir(), "bili.log");
+    return path.join(stateDir(), "sigma.log");
 }
 
 /** Origin of the most recently started proxy (best-effort discovery file for
@@ -68,8 +68,8 @@ export function proxyOriginFile(): string {
     return path.join(stateDir(), "proxy-origin");
 }
 
-/** Body-dump dir (ACP_DUMP_BODY / BILI_DUMP_4XX): ACP_DUMP_DIR override first,
- *  else the XDG state dir so dumps co-locate with bili.log on every platform. */
+/** Body-dump dir (ACP_DUMP_BODY / SIGMA_DUMP_4XX): ACP_DUMP_DIR override first,
+ *  else the XDG state dir so dumps co-locate with sigma.log on every platform. */
 export function dumpsDir(): string {
     const env = process.env.ACP_DUMP_DIR;
     if (env && env.length > 0) return env;

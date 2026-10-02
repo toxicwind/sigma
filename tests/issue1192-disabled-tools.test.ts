@@ -45,7 +45,7 @@ describe("#1192: known-but-disabled opt-in tools get an explanation, not a hard 
         const r = await call("acp_rule", { rule: "verify driver unload+reload" });
         assert.equal(r.status, 200);
         assert.equal(r.json.ok, true);
-        assert.match(String(r.json.result), /acp_rule is not enabled on this bili proxy \(compress\.rules\.enabled is not true\)/);
+        assert.match(String(r.json.result), /acp_rule is not enabled on this sigma proxy \(compress\.rules\.enabled is not true\)/);
         assert.match(String(r.json.result), /nothing was recorded/);
     });
 
@@ -53,14 +53,14 @@ describe("#1192: known-but-disabled opt-in tools get an explanation, not a hard 
         const r = await call("acp_rule", { rule: "should not record" });
         assert.equal(r.status, 200);
         assert.equal(r.json.ok, true);
-        assert.match(String(r.json.result), /acp_rule is not enabled on this bili proxy \(compress\.rules\.enabled is not true\)/);
+        assert.match(String(r.json.result), /acp_rule is not enabled on this sigma proxy \(compress\.rules\.enabled is not true\)/);
     });
 
     it("absorb disabled → ok:true explanation", async () => {
         const r = await call("absorb", { ref: "m00001", summary: "x" });
         assert.equal(r.status, 200);
         assert.equal(r.json.ok, true);
-        assert.match(String(r.json.result), /absorb is not enabled on this bili proxy \(compress\.absorb\.enabled is not true\)/);
+        assert.match(String(r.json.result), /absorb is not enabled on this sigma proxy \(compress\.absorb\.enabled is not true\)/);
     });
 
     it("truly unknown tool keeps the 400 with the allowed list", async () => {

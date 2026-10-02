@@ -13,30 +13,30 @@ import {
     selfPackageRoot,
 } from "../src/plugin-install.ts";
 
-const NPM_ROOT = "/usr/local/lib/node_modules/billion-context";
+const NPM_ROOT = "/usr/local/lib/node_modules/sigma";
 
 function tempDir(prefix: string): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
 function entryArgs(root: string, base: string): { data: Record<string, unknown>; root: string; shimDir: string; agentJs: string } {
-    const shimDir = path.join(base, "opencode", "plugins", "billion-context");
+    const shimDir = path.join(base, "opencode", "plugins", "sigma");
     return { data: {}, root, shimDir, agentJs: path.join(root, "dist", "agent", "opencode-native.js") };
 }
 
 test("isNpmInstallForm: npm/pnpm/yarn roots are npm form, checkouts are not", () => {
-    assert.equal(isNpmInstallForm("/usr/lib/node_modules/billion-context"), true);
-    assert.equal(isNpmInstallForm("/usr/local/lib/node_modules/billion-context"), true);
-    assert.equal(isNpmInstallForm("/home/u/.npm-global/lib/node_modules/billion-context"), true);
-    assert.equal(isNpmInstallForm("/home/u/proj/node_modules/.pnpm/billion-context@0.1.118/node_modules/billion-context"), true);
-    assert.equal(isNpmInstallForm("C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\billion-context"), true);
-    assert.equal(isNpmInstallForm("/home/u/checkouts/billion-context"), false);
-    assert.equal(isNpmInstallForm("/opt/bili"), false);
+    assert.equal(isNpmInstallForm("/usr/lib/node_modules/sigma"), true);
+    assert.equal(isNpmInstallForm("/usr/local/lib/node_modules/sigma"), true);
+    assert.equal(isNpmInstallForm("/home/u/.npm-global/lib/node_modules/sigma"), true);
+    assert.equal(isNpmInstallForm("/home/u/proj/node_modules/.pnpm/sigma@0.1.118/node_modules/sigma"), true);
+    assert.equal(isNpmInstallForm("C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\sigma"), true);
+    assert.equal(isNpmInstallForm("/home/u/checkouts/sigma"), false);
+    assert.equal(isNpmInstallForm("/opt/sigma"), false);
     assert.equal(isNpmInstallForm("/srv/node_modules"), false);
 });
 
 test("applyOpencodePluginEntry: npm form writes the bare package name only", () => {
-    const args = entryArgs(NPM_ROOT, tempDir("bili-oc-npm-"));
+    const args = entryArgs(NPM_ROOT, tempDir("sigma-oc-npm-"));
     const notes = applyOpencodePluginEntry(args);
     assert.deepEqual(args.data.plugin, [OPENCODE_NPM_ENTRY]);
     assert.deepEqual(notes, [`plugin -> ${OPENCODE_NPM_ENTRY}`]);
@@ -44,7 +44,7 @@ test("applyOpencodePluginEntry: npm form writes the bare package name only", () 
 });
 
 test("applyOpencodePluginEntry: npm form migrates a legacy dev shim to the bare name and deletes the dir", () => {
-    const base = tempDir("bili-oc-migrate-");
+    const base = tempDir("sigma-oc-migrate-");
     const args = entryArgs(NPM_ROOT, base);
     fs.mkdirSync(args.shimDir, { recursive: true });
     fs.writeFileSync(path.join(args.shimDir, "index.js"), 'export { default } from "/opt/old/dist/agent/opencode-native.js";\n');
@@ -56,14 +56,14 @@ test("applyOpencodePluginEntry: npm form migrates a legacy dev shim to the bare 
 });
 
 test("applyOpencodePluginEntry: npm form is idempotent", () => {
-    const args = entryArgs(NPM_ROOT, tempDir("bili-oc-idem-"));
+    const args = entryArgs(NPM_ROOT, tempDir("sigma-oc-idem-"));
     args.data.plugin = [OPENCODE_NPM_ENTRY];
     assert.deepEqual(applyOpencodePluginEntry(args), ["plugin present"]);
     assert.deepEqual(args.data.plugin, [OPENCODE_NPM_ENTRY]);
 });
 
 test("applyOpencodePluginEntry: dev form writes a local shim and warns it is not portable", () => {
-    const args = entryArgs("/opt/checkout-bili", tempDir("bili-oc-dev-"));
+    const args = entryArgs("/opt/checkout-sigma", tempDir("sigma-oc-dev-"));
     const notes = applyOpencodePluginEntry(args);
     assert.deepEqual(args.data.plugin, [args.shimDir]);
     assert.equal(notes[0], `plugin -> ${args.shimDir}`);
@@ -73,7 +73,7 @@ test("applyOpencodePluginEntry: dev form writes a local shim and warns it is not
 });
 
 test("applyOpencodePluginEntry: dev form replaces an existing bare-name entry with the shim", () => {
-    const args = entryArgs("/opt/checkout-bili", tempDir("bili-oc-dev-replace-"));
+    const args = entryArgs("/opt/checkout-sigma", tempDir("sigma-oc-dev-replace-"));
     args.data.plugin = [OPENCODE_NPM_ENTRY];
     const notes = applyOpencodePluginEntry(args);
     assert.deepEqual(args.data.plugin, [args.shimDir]);
@@ -82,7 +82,7 @@ test("applyOpencodePluginEntry: dev form replaces an existing bare-name entry wi
 });
 
 test("applyOpencodePluginEntry: non-string plugin entries are preserved verbatim (#1002)", () => {
-    const args = entryArgs(NPM_ROOT, tempDir("bili-oc-nonstr-"));
+    const args = entryArgs(NPM_ROOT, tempDir("sigma-oc-nonstr-"));
     const objs = [{ package: "@org/x" }, { package: "y", options: { z: 1 } }];
     args.data.plugin = [42, null, ...objs, "other-pkg"];
     const notes = applyOpencodePluginEntry(args);
@@ -91,7 +91,7 @@ test("applyOpencodePluginEntry: non-string plugin entries are preserved verbatim
 });
 
 test("applyOpencodePluginEntry: idempotent run with foreign objects leaves the key untouched (#1002)", () => {
-    const args = entryArgs(NPM_ROOT, tempDir("bili-oc-idem-obj-"));
+    const args = entryArgs(NPM_ROOT, tempDir("sigma-oc-idem-obj-"));
     const objs = [{ package: "@org/x" }];
     args.data.plugin = [...objs, OPENCODE_NPM_ENTRY];
     const touched = new Set<string>();
@@ -102,7 +102,7 @@ test("applyOpencodePluginEntry: idempotent run with foreign objects leaves the k
 });
 
 test("applyOpencodePluginEntry: map-form plugins keep foreign options and stay a map (#1002)", () => {
-    const args = entryArgs(NPM_ROOT, tempDir("bili-oc-map-"));
+    const args = entryArgs(NPM_ROOT, tempDir("sigma-oc-map-"));
     args.data.plugins = { "@org/x": { options: { z: 1 } }, "plain-y": true };
     applyOpencodePluginEntry({ ...args, key: "plugins" });
     assert.deepEqual(args.data.plugins, { "@org/x": { options: { z: 1 } }, "plain-y": true, [OPENCODE_NPM_ENTRY]: true });
@@ -115,11 +115,11 @@ test("pluginInstall/remove/status opencode end-to-end (dev form under tsx)", (t)
     const prevXdg = process.env.XDG_CONFIG_HOME;
     const prevState = process.env.XDG_STATE_HOME;
     const prevOpen = process.env.OPENCODE_CONFIG;
-    const prevMcp = process.env.BILI_MCP_PROXY;
+    const prevMcp = process.env.SIGMA_MCP_PROXY;
     delete process.env.OPENCODE_CONFIG;
-    delete process.env.BILI_MCP_PROXY;
-    const xdg = tempDir("bili-oc-xdg-");
-    const state = tempDir("bili-oc-state-");
+    delete process.env.SIGMA_MCP_PROXY;
+    const xdg = tempDir("sigma-oc-xdg-");
+    const state = tempDir("sigma-oc-state-");
     process.env.XDG_CONFIG_HOME = xdg;
     process.env.XDG_STATE_HOME = state;
     t.after(() => {
@@ -129,14 +129,14 @@ test("pluginInstall/remove/status opencode end-to-end (dev form under tsx)", (t)
         else process.env.XDG_STATE_HOME = prevState;
         if (prevOpen === undefined) delete process.env.OPENCODE_CONFIG;
         else process.env.OPENCODE_CONFIG = prevOpen;
-        if (prevMcp === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevMcp;
+        if (prevMcp === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevMcp;
         fs.rmSync(xdg, { recursive: true, force: true });
         fs.rmSync(state, { recursive: true, force: true });
     });
 
     const file = path.join(xdg, "opencode", "opencode.json");
-    const shimDir = path.join(xdg, "opencode", "plugins", "billion-context");
+    const shimDir = path.join(xdg, "opencode", "plugins", "sigma");
     const readCfg = (): OcCfg => JSON.parse(fs.readFileSync(file, "utf8")) as OcCfg;
     const ocStatus = () => pluginStatusAll().find((r) => r.agent === "opencode")?.status;
 
@@ -147,7 +147,7 @@ test("pluginInstall/remove/status opencode end-to-end (dev form under tsx)", (t)
 
     const out = pluginInstall("opencode");
     assert.ok(out.startsWith(`opencode: installed -> ${file}`), out);
-    assert.match(out, /plugin -> .+plugins[\\/]billion-context/);
+    assert.match(out, /plugin -> .+plugins[\\/]sigma/);
     assert.match(out, /machine-local shim, not portable across machines/);
     let cfg = readCfg();
     assert.deepEqual(cfg.plugin, ["some-other", shimDir]);
@@ -173,17 +173,17 @@ test("pluginInstall/remove/status opencode end-to-end (dev form under tsx)", (t)
     assert.match(pluginRemove("opencode"), /not installed/);
 });
 
-const MCP_PINNED = { type: "local", command: ["/usr/bin/node", "/opt/old/dist/mcp.js"], environment: { BILI_MCP_PROXY: "http://127.0.0.1:18787" }, enabled: true };
+const MCP_PINNED = { type: "local", command: ["/usr/bin/node", "/opt/old/dist/mcp.js"], environment: { SIGMA_MCP_PROXY: "http://127.0.0.1:18787" }, enabled: true };
 
-type OcMcpCfg = { plugin?: unknown; mcp?: { bili?: Record<string, unknown> } & Record<string, unknown> };
+type OcMcpCfg = { plugin?: unknown; mcp?: { sigma?: Record<string, unknown> } & Record<string, unknown> };
 
 function withOcConfig(t: import("node:test").TestContext, initial: OcMcpCfg): { file: string; read: () => OcMcpCfg } {
     const prevXdg = process.env.XDG_CONFIG_HOME;
     const prevState = process.env.XDG_STATE_HOME;
     const prevOpen = process.env.OPENCODE_CONFIG;
     delete process.env.OPENCODE_CONFIG;
-    const xdg = tempDir("bili-oc-mcp-");
-    const state = tempDir("bili-oc-mcp-state-");
+    const xdg = tempDir("sigma-oc-mcp-");
+    const state = tempDir("sigma-oc-mcp-state-");
     process.env.XDG_CONFIG_HOME = xdg;
     process.env.XDG_STATE_HOME = state;
     t.after(() => {
@@ -202,69 +202,69 @@ function withOcConfig(t: import("node:test").TestContext, initial: OcMcpCfg): { 
     return { file, read: () => JSON.parse(fs.readFileSync(file, "utf8")) as OcMcpCfg };
 }
 
-test("#926 default install never writes mcp.bili, even with BILI_MCP_PROXY set", (t) => {
-    const prevEnv = process.env.BILI_MCP_PROXY;
-    process.env.BILI_MCP_PROXY = "http://127.0.0.1:18787";
+test("#926 default install never writes mcp.sigma, even with SIGMA_MCP_PROXY set", (t) => {
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
+    process.env.SIGMA_MCP_PROXY = "http://127.0.0.1:18787";
     t.after(() => {
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
     });
     const { read } = withOcConfig(t, {});
     const out = pluginInstall("opencode");
-    assert.match(out, /mcp\.bili not written/);
+    assert.match(out, /mcp\.sigma not written/);
     assert.equal(read().mcp, undefined);
 });
 
-test("#926 default install heals a stale pinned mcp.bili from an older install", (t) => {
-    const { read } = withOcConfig(t, { mcp: { bili: MCP_PINNED } });
+test("#926 default install heals a stale pinned mcp.sigma from an older install", (t) => {
+    const { read } = withOcConfig(t, { mcp: { sigma: MCP_PINNED } });
     const out = pluginInstall("opencode");
-    assert.match(out, /mcp\.bili removed \(stale second tool face/);
+    assert.match(out, /mcp\.sigma removed \(stale second tool face/);
     assert.equal(read().mcp, undefined);
 });
 
-test("#926 --with-mcp writes mcp.bili without an origin pin (live discovery)", (t) => {
-    const prevEnv = process.env.BILI_MCP_PROXY;
-    delete process.env.BILI_MCP_PROXY;
+test("#926 --with-mcp writes mcp.sigma without an origin pin (live discovery)", (t) => {
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
+    delete process.env.SIGMA_MCP_PROXY;
     t.after(() => {
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
     });
     const { read } = withOcConfig(t, {});
     const out = pluginInstall("opencode", { withMcp: true });
-    assert.match(out, /mcp\.bili written \(no origin pin/);
-    const bili = read().mcp?.bili;
-    assert.ok(bili, "mcp.bili written");
-    assert.equal(bili!.environment, undefined);
-    assert.equal(bili!.enabled, true);
+    assert.match(out, /mcp\.sigma written \(no origin pin/);
+    const sigma = read().mcp?.sigma;
+    assert.ok(sigma, "mcp.sigma written");
+    assert.equal(sigma!.environment, undefined);
+    assert.equal(sigma!.enabled, true);
 });
 
-test("#926 --with-mcp pins the origin only when BILI_MCP_PROXY is explicit", (t) => {
-    const prevEnv = process.env.BILI_MCP_PROXY;
-    process.env.BILI_MCP_PROXY = "http://127.0.0.1:8787";
+test("#926 --with-mcp pins the origin only when SIGMA_MCP_PROXY is explicit", (t) => {
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
+    process.env.SIGMA_MCP_PROXY = "http://127.0.0.1:8787";
     t.after(() => {
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
     });
     const { read } = withOcConfig(t, {});
     const out = pluginInstall("opencode", { withMcp: true });
-    assert.match(out, /mcp\.bili written \(BILI_MCP_PROXY=http:\/\/127\.0\.0\.1:8787\)/);
-    const bili = read().mcp?.bili;
-    assert.deepEqual(bili!.environment, { BILI_MCP_PROXY: "http://127.0.0.1:8787" });
+    assert.match(out, /mcp\.sigma written \(SIGMA_MCP_PROXY=http:\/\/127\.0\.0\.1:8787\)/);
+    const sigma = read().mcp?.sigma;
+    assert.deepEqual(sigma!.environment, { SIGMA_MCP_PROXY: "http://127.0.0.1:8787" });
 });
 
 test("#926 --with-mcp strips a stale pin from an existing entry but keeps the entry", (t) => {
-    const prevEnv = process.env.BILI_MCP_PROXY;
-    delete process.env.BILI_MCP_PROXY;
+    const prevEnv = process.env.SIGMA_MCP_PROXY;
+    delete process.env.SIGMA_MCP_PROXY;
     t.after(() => {
-        if (prevEnv === undefined) delete process.env.BILI_MCP_PROXY;
-        else process.env.BILI_MCP_PROXY = prevEnv;
+        if (prevEnv === undefined) delete process.env.SIGMA_MCP_PROXY;
+        else process.env.SIGMA_MCP_PROXY = prevEnv;
     });
-    const { read } = withOcConfig(t, { mcp: { bili: MCP_PINNED } });
+    const { read } = withOcConfig(t, { mcp: { sigma: MCP_PINNED } });
     const out = pluginInstall("opencode", { withMcp: true });
-    assert.match(out, /mcp\.bili present \(stale BILI_MCP_PROXY pin removed/);
-    const bili = read().mcp?.bili;
-    assert.ok(bili, "entry kept");
-    assert.equal(bili!.environment, undefined);
-    assert.deepEqual(bili!.command, ["/usr/bin/node", "/opt/old/dist/mcp.js"]);
-    assert.equal(bili!.enabled, true);
+    assert.match(out, /mcp\.sigma present \(stale SIGMA_MCP_PROXY pin removed/);
+    const sigma = read().mcp?.sigma;
+    assert.ok(sigma, "entry kept");
+    assert.equal(sigma!.environment, undefined);
+    assert.deepEqual(sigma!.command, ["/usr/bin/node", "/opt/old/dist/mcp.js"]);
+    assert.equal(sigma!.enabled, true);
 });

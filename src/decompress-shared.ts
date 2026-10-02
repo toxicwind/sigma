@@ -21,12 +21,12 @@ import { ccrEnabled, contentStoreOf } from "./store.js";
 
 /** Bounded retention for large-decompress temp files. Each decompress with
  *  body > 10000 writes one file under tmpdir(); the reaper unlinks oldest past
- *  BILI_DECOMPRESS_TMP_CAP (default 50) and beforeExit cleans all. */
+ *  SIGMA_DECOMPRESS_TMP_CAP (default 50) and beforeExit cleans all. */
 type TrackedTempFile = { path: string; mtimeMs: number };
 const trackedTempFiles: TrackedTempFile[] = [];
 
 function getDecompressTmpCap(): number {
-    const raw = process.env.BILI_DECOMPRESS_TMP_CAP;
+    const raw = process.env.SIGMA_DECOMPRESS_TMP_CAP;
     const parsed = raw ? Number.parseInt(raw, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
 }
@@ -226,7 +226,7 @@ function resolveDecompressRange(args: Record<string, unknown>, ctx: ProxyToolCtx
     if (!startRaw || !endRaw) return "[decompress FAILED: startId and endId must be given together]";
     if (!ccrEnabled(ctx.session)) {
         // [#1207 review F3] Plugin mode structurally never arms CCR (the agent
-        // owns its folds; bili never executes them) — the generic "enable
+        // owns its folds; sigma never executes them) — the generic "enable
         // compress.ccr.enabled" advice is unsatisfiable there and would send
         // the model chasing a config that cannot help.
         if (typeof ctx.session.metadata.pluginAgent === "string") {
@@ -571,7 +571,7 @@ export function executeSearchContext(
         steering = buildSteering(scored.filter((s) => returned.has(s.block)), state, plan.session);
     }
     const note = foreignSessionId
-        ? `\n\n[Read-only search of historical session ${foreignSessionId}. Block ids are per-session namespaces — decompress acts on the current session only. For bulk content use bili export ${foreignSessionId} [--full].]`
+        ? `\n\n[Read-only search of historical session ${foreignSessionId}. Block ids are per-session namespaces — decompress acts on the current session only. For bulk content use sigma export ${foreignSessionId} [--full].]`
         : "";
     return `Found ${blocks.length} block(s) for "${query}"${scope}:\n\n${lines.join("\n\n")}${steering}${note}`;
 }

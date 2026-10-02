@@ -4,14 +4,14 @@ import http from "node:http";
 import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { defaultConfig } from "acp-kernel";
-import { startServer, BILI_HOP_HEADER } from "../src/server.ts";
+import { startServer, SIGMA_HOP_HEADER } from "../src/server.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import type { ProxyOptions } from "../src/config.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
 
-/** #300: chained bili instances (A forward → B) must not double-process.
- *  A stamps x-bili-hop on processed forwards; B, seeing a foreign marker,
+/** #300: chained sigma instances (A forward → B) must not double-process.
+ *  A stamps x-sigma-hop on processed forwards; B, seeing a foreign marker,
  *  skips ALL processing and passes the request through verbatim (logging a
  *  prominent warn). Two tests: (1) B in isolation with a foreign marker —
  *  proves B rewrites nothing; (2) the full A→B chain — proves single-layer
@@ -70,10 +70,10 @@ function makeUpstream(captured: Captured[]): http.Server {
 }
 
 function chainWarnings(logs: { level: string; msg: string }[]): { level: string; msg: string }[] {
-    return logs.filter((l) => l.level === "warn" && l.msg.includes("[chain]") && l.msg.includes(BILI_HOP_HEADER));
+    return logs.filter((l) => l.level === "warn" && l.msg.includes("[chain]") && l.msg.includes(SIGMA_HOP_HEADER));
 }
 
-test("#300: inbound foreign x-bili-hop → B passes through WITHOUT processing", async () => {
+test("#300: inbound foreign x-sigma-hop → B passes through WITHOUT processing", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
     const logs: { level: string; msg: string }[] = [];
@@ -105,7 +105,7 @@ test("#300: inbound foreign x-bili-hop → B passes through WITHOUT processing",
             headers: {
                 "content-type": "application/json",
                 "x-acp-session": "chain-isolated",
-                [BILI_HOP_HEADER]: otherMarker,
+                [SIGMA_HOP_HEADER]: otherMarker,
             },
             body: bodyJson,
         });
@@ -127,7 +127,7 @@ test("#300: inbound foreign x-bili-hop → B passes through WITHOUT processing",
         assert.ok(!parsed.tools || parsed.tools.length === 0, "B must not inject tools");
         assert.ok(!atLlm.body.includes("\x3cacp "), "B must not inject acp tags");
         // The foreign marker propagated through B unchanged (B did not re-stamp it).
-        assert.equal(atLlm.headers[BILI_HOP_HEADER], otherMarker, "foreign marker must propagate through B unchanged");
+        assert.equal(atLlm.headers[SIGMA_HOP_HEADER], otherMarker, "foreign marker must propagate through B unchanged");
     } finally {
         setLogCapture(null);
         B.closeAllConnections?.();
@@ -167,8 +167,8 @@ test("#300: A→B chain → single-layer processing, B warns + passes through", 
     };
 
     try {
-        // Client → A via zero-config /bili/<B-url>/… so A's upstream is B.
-        const resp = await fetch(`http://127.0.0.1:${aPort}/bili/${bUrl}/v1/chat/completions`, {
+        // Client → A via zero-config /sigma/<B-url>/… so A's upstream is B.
+        const resp = await fetch(`http://127.0.0.1:${aPort}/sigma/${bUrl}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "chain-e2e" },
             body: JSON.stringify(body),
@@ -184,8 +184,8 @@ test("#300: A→B chain → single-layer processing, B warns + passes through", 
         assert.equal(captured.length, 1, `expected exactly one LLM request, got ${captured.length}`);
         const atLlm = captured[0]!;
         // A processed + stamped the request (marker present ⇒ A ran the pipeline).
-        const markerAtLlm = atLlm.headers[BILI_HOP_HEADER];
-        assert.ok(markerAtLlm, "A's x-bili-hop marker must reach the LLM (A processed the request)");
+        const markerAtLlm = atLlm.headers[SIGMA_HOP_HEADER];
+        assert.ok(markerAtLlm, "A's x-sigma-hop marker must reach the LLM (A processed the request)");
         // B passed A's marker through verbatim (did NOT re-stamp with its own id)
         // — i.e. the marker B warned about is the same one that reached the LLM.
         assert.ok(warns[0]!.msg.includes(markerAtLlm as string),

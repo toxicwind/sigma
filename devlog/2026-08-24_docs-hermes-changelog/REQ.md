@@ -1,7 +1,7 @@
 # REQ - Docs update for v0.1.47–v0.1.50 (hermes launcher + changelog backfill)
 
 - Task ID: `2026-08-24_docs-hermes-changelog`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Accepted
 - Created: 2026-08-24
 

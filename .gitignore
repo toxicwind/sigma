@@ -3,6 +3,6 @@ dist/
 *.log
 .env
 *.tgz
-.bili-coop-build-stamp
+.sigma-coop-build-stamp
 tmp/
 tests/.pp-stamp-state-*/

@@ -160,7 +160,7 @@ test("#1075 e2e openai-wire: 1-message side request neither wipes ref maps nor i
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/chat/completions`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/chat/completions`;
     const post = (model: string, messages: Array<{ role: string; content: string }>): Promise<{ status: number; body: string }> =>
         fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-acp-session": SID }, body: JSON.stringify({ model, max_tokens: 1024, stream: true, messages }) }).then(async (r) => ({ status: r.status, body: await r.text() }));
 

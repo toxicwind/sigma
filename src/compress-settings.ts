@@ -156,7 +156,7 @@ export interface SurfaceResolution {
 }
 
 /** Resolve the pack surface for one request: `promptPack` names a pack in the
- *  kernel's resolver chain [project `./.billion-context/packs` > user
+ *  kernel's resolver chain [project `./.sigma/packs` > user
  *  `<configDir>/packs` > builtin registry]. Unknown names fall back to the
  *  identity surface ({} — kernel defaults everywhere) with a one-time-per-name
  *  warning, so a typo never degrades the compression prompts. Directory
@@ -169,7 +169,7 @@ export function resolveCompressSurfaceDetailed(
     if (typeof name !== "string" || name === "default" || !isValidPackName(name)) return { surface: {}, packName: "default" };
     const resolver = createPackResolver(
         defaultPackSources({
-            projectDir: dirs?.projectDir ?? path.join(process.cwd(), ".billion-context", "packs"),
+            projectDir: dirs?.projectDir ?? path.join(process.cwd(), ".sigma", "packs"),
             userDirs: dirs?.userDirs ?? [path.join(configDir(), "packs")],
         }),
     );

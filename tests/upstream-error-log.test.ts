@@ -10,7 +10,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
 
 /** #2 field report: a relay answered 400 "请求参数无效" for 34 minutes and
- *  bili.log carried zero trace, because non-2xx upstream responses were
+ *  sigma.log carried zero trace, because non-2xx upstream responses were
  *  piped through verbatim without logging. The proxy must now warn with
  *  status + request-id + body snippet while still passing the body through
  *  byte-for-byte. */
@@ -57,7 +57,7 @@ async function startProxyWith(upstream: http.Server): Promise<{ proxy: http.Serv
 }
 
 async function postChat(proxyPort: number, upstreamPort: number): Promise<Response> {
-    return fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
+    return fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": "upstream-error-log-1" },
         body: JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "hi" }] }),

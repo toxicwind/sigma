@@ -3,13 +3,13 @@ import type { WireProtocol } from "./util.js";
 
 // #1357/#1395 — Chain Checkpoint (first-processor-wins idempotent interop).
 // A request-level checkpoint marks a request that already passed through a
-// bili pipeline; downstream bili instances recognize it and forward silently
+// sigma pipeline; downstream sigma instances recognize it and forward silently
 // instead of re-running kernel/injection. This module is STEP 2: recognition
 // only — parser, per-wire carrier contract, JCS digest, shadow verdicts.
 // Generation + enforcement land in step 3 (separate human-reviewed PR).
 //
 // Carrier contract (#1395 decision (a), ownership-based): a checkpoint lives
-// ONLY in a bili-owned trailing control slot — the trailing run of user-role
+// ONLY in a sigma-owned trailing control slot — the trailing run of user-role
 // messages after the last non-user entry, whose ENTIRE content strictly
 // equals the tag syntax below. Content the model or user can generate
 // themselves is never a carrier; there is deliberately no global
@@ -21,14 +21,14 @@ import type { WireProtocol } from "./util.js";
 // Verdict semantics (shadow mode logs only; step 3 maps them to behavior):
 //   valid            ≥1 known-version candidate whose digest matches and is fresh
 //   recent-mismatch  no digest match, but a well-formed FRESH checkpoint (a
-//                    different bili processed this body) → step 3 forwards + warns
+//                    different sigma processed this body) → step 3 forwards + warns
 //   stale            digest match with out-of-window/future timestamp (replay or
 //                    clock skew → step 3 forwards + warns), OR no-match stale-only
 //                    (→ step 3 strips and processes normally)
 //   invalid          malformed-looking tag(s) in carrier slots, future-dated
 //                    beyond skew only, or unknown version only → never trusted
 //   none             no checkpoint signal at all
-export const CHAIN_TAG = "bili-chain";
+export const CHAIN_TAG = "sigma-chain";
 export const SUPPORTED_CHECKPOINT_VERSION = 1;
 export const DEFAULT_MAX_FUTURE_SKEW_MS = 2 * 60 * 1000;
 export const DEFAULT_RECENT_CHECKPOINT_WINDOW_MS = 10 * 60 * 1000;
@@ -322,8 +322,8 @@ function envMs(name: string, fallback: number): number {
 
 export function evaluateChain(parsed: unknown, wire: WireProtocol, opts: ChainEvaluationOptions = {}): ChainCheckpointContext {
     const nowMs = opts.nowMs ?? Date.now();
-    const maxFutureSkewMs = opts.maxFutureSkewMs ?? envMs("BILI_CHAIN_MAX_FUTURE_SKEW_MS", DEFAULT_MAX_FUTURE_SKEW_MS);
-    const recentWindowMs = opts.recentWindowMs ?? envMs("BILI_CHAIN_RECENT_WINDOW_MS", DEFAULT_RECENT_CHECKPOINT_WINDOW_MS);
+    const maxFutureSkewMs = opts.maxFutureSkewMs ?? envMs("SIGMA_CHAIN_MAX_FUTURE_SKEW_MS", DEFAULT_MAX_FUTURE_SKEW_MS);
+    const recentWindowMs = opts.recentWindowMs ?? envMs("SIGMA_CHAIN_RECENT_WINDOW_MS", DEFAULT_RECENT_CHECKPOINT_WINDOW_MS);
     const { candidates, malformed, stripped } = extractChainCarriers(parsed, wire);
     if (candidates.length === 0) {
         return { candidates, malformed, verdict: malformed > 0 ? "invalid" : "none" };

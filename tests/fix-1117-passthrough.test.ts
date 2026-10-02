@@ -1,4 +1,4 @@
-// #1117: proxy-side passthrough — x-bili-passthrough marks an unattributed
+// #1117: proxy-side passthrough — x-sigma-passthrough marks an unattributed
 // in-process caller (native fetch patch routed branch) whose URL already
 // points at the proxy via the settings overlay. Such requests relay
 // byte-untouched: no session, no injection, no guard, and the internal
@@ -28,7 +28,7 @@ async function startHarness(injectTool: boolean): Promise<{ proxyPort: number; u
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
         req.on("end", () => {
-            captured.push({ url: req.url ?? "", body: Buffer.concat(chunks).toString("utf8"), passthroughHeader: req.headers["x-bili-passthrough"] as string | undefined });
+            captured.push({ url: req.url ?? "", body: Buffer.concat(chunks).toString("utf8"), passthroughHeader: req.headers["x-sigma-passthrough"] as string | undefined });
             res.writeHead(200, { "content-type": "application/json" });
             res.end(JSON.stringify({
                 id: "chatcmpl_1117",
@@ -75,13 +75,13 @@ async function startHarness(injectTool: boolean): Promise<{ proxyPort: number; u
     };
 }
 
-test("#1117: x-bili-passthrough forwards the body byte-identical, no injection, marker stripped", async () => {
+test("#1117: x-sigma-passthrough forwards the body byte-identical, no injection, marker stripped", async () => {
     const h = await startHarness(true);
     try {
         const body = JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], tools: [{ type: "function", function: { name: "my_tool", description: "user tool", parameters: { type: "object" } } }] });
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-passthrough": "1" },
+            headers: { "content-type": "application/json", "x-sigma-passthrough": "1" },
             body,
         });
         assert.equal(resp.status, 200);
@@ -100,9 +100,9 @@ test("#1117: x-bili-passthrough forwards the body byte-identical, no injection, 
 test("#1117: passthrough works for unparseable bodies (raw path, pre-JSON.parse)", async () => {
     const h = await startHarness(true);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
-            headers: { "content-type": "application/json", "x-bili-passthrough": "1" },
+            headers: { "content-type": "application/json", "x-sigma-passthrough": "1" },
             body: "not-json-at-all",
         });
         assert.equal(resp.status, 200);
@@ -117,7 +117,7 @@ test("#1117: negative control — the same request WITHOUT the marker gets the p
     const h = await startHarness(true);
     try {
         const body = JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: "hi" }] });
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body,

@@ -1,7 +1,7 @@
 // #1158: some dsh profile-install sessions show ZERO model requests reaching
 // the proxy (root cause under investigation with runtime evidence — transport
 // fetch shape vs host-side attribution gap), yet the model keeps calling the
-// registered bili tools. The 404 for such a conversation must be actionable —
+// registered sigma tools. The 404 for such a conversation must be actionable —
 // hypothesis-neutral (no single confirmed cause named), preserving the
 // substrings mcp.ts / opencode-v2.ts match on — and the warn one-shot per
 // conversation, not a silent repeat or an unselfable generic 404.

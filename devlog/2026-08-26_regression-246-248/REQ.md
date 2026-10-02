@@ -24,9 +24,9 @@ after merging we need to verify that they do not interfere with each other.
 
 - mock: /tmp/mock-sse.py (chat SSE) 19811/19812
 - `DSH_HOME` isolation + settings llm-deepseek.baseURL → mock + `DEEPSEEK_API_KEY=dummy`
-- `bili dsh --profile headless`: the request goes through the proxy, the tools the upstream
+- `sigma dsh --profile headless`: the request goes through the proxy, the tools the upstream
   received include the 4 wire ACP tools (compress/decompress/search_context/acp_status),
-  `~/.dsh-bili/.bili-acp.patch.yml` is generated correctly, exit 0
+  `~/.dsh-sigma/.sigma-acp.patch.yml` is generated correctly, exit 0
 - Gotchas: once the mock process is killed dsh gets a 502 (expected); without DEEPSEEK_API_KEY
   dsh refuses to send (a dummy value is required)
 
@@ -35,14 +35,14 @@ after merging we need to verify that they do not interfere with each other.
 - mock: /tmp/mock-resp.py (Responses SSE, 19814) — omp goes through /v1/responses, so a
   chat-format mock does not apply
 - isolated `PI_CODING_AGENT_DIR=/tmp/omp-reg/agent` (note: the launcher's omp overlay =
-  `$PI_CODING_AGENT_DIR-bili`; a custom env is inherited)
+  `$PI_CODING_AGENT_DIR-sigma`; a custom env is inherited)
 - First round `-p`: argv contains `-e dist/agent/omp.js` (injected in all 4 runs); RAW dump:
   `prompt_cache_key=01a03bd7-…` (= the omp session id), tools include the 4 wire ACP tools
 - Second round `-c` continuing the conversation + **a brand-new proxy process (19821)**: it
   reuses the same proxy session `[d8a7b23542856a71]` — pck identity + cross-process continuity
   verified
 - The real `~/.omp/agent/config.yml` md5 is identical before and after (df68a91a…), zero
-  extensions written; the isolated config.yml was not modified by bili either
+  extensions written; the isolated config.yml was not modified by sigma either
 
 ### Cross-effects
 

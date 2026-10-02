@@ -36,14 +36,14 @@ interface Harness {
 
 async function withTempDir(name: string, fn: (h: Harness) => Promise<void>): Promise<void> {
     await test(name, async () => {
-        const dir = mkdtempSync(join(tmpdir(), "bili-encrypt-"));
+        const dir = mkdtempSync(join(tmpdir(), "sigma-encrypt-"));
         const logs: LogLine[] = [];
         const h = { dir, logs };
         try {
             await fn(h);
         } finally {
-            delete process.env.BILI_ENCRYPTION_KEY;
-            delete process.env.BILI_PERSIST_ZSTD;
+            delete process.env.SIGMA_ENCRYPTION_KEY;
+            delete process.env.SIGMA_PERSIST_ZSTD;
             rmSync(dir, { recursive: true, force: true });
         }
     });
@@ -74,7 +74,7 @@ test("codec: roundtrip, magic prefix, per-write nonce, tamper and wrong-key reje
     const json = JSON.stringify({ hello: "world", n: [1, 2, 3] });
 
     const enc = Buffer.isBuffer(codec.encode(json)) ? codec.encode(json) : Buffer.from(codec.encode(json));
-    assert.ok(enc.subarray(0, ENCRYPT_MAGIC.length).equals(ENCRYPT_MAGIC), "file starts with BILIENC1 magic");
+    assert.ok(enc.subarray(0, ENCRYPT_MAGIC.length).equals(ENCRYPT_MAGIC), "file starts with SIGMAENC1 magic");
     assert.equal(codec.decode(enc), json);
 
     const enc2 = Buffer.from(codec.encode(json));
@@ -94,13 +94,13 @@ test("codec passes legacy plaintext through untouched", () => {
 });
 
 await withTempDir("writes are encrypted on disk when the key is set", async (h) => {
-    process.env.BILI_ENCRYPTION_KEY = KEY;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY;
     const store = newStore(h);
     try {
         await store.writeNow(makeSession("s-enc"));
         const file = join(h.dir, "openai", "upstream_" + createHash("sha256").update("s-enc", "utf8").digest("hex").slice(0, 24) + ".json");
         const head = readFileSync(file).subarray(0, ENCRYPT_MAGIC.length);
-        assert.ok(head.equals(ENCRYPT_MAGIC), "on-disk file is BILIENC1-encrypted");
+        assert.ok(head.equals(ENCRYPT_MAGIC), "on-disk file is SIGMAENC1-encrypted");
         const reloaded = store.loadSync("s-enc", { protocol: "openai", upstreamOrigin: "http://upstream" });
         assert.ok(reloaded, "session still loads through the codec");
         assert.ok(h.logs.some((l) => l.msg.includes("encryption enabled")));
@@ -110,20 +110,20 @@ await withTempDir("writes are encrypted on disk when the key is set", async (h) 
 });
 
 await withTempDir("boot never rewrites legacy plaintext files (downgrade safety)", async (h) => {
-    // Phase 1: pre-#1080 plaintext tree (zstd opt-out = what older bili wrote).
-    process.env.BILI_PERSIST_ZSTD = "0";
+    // Phase 1: pre-#1080 plaintext tree (zstd opt-out = what older sigma wrote).
+    process.env.SIGMA_PERSIST_ZSTD = "0";
     const legacy = newStore(h);
     await legacy.writeNow(makeSession("s-1"));
     await legacy.writeNow(makeSession("s-2"));
     legacy.cancelAll();
-    delete process.env.BILI_PERSIST_ZSTD;
+    delete process.env.SIGMA_PERSIST_ZSTD;
 
     // Phase 2: boot with the key — files must load but stay byte-identical
     // plaintext. A boot-time mass rewrite (the #1083 draft) makes a
-    // downgrade destroy history: old bili reads its own framing as
+    // downgrade destroy history: old sigma reads its own framing as
     // "corrupt", resumes into an empty session, and the next save
     // overwrites the real one.
-    process.env.BILI_ENCRYPTION_KEY = KEY;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY;
     const store = newStore(h);
     try {
         const loaded = await store.boot();
@@ -151,7 +151,7 @@ await withTempDir("boot never rewrites legacy plaintext files (downgrade safety)
         }
     } finally {
         store.cancelAll();
-        delete process.env.BILI_ENCRYPTION_KEY;
+        delete process.env.SIGMA_ENCRYPTION_KEY;
     }
 });
 
@@ -163,7 +163,7 @@ await withTempDir("boot leaves foreign and corrupt files alone (no rewrites, no 
     const corrupt = join(h.dir, "openai", "garbage_deadbeef.json");
     writeFileSync(corrupt, "%%% not json %%%", "utf8");
 
-    process.env.BILI_ENCRYPTION_KEY = KEY;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY;
     const store = newStore(h);
     try {
         const loaded = await store.boot();
@@ -172,17 +172,17 @@ await withTempDir("boot leaves foreign and corrupt files alone (no rewrites, no 
         assert.equal(readFileSync(corrupt, "utf8"), "%%% not json %%%", "unreadable file left in place");
     } finally {
         store.cancelAll();
-        delete process.env.BILI_ENCRYPTION_KEY;
+        delete process.env.SIGMA_ENCRYPTION_KEY;
     }
 });
 
 await withTempDir("boot sweeps orphaned .tmp-enc-* temps left by a crashed write", async (h) => {
-    // Pre-#1080 plaintext file (zstd opt-out), same as what older bili wrote.
-    process.env.BILI_PERSIST_ZSTD = "0";
+    // Pre-#1080 plaintext file (zstd opt-out), same as what older sigma wrote.
+    process.env.SIGMA_PERSIST_ZSTD = "0";
     const legacy = newStore(h);
     await legacy.writeNow(makeSession("s-crash"));
     legacy.cancelAll();
-    delete process.env.BILI_PERSIST_ZSTD;
+    delete process.env.SIGMA_PERSIST_ZSTD;
 
     // Simulate a process death between the temp write and the rename: a
     // stale temp sits next to an unencoded legacy file.
@@ -190,7 +190,7 @@ await withTempDir("boot sweeps orphaned .tmp-enc-* temps left by a crashed write
     const orphan = `${file}.tmp-enc-99999-1700000000000`;
     writeFileSync(orphan, "stale temp from a crashed write");
 
-    process.env.BILI_ENCRYPTION_KEY = KEY;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY;
     const store = newStore(h);
     try {
         const loaded = await store.boot();
@@ -199,17 +199,17 @@ await withTempDir("boot sweeps orphaned .tmp-enc-* temps left by a crashed write
         assert.equal(existsSync(orphan), false, "orphaned temp swept on next boot");
     } finally {
         store.cancelAll();
-        delete process.env.BILI_ENCRYPTION_KEY;
+        delete process.env.SIGMA_ENCRYPTION_KEY;
     }
 });
 
 await withTempDir("an encrypted tree booted with the WRONG key loses those sessions as corrupt (no crash)", async (h) => {
-    process.env.BILI_ENCRYPTION_KEY = KEY;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY;
     const writer = newStore(h);
     await writer.writeNow(makeSession("s-secret"));
     writer.cancelAll();
 
-    process.env.BILI_ENCRYPTION_KEY = KEY_OTHER;
+    process.env.SIGMA_ENCRYPTION_KEY = KEY_OTHER;
     const reader = newStore(h);
     try {
         const loaded = await reader.boot();
@@ -220,12 +220,12 @@ await withTempDir("an encrypted tree booted with the WRONG key loses those sessi
 });
 
 await withTempDir("invalid key fails fast at construction", async (h) => {
-    process.env.BILI_ENCRYPTION_KEY = "beef";
-    assert.throws(() => newStore(h), /BILI_ENCRYPTION_KEY.*exactly 32 bytes/);
+    process.env.SIGMA_ENCRYPTION_KEY = "beef";
+    assert.throws(() => newStore(h), /SIGMA_ENCRYPTION_KEY.*exactly 32 bytes/);
 });
 
 await withTempDir("without a key and zstd opted out, files stay plaintext", async (h) => {
-    process.env.BILI_PERSIST_ZSTD = "0";
+    process.env.SIGMA_PERSIST_ZSTD = "0";
     const store = newStore(h);
     try {
         await store.writeNow(makeSession("s-plain"));

@@ -1,7 +1,7 @@
 # WORKLOG - AGENTS.md problem discovery & fix reporting clause
 
 - Task ID: `2026-09-06_agents-md-problem-reporting`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-09-06 22:10
 
@@ -28,7 +28,7 @@
 ## 3. Design & Implementation Notes
 
 - Clause covers both directions requested in #584: (a) problem discovered (in this project or a sibling) → file an issue in the owning project; (b) problem fixed → after the fix, submit an issue recording problem + fix, or ship the PR referencing its issue (`Fixes #N`) — a bare PR without an issue is not acceptable; an existing PR counts but should carry an accompanying issue.
-- References https://github.com/ranxianglei/billion-context/issues per "agents.md must point at the matching project URL".
+- References https://github.com/ranxianglei/sigma/issues per "agents.md must point at the matching project URL".
 
 ## 4. Testing & Verification
 

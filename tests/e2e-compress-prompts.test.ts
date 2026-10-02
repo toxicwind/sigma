@@ -70,7 +70,7 @@ async function runProxyWithPrompts(routeCompress: ProxyOptions["routes"][string]
     const proxyPort = (proxy.address() as { port: number }).port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/chat/completions`;
         const resp = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "compress-prompts-e2e" },

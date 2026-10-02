@@ -114,7 +114,7 @@ function upstreamServer(status: number, onBody: (path: string, body: unknown) =>
 interface StartOpts {
     compatJson: string;
     /** G/H drive the #583 ladder with injectTool/injectNudge OFF so the wire is
-     *  the bare conversation — bili's own injected system prompt would otherwise
+     *  the bare conversation — sigma's own injected system prompt would otherwise
      *  sit at index 0 and muddy the placement asserts. */
     bareWire?: boolean;
 }
@@ -122,12 +122,12 @@ interface StartOpts {
 async function startProxy(upstream: http.Server, { compatJson, bareWire }: StartOpts): Promise<{ port: number; opts: ProxyOptions; stop: () => Promise<void>; cleanup: () => void }> {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
-    const root = path.join(tmpdir(), `bili-compat-roles-${process.pid}-${Date.now()}`);
-    const biliConfig = path.join(root, "billion-context.json");
+    const root = path.join(tmpdir(), `sigma-compat-roles-${process.pid}-${Date.now()}`);
+    const biliConfig = path.join(root, "sigma.json");
     mkdirSync(root, { recursive: true });
     writeFileSync(biliConfig, compatJson, "utf8");
-    const previous = process.env.BILI_CONFIG_FILE;
-    process.env.BILI_CONFIG_FILE = biliConfig;
+    const previous = process.env.SIGMA_CONFIG_FILE;
+    process.env.SIGMA_CONFIG_FILE = biliConfig;
     const upstreamPort = (upstream.address() as { port: number }).port;
     const port = await freePort();
     const opts: ProxyOptions = {
@@ -158,7 +158,7 @@ async function startProxy(upstream: http.Server, { compatJson, bareWire }: Start
         opts,
         stop: async () => { await close(proxy); },
         cleanup: () => {
-            if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+            if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
             rmSync(root, { recursive: true, force: true });
         },
     };

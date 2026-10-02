@@ -55,9 +55,9 @@ async function withProxy(mode: "intercept" | "pass", run: (h: {
     const upstreamAddress = upstream.address();
     assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
     const origin = `http://127.0.0.1:${upstreamAddress.port}`;
-    const previousMode = process.env.BILI_CODEX_COMPACT;
+    const previousMode = process.env.SIGMA_CODEX_COMPACT;
     const previousPrompt = process.env.ACP_NO_COMPRESS_PROMPT;
-    process.env.BILI_CODEX_COMPACT = mode;
+    process.env.SIGMA_CODEX_COMPACT = mode;
     process.env.ACP_NO_COMPRESS_PROMPT = "1";
     _setStoreForTest(new SessionStore({ enabled: false }));
     _resetSessionsForTest();
@@ -74,7 +74,7 @@ async function withProxy(mode: "intercept" | "pass", run: (h: {
     await once(proxy, "listening");
     const proxyAddress = proxy.address();
     assert.ok(proxyAddress && typeof proxyAddress !== "string");
-    const url = `http://127.0.0.1:${proxyAddress.port}/bili/${origin}/v1/responses`;
+    const url = `http://127.0.0.1:${proxyAddress.port}/sigma/${origin}/v1/responses`;
     try {
         await run({ calls, post: (input, headers) => fetch(url, {
             method: "POST", headers: { "content-type": "application/json", "user-agent": CODEX_UA, ...headers },
@@ -85,8 +85,8 @@ async function withProxy(mode: "intercept" | "pass", run: (h: {
         await once(proxy, "close");
         upstream.close();
         await once(upstream, "close");
-        if (previousMode === undefined) delete process.env.BILI_CODEX_COMPACT;
-        else process.env.BILI_CODEX_COMPACT = previousMode;
+        if (previousMode === undefined) delete process.env.SIGMA_CODEX_COMPACT;
+        else process.env.SIGMA_CODEX_COMPACT = previousMode;
         if (previousPrompt === undefined) delete process.env.ACP_NO_COMPRESS_PROMPT;
         else process.env.ACP_NO_COMPRESS_PROMPT = previousPrompt;
     }
@@ -95,7 +95,7 @@ async function withProxy(mode: "intercept" | "pass", run: (h: {
 for (const plugin of [false, true]) {
     test(`Codex intercept folds a fitting 90-100% request before native compact (plugin=${plugin})`, async () => {
         await withProxy("intercept", async ({ post, calls }) => {
-            const headers: Record<string, string> = plugin ? { "x-bili-plugin": "codex", "x-bili-plugin-conversation": "headroom-plugin" } : {};
+            const headers: Record<string, string> = plugin ? { "x-sigma-plugin": "codex", "x-sigma-plugin-conversation": "headroom-plugin" } : {};
             const response = await post(history(), headers);
             const text = await response.text();
             assert.equal(response.status, 200, text);

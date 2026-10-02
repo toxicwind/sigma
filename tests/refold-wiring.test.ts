@@ -7,7 +7,7 @@ import { createCore, defaultConfig, type Config, type CoreMessage } from "acp-ke
 import { getSession } from "../src/session.ts";
 
 /**
- * #403 refold wiring (bili proxy lane): a successful FULL-BLOCK decompress
+ * #403 refold wiring (sigma proxy lane): a successful FULL-BLOCK decompress
  * rides the transient tool-result channel — the client keeps that tool result
  * in its re-sent history, so the model has the block's re-summarization
  * material in context. The wiring flips the kernel's restoredInline flag at

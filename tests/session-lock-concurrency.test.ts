@@ -78,7 +78,7 @@ test("#970: concurrent requests on the same session id forward concurrently (no 
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = proxy.address().port as number;
-    const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+    const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
 
     const post = (text: string) =>
         fetch(url, {

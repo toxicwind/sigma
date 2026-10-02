@@ -1,11 +1,11 @@
 // #964 claude native bootstrap — the SessionStart hook command written into
-// ~/.claude/settings.json by `bili plugin install claude`. Claude Code has no
+// ~/.claude/settings.json by `sigma plugin install claude`. Claude Code has no
 // in-process extension point (hooks and MCP servers are child processes), so
 // the native posture is a documented hybrid:
 //
 //   1. the installer pins env.ANTHROPIC_BASE_URL to a STABLE loopback port
-//      (resolveClaudeNativePort: BILI_CLAUDE_NATIVE_PORT > config
-//      claude.nativePort > 48787) with a /bili/-wrapped upstream — full
+//      (resolveClaudeNativePort: SIGMA_CLAUDE_NATIVE_PORT > config
+//      claude.nativePort > 48787) with a /sigma/-wrapped upstream — full
 //      traffic visibility without MITM;
 //   2. THIS hook (fired before the first model request) makes sure a proxy
 //      is listening there: attach to a healthy compatible one, else spawn one
@@ -18,11 +18,11 @@
 //      x-claude-code-session-id on every request — the proxy's existing
 //      plugin-mode gating, #162/#268; zero new protocol surface).
 //
-// Opt-out BILI_NATIVE_CLAUDE=0 (or the global BILLION_CONTEXT_PLUGIN=0):
+// Opt-out SIGMA_NATIVE_CLAUDE=0 (or the global SIGMA_PLUGIN=0):
 // the hook still answers the now-static URL — by spawning a PASSTHROUGH-mode
 // proxy on the same port (verbatim forward, compression off) so claude stays
 // fully functional (#964 Q2). A launch that already owns routing
-// (BILLION_CONTEXT_PROXY set — `bili claude` overrides the static URL with
+// (SIGMA_PROXY set — `sigma claude` overrides the static URL with
 // its own ephemeral proxy) needs nothing: exit 0 immediately.
 //
 // The hook must NEVER fail claude: every error prints to stderr and exits 0.
@@ -43,21 +43,21 @@ function proxyScriptPath(): string {
 }
 
 function log(msg: string): void {
-    process.stderr.write(`[bili-claude-bootstrap] ${msg}\n`);
+    process.stderr.write(`[sigma-claude-bootstrap] ${msg}\n`);
 }
 
 /** Pure decision (#964): what this hook does under the given environment.
  *  Exported for tests.
- *   - "exit": someone else owns routing (BILLION_CONTEXT_PROXY /
- *     BILI_PROVIDER_REWRITES) — spawn nothing.
- *   - "passthrough": opted out (BILI_NATIVE_CLAUDE=0 /
- *     BILLION_CONTEXT_PLUGIN=0) — serve the static URL verbatim-forward.
+ *   - "exit": someone else owns routing (SIGMA_PROXY /
+ *     SIGMA_PROVIDER_REWRITES) — spawn nothing.
+ *   - "passthrough": opted out (SIGMA_NATIVE_CLAUDE=0 /
+ *     SIGMA_PLUGIN=0) — serve the static URL verbatim-forward.
  *   - "start": bring up (or attach to) the compression proxy. */
 export function planClaudeNativeBootstrap(env: NodeJS.ProcessEnv): { action: "exit" | "passthrough" | "start"; port: number } {
     const port = resolveClaudeNativePort(env);
     if (proxyEnvOrigin(env) !== undefined) return { action: "exit", port };
-    if (env.BILLION_CONTEXT_PLUGIN === "0" || env.BILI_NATIVE_CLAUDE === "0") return { action: "passthrough", port };
-    if (!nativeBootstrapGate(env, "BILI_NATIVE_CLAUDE")) return { action: "exit", port };
+    if (env.SIGMA_PLUGIN === "0" || env.SIGMA_NATIVE_CLAUDE === "0") return { action: "passthrough", port };
+    if (!nativeBootstrapGate(env, "SIGMA_NATIVE_CLAUDE")) return { action: "exit", port };
     return { action: "start", port };
 }
 
@@ -326,18 +326,18 @@ async function run(): Promise<void> {
         // redundant once the chokepoint covered all callers).
         log(`proxy ${handle.attached ? "attached" : "started"} at ${handle.origin}${plan.action === "passthrough" ? " (passthrough — compression off)" : ""}`);
         if (handle.refusedWatcher) {
-            // #1322: attach landed on a daemon proxy (no BILI_PARENT_PID) whose
+            // #1322: attach landed on a daemon proxy (no SIGMA_PARENT_PID) whose
             // watchdog refused our owner — the README's "lives and dies with the
             // session" contract is void here. Say so loudly instead of silently
             // serving a proxy that will outlive every session.
             log(
-                `WARNING: proxy at ${handle.origin} has NO session-lifecycle watchdog (it was started without BILI_PARENT_PID, e.g. manually on this port) — it will outlive every session, and config edits only apply after that process is restarted. Kill it or start a session-owned proxy to restore the lifecycle contract (#1322).`,
+                `WARNING: proxy at ${handle.origin} has NO session-lifecycle watchdog (it was started without SIGMA_PARENT_PID, e.g. manually on this port) — it will outlive every session, and config edits only apply after that process is restarted. Kill it or start a session-owned proxy to restore the lifecycle contract (#1322).`,
             );
         }
     } catch (err) {
         log(
             `proxy bring-up failed on port ${plan.port} — ${err instanceof Error ? err.message : String(err)}` +
-                (plan.action === "start" ? ` — this port is NOT served by a session-managed proxy: model calls ride whatever answers there (an unmanaged or stale bili daemon has no lifecycle guarantees) or fail outright. Fix: kill the listener on this port or set BILI_CLAUDE_NATIVE_PORT, then reinstall (bili plugin install claude)` : ""),
+                (plan.action === "start" ? ` — this port is NOT served by a session-managed proxy: model calls ride whatever answers there (an unmanaged or stale sigma daemon has no lifecycle guarantees) or fail outright. Fix: kill the listener on this port or set SIGMA_CLAUDE_NATIVE_PORT, then reinstall (sigma plugin install claude)` : ""),
         );
     }
 }

@@ -1,7 +1,7 @@
 # WORKLOG - Launcher never reuses a proxy port
 
 - Task ID: `2026-08-24_launcher-no-reuse`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-08-24 13:05
 
@@ -9,7 +9,7 @@
 
 - **What was done**: removed the health-probe reuse path from `ensureProxyRunning` — every launch now calls `findFreePort` and spawns a fresh detached proxy; `ProxyHandle.reused` deleted; always stop on exit.
 - **Why**: reused proxies were stale-code orphans (12h old on 8787) shadowing fresh launches; user directive.
-- **Behavior / compatibility changes**: Yes — concurrent `bili <client>` instances no longer share one proxy; each gets its own port. Sessions remain per-conversation so this is safe.
+- **Behavior / compatibility changes**: Yes — concurrent `sigma <client>` instances no longer share one proxy; each gets its own port. Sessions remain per-conversation so this is safe.
 - **Risk level**: Low
 
 ## 2. Change Log
@@ -29,8 +29,8 @@
 ## 4. Testing & Verification
 
 - typecheck ✅ · 531/531 tests ✅ · build ✅
-- tmux e2e: killed the 12h-old orphan on 8787 → `bili claude` logs `started proxy at http://127.0.0.1:8787` (new pid) → second concurrent launch got port 46257 (no reuse) → both proxies reaped on client exit.
-- Claude Code itself shows "Not logged in" on this machine **with or without bili** (no `~/.claude/.credentials.json`); that is an account/login issue, not a launcher regression. Wire path (proxying + ACP tool injection) was already proven with the fake-upstream harness.
+- tmux e2e: killed the 12h-old orphan on 8787 → `sigma claude` logs `started proxy at http://127.0.0.1:8787` (new pid) → second concurrent launch got port 46257 (no reuse) → both proxies reaped on client exit.
+- Claude Code itself shows "Not logged in" on this machine **with or without sigma** (no `~/.claude/.credentials.json`); that is an account/login issue, not a launcher regression. Wire path (proxying + ACP tool injection) was already proven with the fake-upstream harness.
 
 ## 5. Rollback Plan
 

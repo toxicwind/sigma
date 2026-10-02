@@ -16,7 +16,7 @@ export type RewriteCtx = {
     messages: CoreMessage[];
     /** View handed to applyCompression. Defaults to `messages`; hosts whose
      *  `messages` view has pruned/hidden content (so block anchors can't
-     *  resolve) pass the unpruned log here (billion-context-pi#195). */
+     *  resolve) pass the unpruned log here (sigma-pi#195). */
     compressMessages?: CoreMessage[];
     session: Session;
     log: (msg: string) => void;
@@ -325,7 +325,7 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
         // retrieve-by-ref / range-restore work for FOLDED content, not just
         // oversized tool results stored at arrival. First-write-wins keeps
         // arrival-time entries authoritative; reasoning is skipped. Proxy mode
-        // only: plugin-mode agents own their folds, so bili never sees those
+        // only: plugin-mode agents own their folds, so sigma never sees those
         // originals.
         if (ccrEnabled(ctx.session)) {
             const newBlocks = res.state.blocks.filter((b) => !beforeIds.has(b.blockId));

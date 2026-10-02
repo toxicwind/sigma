@@ -11,22 +11,22 @@ import type { AddressInfo } from "node:net";
 /** #1322: /__bili/health must expose the session-lifecycle watchdog state so
  *  attachers and operators can tell a session-owned proxy (armed — dies with
  *  its sessions) from a daemon squatting a stable port (unarmed — outlives all
- *  of them). This file covers the ARMED side: BILI_PARENT_PID is captured when
+ *  of them). This file covers the ARMED side: SIGMA_PARENT_PID is captured when
  *  src/server.ts loads, so it is set BEFORE the dynamic import (node --test
  *  gives every file its own process). */
 
-const root = path.join(tmpdir(), `bili-watchdog-armed-${process.pid}-${Date.now()}`);
+const root = path.join(tmpdir(), `sigma-watchdog-armed-${process.pid}-${Date.now()}`);
 mkdirSync(path.join(root, "config"), { recursive: true });
 process.env.XDG_CONFIG_HOME = path.join(root, "config");
 process.env.XDG_STATE_HOME = path.join(root, "state");
 process.env.XDG_CACHE_HOME = path.join(root, "cache");
-process.env.BILI_CONFIG_FILE = path.join(root, "config", "billion-context.json");
-writeFileSync(process.env.BILI_CONFIG_FILE, '{"providers":{}}\n', "utf8");
-delete process.env.BILLION_CONTEXT_PROXY;
+process.env.SIGMA_CONFIG_FILE = path.join(root, "config", "sigma.json");
+writeFileSync(process.env.SIGMA_CONFIG_FILE, '{"providers":{}}\n', "utf8");
+delete process.env.SIGMA_PROXY;
 
 const keeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 60000)"], { stdio: "ignore" });
 const keeper2 = spawn(process.execPath, ["-e", "setInterval(() => {}, 60000)"], { stdio: "ignore" });
-process.env.BILI_PARENT_PID = String(keeper.pid ?? 0);
+process.env.SIGMA_PARENT_PID = String(keeper.pid ?? 0);
 
 function getJson(port: number, urlPath: string): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
@@ -86,7 +86,7 @@ test("health exposes an armed watchdog with its owner set (#1322)", async () => 
         const h = await getJson(port, "/__bili/health");
         assert.equal(h.status, 200);
         const j = JSON.parse(h.body) as { watchdog?: { armed?: boolean; parentPid?: number; watchers?: number[] } };
-        assert.equal(j.watchdog?.armed, true, "BILI_PARENT_PID arms the watchdog");
+        assert.equal(j.watchdog?.armed, true, "SIGMA_PARENT_PID arms the watchdog");
         assert.equal(j.watchdog?.parentPid, keeper.pid, "the spawning owner is reported");
         assert.deepEqual(j.watchdog?.watchers, [keeper.pid], "owner seeds the watcher set");
 
@@ -103,7 +103,7 @@ test("health exposes an armed watchdog with its owner set (#1322)", async () => 
         for (const k of [keeper, keeper2]) {
             try { k.kill("SIGKILL"); } catch {}
         }
-        delete process.env.BILI_PARENT_PID;
+        delete process.env.SIGMA_PARENT_PID;
         await rmSync(root, { recursive: true, force: true });
     }
 });

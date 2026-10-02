@@ -7,7 +7,7 @@ import { log as loggerLog } from "./logger.js";
 // bytes that were sent so the rejection can be explained byte-for-byte. The
 // standing body dump (ACP_DUMP_BODY=1) must be armed BEFORE the incident; this
 // one fires on the failure itself. Still off by default — conversation bodies
-// leak to disk (#276) — enable with BILI_DUMP_4XX=1.
+// leak to disk (#276) — enable with SIGMA_DUMP_4XX=1.
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
 
 let failCount = 0;
@@ -24,13 +24,13 @@ function warnDumpFailure(err: unknown): void {
 }
 
 /** Write the rejected forwarded body to `<dumpDir>/err-<ts>-<sid>-<status>.json`
- *  when BILI_DUMP_4XX=1. Returns the file path, or null when disabled/skipped/failed. */
+ *  when SIGMA_DUMP_4XX=1. Returns the file path, or null when disabled/skipped/failed. */
 export function dumpRejectedBody(status: number, sessionId: string, body: string | Buffer): string | null {
-    if (process.env.BILI_DUMP_4XX !== "1") return null;
+    if (process.env.SIGMA_DUMP_4XX !== "1") return null;
     const raw = typeof body === "string" ? body : body.toString("utf8");
     if (!raw) return null;
     try {
-        const cap = Math.max(1024, Number(process.env.BILI_DUMP_4XX_MAX_BYTES) || DEFAULT_MAX_BYTES);
+        const cap = Math.max(1024, Number(process.env.SIGMA_DUMP_4XX_MAX_BYTES) || DEFAULT_MAX_BYTES);
         let text: string;
         let marker = "";
         if (raw.length > cap) {

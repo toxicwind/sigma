@@ -57,8 +57,8 @@ test("image-tokens: raw-body gate skips parsing when no image marker is present"
     assert.equal(imageTokensInRawBody("responses", '{"input_image": broken'), 0);
 });
 
-test("image-tokens: BILI_IMAGE_TOKEN_CAP clamps each image's cost", () => {
-    process.env.BILI_IMAGE_TOKEN_CAP = "500";
+test("image-tokens: SIGMA_IMAGE_TOKEN_CAP clamps each image's cost", () => {
+    process.env.SIGMA_IMAGE_TOKEN_CAP = "500";
     try {
         assert.equal(
             imageTokensInParsedBody("responses", { input: [{ type: "message", role: "user", content: [{ type: "input_image", image_url: DATA_URL }, { type: "input_image", image_url: DATA_URL }] }] }),
@@ -67,7 +67,7 @@ test("image-tokens: BILI_IMAGE_TOKEN_CAP clamps each image's cost", () => {
             imageTokensInParsedBody("responses", { input: [{ type: "message", role: "user", content: [{ type: "input_image", image_url: "https://example.com/a.png" }] }] }),
             500);
     } finally {
-        delete process.env.BILI_IMAGE_TOKEN_CAP;
+        delete process.env.SIGMA_IMAGE_TOKEN_CAP;
     }
 });
 
@@ -113,7 +113,7 @@ async function startProxy(upstreamPort: number): Promise<{ proxy: http.Server; u
     } as ProxyOptions);
     await once(proxy, "listening");
     const proxyPort = (proxy.address() as { port: number }).port;
-    return { proxy, url: `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/responses` };
+    return { proxy, url: `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/responses` };
 }
 
 test("e2e #488-B (Responses): preflight summary requests carry store:false so codex relays accept them", async () => {
@@ -175,7 +175,7 @@ test("e2e #488-A/#496 (Responses): image-dominated payload with no overflow evid
             streamForwards.push(parsed.stream === true);
             // Pixel-tile upstream shape: accepts the payload and reports a SMALL real
             // input cost despite the large base64 body (a 60k-char screenshot bills as
-            // ~1.6K tiles upstream, not the 15K tokens bili estimates from b64/4).
+            // ~1.6K tiles upstream, not the 15K tokens sigma estimates from b64/4).
             res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
             res.write(completed(3000));
             res.end();

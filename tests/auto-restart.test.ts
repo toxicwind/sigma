@@ -36,7 +36,7 @@ function makeInstall(version: string, entrySource = "export const loaded = 'x';\
     mkdirSync(path.join(dir, "dist"), { recursive: true });
     writeFileSync(
         path.join(dir, "package.json"),
-        JSON.stringify({ name: "billion-context", version, type: "module", main: "dist/index.js", bin: { bili: "./dist/index.js" } }),
+        JSON.stringify({ name: "sigma", version, type: "module", main: "dist/index.js", bin: { sigma: "./dist/index.js" } }),
     );
     writeFileSync(path.join(dir, "dist", "index.js"), entrySource);
     return dir;
@@ -249,7 +249,7 @@ test("performSelfRestart: handover succeeds at zero in-flight", { timeout: 30_00
 
 test("readLastRestart: tolerant of missing/corrupt markers", async () => {
     const { mkdir, writeFile, rm } = await import("node:fs/promises");
-    const markerDir = path.join(process.env.XDG_CACHE_HOME ?? "", "billion-context");
+    const markerDir = path.join(process.env.XDG_CACHE_HOME ?? "", "sigma");
     await mkdir(markerDir, { recursive: true });
     // Earlier orchestration tests may have written a marker; start clean.
     await rm(path.join(markerDir, ".auto-restart"), { force: true });

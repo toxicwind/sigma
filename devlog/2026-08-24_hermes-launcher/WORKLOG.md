@@ -1,13 +1,13 @@
-# WORKLOG: `bili hermes`
+# WORKLOG: `sigma hermes`
 
 Branch: `2026-08-24_hermes-launcher` (single commit on top of master f391a3e)
 
-## 1. Why `/bili/` for everything (no cert MITM)
+## 1. Why `/sigma/` for everything (no cert MITM)
 
 Hermes is a Python/httpx client: `httpx` builds its SSL context from
 `certifi` explicitly, so `SSL_CERT_FILE` / `NODE_EXTRA_CA_CERTS` are ignored —
 cert-MITM cannot be trusted via env alone. Wrapping every upstream (http and
-https) in the `/bili/` URL form sidesteps TLS entirely on the client leg; the
+https) in the `/sigma/` URL form sidesteps TLS entirely on the client leg; the
 proxy does TLS to the real upstream itself. Same decision as claude (whose
 undici also ignores HTTPS_PROXY).
 
@@ -24,10 +24,10 @@ undici also ignores HTTPS_PROXY).
   - `discoverRoutes` hermes branch: every provider endpoint → `httpRewrites`
     (https too), `httpsDomains` stays empty.
   - `prepareHermesHome(hermesHome, origin, rewrites)`: mkdtemp
-    `bili-hermes-*`, symlink every `~/.hermes` sibling except `config.yaml`
+    `sigma-hermes-*`, symlink every `~/.hermes` sibling except `config.yaml`
     (skills/memories/sessions shared), rewrite every
     `api:`/`base_url:`/`url:` line whose URL matches a discovered upstream to
-    `origin + /bili/ + raw` (comment suffix preserved). Returns temp dir;
+    `origin + /sigma/ + raw` (comment suffix preserved). Returns temp dir;
     `HERMES_HOME` is pointed at it.
   - runLaunch: hermes branch + temp-dir cleanup in `finally`; warns when no
     providers were found (traffic would bypass the proxy).
@@ -50,7 +50,7 @@ undici also ignores HTTPS_PROXY).
   - Hermes's startup model probing (GET /v1/models, /api/tags, /api/show,
     /api/v1/models) is passed through verbatim by the proxy.
   - The source config.yaml kept its raw `api: http://127.0.0.1:8199/v1`
-    (untouched); no `bili-hermes-*` temp dirs left behind.
+    (untouched); no `sigma-hermes-*` temp dirs left behind.
 
 ## 4. Rollback
 
@@ -69,7 +69,7 @@ Revert the single commit; no data migrations, no config-format changes.
 
 ## Follow-up 4: review findings (second tmux review round)
 
-A reviewer session running under `bili hermes` itself flagged two gaps:
+A reviewer session running under `sigma hermes` itself flagged two gaps:
 
 1. **Silent bypass when prepare fails**: the launcher only warned when
    discovery found zero providers. If `httpRewrites` was non-empty but

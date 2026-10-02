@@ -6,7 +6,7 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 // The fake-completion fallback is opt-in (disabled by default to preserve
 // incremental streaming); these tests exercise it, so enable it explicitly.
-process.env.BILI_FAKE_COMPLETION_RETRIES = "2";
+process.env.SIGMA_FAKE_COMPLETION_RETRIES = "2";
 
 import { defaultConfig } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -194,7 +194,7 @@ function startHarness(scripts: string[][]): Promise<Harness> {
 }
 
 async function callAnthropic(h: Harness, session: string, messages: Array<{ role: string; content: string }>): Promise<string> {
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": session },
         body: JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, system: "You are a test assistant.", messages }),

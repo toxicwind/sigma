@@ -107,7 +107,7 @@ async function runWithCeiling(maxPreflightMs: number): Promise<{ status: number;
     const proxyPort = (proxy.address() as { port: number }).port;
 
     try {
-        const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/chat/completions`, {
+        const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/chat/completions`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": `ceiling-${maxPreflightMs}` },
             body: JSON.stringify({ model: "gpt-test", stream: true, messages: longMessages(COUNT, REPEATS) }),

@@ -97,7 +97,7 @@ function startProxy(upstreamPort: number): Promise<http.Server> {
 }
 
 async function driveGeminiPreflight(proxyPort: number, upstreamPort: number, session: string, path = "streamGenerateContent?alt=sse"): Promise<{ status: number; body: string }> {
-    const resp = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:${path}`, {
+    const resp = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1beta/models/gemini-test:${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": session },
         body: JSON.stringify({ contents: longGeminiContents(), systemInstruction: { parts: [{ text: "You are a test assistant." }] }, generationConfig: { maxOutputTokens: 4096 } }),

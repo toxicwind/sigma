@@ -1,15 +1,15 @@
-# REQ: zero-config native plugin for `bili omp`
+# REQ: zero-config native plugin for `sigma omp`
 
 User report (continuing the investigation of the omp incident where 92% went uncompressed):
-"Doesn't this not need an install? `bili omp` starts with zero config all by itself, so it still
-does not meet our expectation." The omp distribution does not ship the bili plugin, and the /acp
-experience has always depended on the historical `bili plugin install omp`. That entry was removed
+"Doesn't this not need an install? `sigma omp` starts with zero config all by itself, so it still
+does not meet our expectation." The omp distribution does not ship the sigma plugin, and the /acp
+experience has always depended on the historical `sigma plugin install omp`. That entry was removed
 on 08-25 at 23:02, after which it silently degraded to pure wire mode.
-Expectation: `bili omp` with zero config, meaning the native /acp command works out of the box.
+Expectation: `sigma omp` with zero config, meaning the native /acp command works out of the box.
 
 ## Delivered (branch 2026-08-25_omp-pck-identity, commit 7749429)
 
-- The launcher omp branch mirrors pi (PR #227): when there is no loadable bili entry, prepend
+- The launcher omp branch mirrors pi (PR #227): when there is no loadable sigma entry, prepend
   `-e dist/agent/omp.js`.
 - `ompPluginLoadedFrom()`: an entry counts as installed only if its target file exists (a stale path
   does not suppress the injection).

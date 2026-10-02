@@ -1,6 +1,6 @@
 /**
  * Auto-update: periodically checks the npm registry for a newer version of
- * billion-context and installs it by downloading the tarball and extracting
+ * sigma and installs it by downloading the tarball and extracting
  * it over the current installation.
  *
  * Why tarball (not `npm install -g`):
@@ -10,7 +10,7 @@
  *    install directory is writable.
  *
  * Concurrency safety:
- *  - An exclusive lock file prevents multiple bili processes from updating
+ *  - An exclusive lock file prevents multiple sigma processes from updating
  *    simultaneously.
  *  - Extraction goes to a temp staging directory first, then copies over
  *    the install dir only after extraction + verification succeed.
@@ -35,7 +35,7 @@ import { resolveDshHome, resolveKimiHome, resolveOmpHome, resolvePiHome } from "
 import { proxyDispatcher } from "./upstream-proxy.js";
 import type { FetchOptions } from "./fetch-util.js";
 
-// BILI_UPDATE_REGISTRY overrides the registry base URL (full URL, e.g. a
+// SIGMA_UPDATE_REGISTRY overrides the registry base URL (full URL, e.g. a
 // loopback verdaccio in the hermetic e2e suite, #1153). Unset = production
 // default, behavior unchanged.
 /** Normalize a configured registry base URL: absent/blank → production default; trailing slashes dropped (npm normalizes them too). */
@@ -44,7 +44,7 @@ export function normalizeRegistryBase(raw: string | undefined): string {
     if (!v) return "https://registry.npmjs.org";
     return v.replace(/\/+$/, "");
 }
-const REGISTRY_BASE = normalizeRegistryBase(process.env.BILI_UPDATE_REGISTRY);
+const REGISTRY_BASE = normalizeRegistryBase(process.env.SIGMA_UPDATE_REGISTRY);
 
 /** Normalize a configured dist-tag channel: absent/blank → "latest". */
 export function normalizeUpdateTag(tag: string | undefined): string {
@@ -57,10 +57,10 @@ export function registryUrlFor(packageName: string, tag: string): string {
 }
 const DEFAULT_CHECK_INTERVAL_MS = 3 * 60 * 1000;
 
-// BILI_UPDATE_CHECK_INTERVAL_MS overrides the check period in ms (must be > 0)
+// SIGMA_UPDATE_CHECK_INTERVAL_MS overrides the check period in ms (must be > 0)
 // so the hermetic e2e suite need not wait 3 minutes (#1153). Unset = default.
 function checkIntervalMs(): number {
-    const raw = Number(process.env.BILI_UPDATE_CHECK_INTERVAL_MS?.trim());
+    const raw = Number(process.env.SIGMA_UPDATE_CHECK_INTERVAL_MS?.trim());
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CHECK_INTERVAL_MS;
 }
 const CHECK_INTERVAL_MS = checkIntervalMs();
@@ -161,7 +161,7 @@ export function reportNotNewer(
         const key = `${runningVersion}->${diskVersion}`;
         if (key !== staleWarnKey) {
             staleWarnKey = key;
-            log("warn", `[update] running v${runningVersion} but v${diskVersion} is installed — restart bili to activate (auto-update replaced the on-disk install; this process is still on the old code)`);
+            log("warn", `[update] running v${runningVersion} but v${diskVersion} is installed — restart sigma to activate (auto-update replaced the on-disk install; this process is still on the old code)`);
         }
     } else {
         staleWarnKey = undefined;
@@ -242,7 +242,7 @@ export interface HostManagedInstall {
  *  corrupts the owner's bookkeeping (npm/pnpm metadata drift, #953) or, for
  *  pnpm, the hardlinked content files shared across every install in the
  *  store. Returns the owner + its update channel, or undefined when the copy
- *  is bili-owned (npm global, manual install) and may be updated in place.
+ *  is sigma-owned (npm global, manual install) and may be updated in place.
  *  Exported for tests. */
 export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = process.env): HostManagedInstall | undefined {
     let real = installDir;
@@ -255,17 +255,17 @@ export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = 
         if (dir.split(path.sep).some((seg) => seg === ".pnpm")) {
             return {
                 owner: "pnpm",
-                channel: "dsh profiles refresh automatically (on the next global bili self-update, or from the profile proxy's own periodic check when no global is running, #1196); a pnpm-global install upgrades via `pnpm add -g billion-context@latest`",
+                channel: "dsh profiles refresh automatically (on the next global sigma self-update, or from the profile proxy's own periodic check when no global is running, #1196); a pnpm-global install upgrades via `pnpm add -g sigma@latest`",
             };
         }
     }
     const xdgData = env.XDG_DATA_HOME && env.XDG_DATA_HOME.trim().length > 0 ? env.XDG_DATA_HOME : path.join(os.homedir(), ".local", "share");
     const homes: Array<[string, string, string]> = [
-        ["pi", resolvePiHome(env), "`pi update` (pi installs and upgrades the npm:billion-context entry itself)"],
-        ["opencode", path.join(xdgData, "opencode"), "opencode's own plugin manager (reload/reinstall the billion-context plugin)"],
-        ["dsh", resolveDshHome(env), "the dsh plugin channel (the global bili self-update refreshes profiles, and so does the profile proxy's own periodic check; or `dsh plugin add billion-context@latest`)"],
-        ["kimi", resolveKimiHome(env), "`bili plugin install kimi` after updating the global bili install"],
-        ["omp", resolveOmpHome(env), "the global bili install (the extensions entry points at it)"],
+        ["pi", resolvePiHome(env), "`pi update` (pi installs and upgrades the npm:sigma entry itself)"],
+        ["opencode", path.join(xdgData, "opencode"), "opencode's own plugin manager (reload/reinstall the sigma plugin)"],
+        ["dsh", resolveDshHome(env), "the dsh plugin channel (the global sigma self-update refreshes profiles, and so does the profile proxy's own periodic check; or `dsh plugin add sigma@latest`)"],
+        ["kimi", resolveKimiHome(env), "`sigma plugin install kimi` after updating the global sigma install"],
+        ["omp", resolveOmpHome(env), "the global sigma install (the extensions entry points at it)"],
     ];
     for (const [owner, home, channel] of homes) {
         if (!home) continue;
@@ -479,7 +479,7 @@ async function tryAcquireLock(): Promise<{ release: () => Promise<void> } | null
 }
 
 export type UpdateOptions = {
-    /** Package name, e.g. "billion-context". */
+    /** Package name, e.g. "sigma". */
     packageName: string;
     /** Fallback version (read at startup). The actual version is re-read from
      *  disk on each check so that an in-place tarball update is immediately
@@ -488,7 +488,7 @@ export type UpdateOptions = {
     /** Enable auto-install when a newer version is found. */
     autoUpdate: boolean;
     /** Egress proxy resolver for the registry/tarball hosts (#609) — the CLI
-     *  wires in bili's upstream-proxy decision chain so updater fetches honor
+     *  wires in sigma's upstream-proxy decision chain so updater fetches honor
      *  the same routing (incl. NO_PROXY) as model traffic. Absent = direct. */
     resolveProxy?: (url: string) => string | undefined;
     /** Dist-tag channel to follow (default "latest"), e.g. "dev", "stable".
@@ -533,7 +533,7 @@ function fetchWithEgress(url: string, init: FetchOptions): Promise<Response> {
 }
 
 /** Resolve the current version of `packageName` on the configured dist-tag
- *  channel. Shared by the self-updater and `bili plugin update` (dsh profile
+ *  channel. Shared by the self-updater and `sigma plugin update` (dsh profile
  *  refresh). Returns undefined on any failure — callers treat "unknown" as
  *  "do nothing". (#991) */
 export async function fetchRegistryVersion(opts: Pick<UpdateOptions, "resolveProxy" | "updateTag">, packageName: string): Promise<string | undefined> {
@@ -551,11 +551,11 @@ export async function fetchRegistryVersion(opts: Pick<UpdateOptions, "resolvePro
 }
 
 /** #1196: when the running process itself lives inside a dsh profile bundle
- *  (dsh plugin-market install), there is no global bili to drive the lockstep
+ *  (dsh plugin-market install), there is no global sigma to drive the lockstep
  *  refresh — the profile copy would stay frozen at its install version
  *  forever (dsh-market users often have no global install at all). Instead of
  *  a bare skip, check the registry and drive dsh's OWN plugin channel
- *  (`dsh plugin --profile <name> add billion-context@<v>`, the single-writer-
+ *  (`dsh plugin --profile <name> add sigma@<v>`, the single-writer-
  *  safe owner) under the shared cross-process update lock. Registry-pinned
  *  profiles only — refreshDshProfileBundles leaves link:/file: pins alone, so
  *  dev lanes stay manual. Best-effort: never throws, never blocks the proxy;
@@ -616,7 +616,7 @@ export async function checkForUpdate(opts: UpdateOptions, force = false): Promis
         firstCheckDone = true;
 
         // Source-checkout guard (#580): findInstallDir() walks up from the
-        // running dist/ and lands on the repo root when bili runs from a git
+        // running dist/ and lands on the repo root when sigma runs from a git
         // clone (node dist/index.js start). An in-place tarball copy would
         // silently rewrite tracked files (the version pin, READMEs), so refuse
         // to self-update here instead of proceeding.

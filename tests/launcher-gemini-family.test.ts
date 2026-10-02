@@ -29,7 +29,7 @@ test("launch client registry includes gemini/iflow/qwen (#1047)", () => {
     }
 });
 
-test("discoverRoutes: gemini default → GOOGLE_GEMINI_BASE_URL /bili/ rewrite of generativelanguage", () => {
+test("discoverRoutes: gemini default → GOOGLE_GEMINI_BASE_URL /sigma/ rewrite of generativelanguage", () => {
     assert.deepEqual(discoverRoutes("gemini", {}), {
         ...EMPTY_ROUTES,
         httpRewrites: [{ key: "GOOGLE_GEMINI_BASE_URL", realUpstream: "https://generativelanguage.googleapis.com" }],
@@ -37,7 +37,7 @@ test("discoverRoutes: gemini default → GOOGLE_GEMINI_BASE_URL /bili/ rewrite o
 });
 
 test("discoverRoutes: gemini relay-wrapped GOOGLE_GEMINI_BASE_URL unwraps back to the real upstream", () => {
-    const wrapped = `${ORIGIN}/bili/https://generativelanguage.googleapis.com`;
+    const wrapped = `${ORIGIN}/sigma/https://generativelanguage.googleapis.com`;
     const routes = discoverRoutes("gemini", { gemini: { baseUrl: wrapped } });
     assert.deepEqual(routes.httpRewrites, [{ key: "GOOGLE_GEMINI_BASE_URL", realUpstream: "https://generativelanguage.googleapis.com" }]);
 });
@@ -52,7 +52,7 @@ test("discoverRoutes: gemini unparseable GOOGLE_GEMINI_BASE_URL → empty routes
     assert.deepEqual(discoverRoutes("gemini", { gemini: { baseUrl: "not a url" } }), EMPTY_ROUTES);
 });
 
-test("discoverRoutes: iflow default → IFLOW_BASE_URL /bili/ rewrite of apis.iflow.cn/v1", () => {
+test("discoverRoutes: iflow default → IFLOW_BASE_URL /sigma/ rewrite of apis.iflow.cn/v1", () => {
     assert.deepEqual(discoverRoutes("iflow", {}), {
         ...EMPTY_ROUTES,
         httpRewrites: [{ key: "IFLOW_BASE_URL", realUpstream: "https://apis.iflow.cn/v1" }],
@@ -60,7 +60,7 @@ test("discoverRoutes: iflow default → IFLOW_BASE_URL /bili/ rewrite of apis.if
 });
 
 test("discoverRoutes: iflow relay-wrapped IFLOW_BASE_URL unwraps back to the real upstream", () => {
-    const wrapped = `${ORIGIN}/bili/https://apis.iflow.cn/v1`;
+    const wrapped = `${ORIGIN}/sigma/https://apis.iflow.cn/v1`;
     const routes = discoverRoutes("iflow", { iflow: { baseUrl: wrapped } });
     assert.deepEqual(routes.httpRewrites, [{ key: "IFLOW_BASE_URL", realUpstream: "https://apis.iflow.cn/v1" }]);
 });
@@ -89,7 +89,7 @@ test("discoverRoutes: qwen default → cert-MITM whitelist of stock Qwen/DashSco
     assert.deepEqual(routes.httpEnvRoutes, []);
 });
 
-test("buildGeminiEnv: wraps the rewrite target under /bili/, no proxy/CA env (GATEWAY mode goes direct)", () => {
+test("buildGeminiEnv: wraps the rewrite target under /sigma/, no proxy/CA env (GATEWAY mode goes direct)", () => {
     const base: NodeJS.ProcessEnv = { GEMINI_API_KEY: "k", PATH: "/bin" };
     const env = buildGeminiEnv(
         ORIGIN,
@@ -98,26 +98,26 @@ test("buildGeminiEnv: wraps the rewrite target under /bili/, no proxy/CA env (GA
         [],
         base,
     );
-    assert.equal(env.GOOGLE_GEMINI_BASE_URL, `${ORIGIN}/bili/https://generativelanguage.googleapis.com`);
-    assert.equal(env.BILLION_CONTEXT_PROXY, ORIGIN);
+    assert.equal(env.GOOGLE_GEMINI_BASE_URL, `${ORIGIN}/sigma/https://generativelanguage.googleapis.com`);
+    assert.equal(env.SIGMA_PROXY, ORIGIN);
     assert.equal(env.GEMINI_API_KEY, "k");
     assert.equal(env.PATH, "/bin");
     assert.equal(env.HTTPS_PROXY, undefined);
     assert.equal(env.NODE_EXTRA_CA_CERTS, undefined);
 });
 
-test("buildGeminiEnv: never double-wraps an already-bili upstream", () => {
+test("buildGeminiEnv: never double-wraps an already-sigma upstream", () => {
     const env = buildGeminiEnv(
         ORIGIN,
         "/ca/root-ca.pem",
-        [{ key: "GOOGLE_GEMINI_BASE_URL", realUpstream: `${ORIGIN}/bili/https://generativelanguage.googleapis.com` }],
+        [{ key: "GOOGLE_GEMINI_BASE_URL", realUpstream: `${ORIGIN}/sigma/https://generativelanguage.googleapis.com` }],
         [],
         {},
     );
-    assert.equal(env.GOOGLE_GEMINI_BASE_URL, `${ORIGIN}/bili/https://generativelanguage.googleapis.com`);
+    assert.equal(env.GOOGLE_GEMINI_BASE_URL, `${ORIGIN}/sigma/https://generativelanguage.googleapis.com`);
 });
 
-test("buildIflowEnv: sets BOTH documented env spellings to the /bili/ wrapped upstream", () => {
+test("buildIflowEnv: sets BOTH documented env spellings to the /sigma/ wrapped upstream", () => {
     const env = buildIflowEnv(
         ORIGIN,
         "/ca/root-ca.pem",
@@ -125,9 +125,9 @@ test("buildIflowEnv: sets BOTH documented env spellings to the /bili/ wrapped up
         [],
         {},
     );
-    assert.equal(env.IFLOW_BASE_URL, `${ORIGIN}/bili/https://apis.iflow.cn/v1`);
+    assert.equal(env.IFLOW_BASE_URL, `${ORIGIN}/sigma/https://apis.iflow.cn/v1`);
     assert.equal(env.IFLOW_baseUrl, env.IFLOW_BASE_URL);
-    assert.equal(env.BILLION_CONTEXT_PROXY, ORIGIN);
+    assert.equal(env.SIGMA_PROXY, ORIGIN);
     assert.equal(env.HTTPS_PROXY, undefined);
 });
 
@@ -135,7 +135,7 @@ test("buildQwenEnv: HTTPS_PROXY + additive root CA + loopback NO_PROXY (undici E
     const env = buildQwenEnv(ORIGIN, "/ca/root-ca.pem", { HOME: "/home/u" });
     assert.equal(env.HTTPS_PROXY, ORIGIN);
     assert.equal(env.NODE_EXTRA_CA_CERTS, "/ca/root-ca.pem");
-    assert.equal(env.BILLION_CONTEXT_PROXY, ORIGIN);
+    assert.equal(env.SIGMA_PROXY, ORIGIN);
     assert.equal(env.NO_PROXY, "localhost,127.0.0.1,::1");
     assert.equal(env.no_proxy, "localhost,127.0.0.1,::1");
     assert.equal(env.HOME, "/home/u");
@@ -146,7 +146,7 @@ test("launcherInjectMcp: gemini/iflow/qwen stay wire-only (unverified MCP flags,
         assert.equal(launcherInjectMcp({}, base), false);
     }
     assert.equal(launcherInjectMcp({}, "claude"), true);
-    assert.equal(launcherInjectMcp({ BILI_LAUNCHER_PLUGIN: "0" }, "claude"), false);
+    assert.equal(launcherInjectMcp({ SIGMA_LAUNCHER_PLUGIN: "0" }, "claude"), false);
 });
 
 test("readGeminiEnvConfig: captures user-exported GOOGLE_GEMINI_BASE_URL as relay source", () => {

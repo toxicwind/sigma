@@ -1,6 +1,6 @@
 /** Upstream transport failure taxonomy (#1263).
  *
- *  Field diagnosis of long-session failures (omp → bili → external proxy →
+ *  Field diagnosis of long-session failures (omp → sigma → external proxy →
  *  upstream) was blind because every network error surfaced as a flattened
  *  `code=/message=` blob: a proxy that recycles the socket mid-CONNECT, an
  *  upstream that goes silent past the idle budget, and a client disconnect
@@ -13,7 +13,7 @@
  *  edge upstream-proxy → fetch-util; adding the reverse would be a cycle). */
 
 export type UpstreamFailureKind =
-    /** Downstream client disconnected (external abort fired). Nothing bili
+    /** Downstream client disconnected (external abort fired). Nothing sigma
      *  did or can retry — the request is dead by definition. */
     | "client-abort"
     /** Idle-budget / read-phase timeout expiry: our own watchdog aborted, or
@@ -44,7 +44,7 @@ export interface UpstreamFailCtx {
     /** A proxy dispatcher is in the path — changes reset/refused attribution. */
     viaProxy?: boolean;
     /** True when the caller's EXTERNAL abort signal (client disconnect) has
-     *  fired. Without it, an AbortError is attributed to bili's own idle
+     *  fired. Without it, an AbortError is attributed to sigma's own idle
      *  watchdog (upstream-timeout) — the common internal-abort shape. */
     externalAborted?: boolean;
 }
@@ -94,13 +94,13 @@ export function isFailFastUpstreamKind(kind: UpstreamFailureKind): boolean {
 /** One-line remediation hint per kind — used by logs and the docs so the
  *  taxonomy and the checklist never drift apart. */
 export const UPSTREAM_FAIL_HINTS: Record<UpstreamFailureKind, string> = {
-    "client-abort": "downstream client disconnected — no bili-side action",
+    "client-abort": "downstream client disconnected — no sigma-side action",
     "upstream-timeout": "idle budget expired (headers/body) — check upstream health; not retried by design",
-    "connect-timeout": "TCP handshake never completed — upstream/proxy unreachable or blackholed; a bounded transparent replay may be attempted (BILI_REPLAY_RETRY_MAX)",
-    "proxy-reset": "proxy dropped the connection before the response — check proxy idle-recycle/payload limits (BILI_PROXY_KEEPALIVE_MAX_MS can shorten our reuse window); a bounded transparent replay may be attempted (BILI_REPLAY_RETRY_MAX)",
-    "upstream-reset": "upstream/network reset before the response — check upstream and local network; a bounded transparent replay may be attempted (BILI_REPLAY_RETRY_MAX)",
+    "connect-timeout": "TCP handshake never completed — upstream/proxy unreachable or blackholed; a bounded transparent replay may be attempted (SIGMA_REPLAY_RETRY_MAX)",
+    "proxy-reset": "proxy dropped the connection before the response — check proxy idle-recycle/payload limits (SIGMA_PROXY_KEEPALIVE_MAX_MS can shorten our reuse window); a bounded transparent replay may be attempted (SIGMA_REPLAY_RETRY_MAX)",
+    "upstream-reset": "upstream/network reset before the response — check upstream and local network; a bounded transparent replay may be attempted (SIGMA_REPLAY_RETRY_MAX)",
     "connect-refused": "TCP refused (proxy when configured, else upstream) — endpoint down or wrong port",
-    dns: "name resolution failed — DNS server or hostname typo; a bounded transparent replay may be attempted (BILI_REPLAY_RETRY_MAX)",
+    dns: "name resolution failed — DNS server or hostname typo; a bounded transparent replay may be attempted (SIGMA_REPLAY_RETRY_MAX)",
     tls: "TLS/certificate failure at CONNECT or upstream handshake — CA/proxy MITM config",
     unknown: "unclassified transport failure — report with full error chain",
 };

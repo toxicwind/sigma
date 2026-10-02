@@ -22,7 +22,7 @@
    collect collision, launcher env parsing). `tests/compress-credit.test.ts` (netting on a successful
    compression + zero credit on a failed compression). `launcher.test.ts` +1 (the proxy spawn env
    carries the window JSON, in the real omp models.yml shape). 628/628 + typecheck + build green.
-5. e2e: dist + `BILI_LAUNCHER_MODEL_WINDOWS='{"test-model-x":262144}'` + a mock upstream +
+5. e2e: dist + `SIGMA_LAUNCHER_MODEL_WINDOWS='{"test-model-x":262144}'` + a mock upstream +
    `max_tokens` 32768 → the log denominator was 229376 (= 262144−32768). Before the fix it would
    have been 95232.
 6. Lessons: TS `??` chains collapse types. A YAML indent state machine must be verified against a

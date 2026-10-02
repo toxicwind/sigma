@@ -82,7 +82,7 @@ async function startRig(): Promise<Rig> {
         new Promise((resolve, reject) => s.close((e) => (e ? reject(e) : resolve())));
     return {
         proxyUrl: (path) => `http://127.0.0.1:${proxyPort}${path}`,
-        messagesUrl: () => `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`,
+        messagesUrl: () => `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`,
         upstreamBodies,
         closeAll: async () => {
             await closeOne(proxy);

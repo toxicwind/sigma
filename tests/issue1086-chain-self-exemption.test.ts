@@ -15,9 +15,9 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
 import { artifactSeedHit, detectAcpArtifacts } from "../src/server/chain-artifacts.ts";
 
-// #1086: the v0.1.133 chain-detection content fallback judged bili's OWN
+// #1086: the v0.1.133 chain-detection content fallback judged sigma's OWN
 // injected ACP artifacts (render tags re-sent by the client, ACP tool names
-// in the tools array) as evidence of an upstream bili instance, so a
+// in the tools array) as evidence of an upstream sigma instance, so a
 // single-instance setup passed EVERY turn through unprocessed and the
 // compression kernel never ran again. Layers under test:
 //   1. detectAcpArtifacts — structural detection (declarations alone are not
@@ -26,7 +26,7 @@ import { artifactSeedHit, detectAcpArtifacts } from "../src/server/chain-artifac
 //   3. fresh plugin-mode session (declarations only) ⇒ processed, no warn.
 //   4. #1357 Phase 1: foreign artifacts without local state are ADVISORY —
 //      processed normally so the session owns itself; one advisory warn, and
-//      only x-bili-hop remains decisive verbatim passthrough.
+//      only x-sigma-hop remains decisive verbatim passthrough.
 //   5. escape valve chainContentDetection=false disables the fallback.
 //   6. liveness guard — a plain-client chat-wire session still compresses
 //      as it grows (the #1086 failure mode was silent non-compression).
@@ -104,7 +104,7 @@ test("#1086 detector: real render tag is an artifact; placeholder tag and prose 
     const renamed = { model: MODEL, tools: [toolDecl("ctx_status"), toolDecl("ctx_search")], messages: [
         { role: "assistant", content: null, tool_calls: [historyCall("ctx_status", "call_1"), historyCall("ctx_search", "call_2")] },
     ] };
-    assert.equal(detectAcpArtifacts(Buffer.from(JSON.stringify(renamed)), renamed), null, "renamed lookalike tools (group D) are not bili artifacts");
+    assert.equal(detectAcpArtifacts(Buffer.from(JSON.stringify(renamed)), renamed), null, "renamed lookalike tools (group D) are not sigma artifacts");
 
     const oneOnly = { model: MODEL, messages: [
         { role: "assistant", content: null, tool_calls: [historyCall("acp_status", "call_1")] },
@@ -171,7 +171,7 @@ type LogRec = { level: string; msg: string };
 const chainWarns = (logs: LogRec[], sessionId?: string): LogRec[] =>
     logs.filter((l) => l.level === "warn" && l.msg.includes("[chain]") && (!sessionId || l.msg.includes(sessionId)));
 
-// The #1086 incident shape: a bili-managed client whose history contains real
+// The #1086 incident shape: a sigma-managed client whose history contains real
 // invocations of both ACP tools (the plugin surfaces them; the model used them).
 function incidentBody(): string {
     return JSON.stringify({
@@ -274,7 +274,7 @@ test("#1086/#1357 T3: foreign artifacts without local state are ADVISORY — pro
     // #1100: "no local state ⇒ foreign" holds only when persistence proves ownership
     // across a restart, so T3 runs an ENABLED store over an empty temp dir (truly
     // foreign). Disabled-store variant is ambiguous (own session after restart) → T6.
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-t3-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-t3-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -324,7 +324,7 @@ test("#1218/#1357: a content-detected conversation owns a real session; /acp sho
     // Pre-#1357 symptom (#1218): such requests passed through with NO session, so
     // /acp showed a misleading armed-idle "no model request yet". Now /acp reflects
     // the real session — requests served, panel built; never armed-idle or passthrough.
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-1218-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-1218-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -409,8 +409,8 @@ test("#1086 T4: chainContentDetection=false disables the content fallback entire
     }
 });
 
-test("#1100 T6: BILI_PERSIST=0 + restart ⇒ replayed own session is processed, not permanently passed through", async () => {
-    // Post-restart shape: store disabled (BILI_PERSIST=0) and memory cleared, so this
+test("#1100 T6: SIGMA_PERSIST=0 + restart ⇒ replayed own session is processed, not permanently passed through", async () => {
+    // Post-restart shape: store disabled (SIGMA_PERSIST=0) and memory cleared, so this
     // instance cannot prove ownership of the ACP artifacts the client re-sends. Pre-#1100
     // that read as "chain" → passthrough forever (#1086 symptom); it must be processed.
     _setStoreForTest(new SessionStore({ enabled: false }));
@@ -590,11 +590,11 @@ test("#1086 T5 liveness: plain-client chat session keeps compressing as it grows
 // #1101 (F2 of the #1090 deep review): three real paths were never exercised
 // by the tests above — the disk branch of hasProcessedState
 // (src/session.ts:342-343, "covers the auto-update restart"), the
-// BILI_CHAIN_CONTENT env parse (src/config.ts), and the warn-set FIFO
+// SIGMA_CHAIN_CONTENT env parse (src/config.ts), and the warn-set FIFO
 // eviction (src/server.ts). These close those gaps.
 
 test("#1101 T7: persisted own state survives a simulated restart — disk branch of hasProcessedState", async () => {
-    const root = path.join(tmpdir(), `bili-chain-restart-${process.pid}-${Date.now()}`);
+    const root = path.join(tmpdir(), `sigma-chain-restart-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
     const storeA = new SessionStore({ dir: root, enabled: true, debounceMs: 0 });
     const stores: SessionStore[] = [storeA];
@@ -667,7 +667,7 @@ test("#1101 T7: persisted own state survives a simulated restart — disk branch
 test("#1101 T8: warn-set FIFO evicts the oldest session once past the cap", async () => {
     // ENABLED store over an empty temp dir: with persistence disabled the content
     // fallback is skipped entirely (#1100), so "foreign" can only be judged here.
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-fifo-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-fifo-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -709,28 +709,28 @@ test("#1101 T8: warn-set FIFO evicts the oldest session once past the cap", asyn
     }
 });
 
-test("#1101 T9: BILI_CHAIN_CONTENT env parse — default ON, 0 disables, env wins over file", async () => {
-    const root = path.join(tmpdir(), `bili-chain-env-${process.pid}-${Date.now()}`);
+test("#1101 T9: SIGMA_CHAIN_CONTENT env parse — default ON, 0 disables, env wins over file", async () => {
+    const root = path.join(tmpdir(), `sigma-chain-env-${process.pid}-${Date.now()}`);
     mkdirSync(root, { recursive: true });
-    const cfgFile = path.join(root, "billion-context.json");
-    const prevFile = process.env.BILI_CONFIG_FILE;
+    const cfgFile = path.join(root, "sigma.json");
+    const prevFile = process.env.SIGMA_CONFIG_FILE;
     try {
-        process.env.BILI_CONFIG_FILE = cfgFile;
+        process.env.SIGMA_CONFIG_FILE = cfgFile;
         assert.equal(loadOptions({}).chainContentDetection, true, "default ON when nothing is configured");
-        assert.equal(loadOptions({ BILI_CHAIN_CONTENT: "0" }).chainContentDetection, false, "BILI_CHAIN_CONTENT=0 disables the fallback");
-        assert.equal(loadOptions({ BILI_CHAIN_CONTENT: "1" }).chainContentDetection, true, "BILI_CHAIN_CONTENT=1 enables it");
+        assert.equal(loadOptions({ SIGMA_CHAIN_CONTENT: "0" }).chainContentDetection, false, "SIGMA_CHAIN_CONTENT=0 disables the fallback");
+        assert.equal(loadOptions({ SIGMA_CHAIN_CONTENT: "1" }).chainContentDetection, true, "SIGMA_CHAIN_CONTENT=1 enables it");
         writeFileSync(cfgFile, JSON.stringify({ chainContentDetection: false }), "utf8");
         assert.equal(loadOptions({}).chainContentDetection, false, "file chainContentDetection=false disables the fallback");
-        assert.equal(loadOptions({ BILI_CHAIN_CONTENT: "1" }).chainContentDetection, true, "env =1 wins over file false");
+        assert.equal(loadOptions({ SIGMA_CHAIN_CONTENT: "1" }).chainContentDetection, true, "env =1 wins over file false");
     } finally {
-        if (prevFile === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevFile;
+        if (prevFile === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevFile;
         rmSync(root, { recursive: true, force: true });
     }
 });
 
 // #1197: tag-shaped text in the SYSTEM section is client-authored context
-// (AGENTS.md/CLAUDE.md/README quoting the wire format — the billion-context
-// repo itself carries literal examples), never bili compression output:
+// (AGENTS.md/CLAUDE.md/README quoting the wire format — the sigma
+// repo itself carries literal examples), never sigma compression output:
 // render tags and the re-voiced acp_summary always live in HISTORY items.
 test("#1197 detector: tags in system/developer/instructions are NOT artifacts", () => {
     const realTag = "\x3cacp tokens=\"59\" type=\"text\"\x3em00001\x3c/acp\x3e";
@@ -769,11 +769,11 @@ test("#1197 detector: tags in HISTORY still are artifacts (tool results, user me
 });
 
 // The exact #1197 incident: a fresh session whose system prompt carries literal
-// tag examples from the project's AGENTS.md (cwd = a billion-context checkout)
+// tag examples from the project's AGENTS.md (cwd = a sigma checkout)
 // used to be verdict-ed into permanent passthrough — /acp stuck on armed-idle
 // and the whole session ran uncompressed.
 test("#1197 T10: system-prompt tags on a fresh plain-client session are processed, not judged a chain", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-t10-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-t10-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -824,7 +824,7 @@ test("#1197 T10: system-prompt tags on a fresh plain-client session are processe
 // content-shape evidence, so a resumed plugin session is processed even when
 // this instance holds no state for it.
 test("#1197 T11: plugin-announced request with history artifacts is processed, not judged a chain", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-t11-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-t11-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -845,8 +845,8 @@ test("#1197 T11: plugin-announced request with history artifacts is processed, n
             headers: {
                 "content-type": "application/json",
                 "x-acp-session": "plug-1",
-                "x-bili-plugin": "pi",
-                "x-bili-plugin-conversation": "plug-1",
+                "x-sigma-plugin": "pi",
+                "x-sigma-plugin-conversation": "plug-1",
             },
             body: raw,
         });
@@ -873,7 +873,7 @@ test("#1197 T11: plugin-announced request with history artifacts is processed, n
 // exact real-world trigger. Pre-#1357 this forced byte-identical passthrough
 // forever; now it is processed normally, the session owns itself, one advisory warn.
 test("#1357 T12: ACP tag literals in history are advisory — processed, owned, one warn (not passthrough)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-t12-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-t12-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -938,7 +938,7 @@ test("#1357 T12: ACP tag literals in history are advisory — processed, owned, 
 });
 
 test("#1357 T13: Responses wire — ACP tag literal in history is advisory, processed, owned", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-resp-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-resp-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();
@@ -990,7 +990,7 @@ test("#1357 T13: Responses wire — ACP tag literal in history is advisory, proc
 });
 
 test("#1357 T14: Anthropic wire — ACP tag literal in history is advisory, processed, owned", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "bili-chain-anth-"));
+    const dir = mkdtempSync(join(tmpdir(), "sigma-chain-anth-"));
     const store = new SessionStore({ dir, debounceMs: 5, enabled: true });
     _setStoreForTest(store);
     _resetSessionsForTest();

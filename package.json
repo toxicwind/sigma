@@ -1,7 +1,7 @@
 {
-  "name": "billion-context",
+  "name": "sigma",
   "version": "0.1.160",
-  "description": "A context-compression plugin — small context windows (a 100K context is enough), 5x fewer tokens, month-long single sessions (billions of tokens), and compression quality — for all agents: pi, OpenCode, Codex, Claude Code, and more. billion-context is all you need.",
+  "description": "A context-compression plugin — small context windows (a 100K context is enough), 5x fewer tokens, month-long single sessions (billions of tokens), and compression quality — for all agents: pi, OpenCode, Codex, Claude Code, and more. sigma is all you need.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -10,8 +10,10 @@
     "./dsh": "./dist/agent/dsh-native.js"
   },
   "bin": {
-    "bili": "./dist/index.js",
-    "bili-proxy": "./dist/index.js"
+    "sigma": "./dist/index.js",
+    "sigma-proxy": "./dist/index.js",
+    "sigma": "./dist/index.js",
+    "sigma-proxy": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup && node scripts/check-dist-import-annotations.mjs",
@@ -42,11 +44,11 @@
   "author": "ranxianglei",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ranxianglei/billion-context.git"
+    "url": "git+https://github.com/ranxianglei/sigma.git"
   },
-  "homepage": "https://github.com/ranxianglei/billion-context#readme",
+  "homepage": "https://github.com/ranxianglei/sigma#readme",
   "bugs": {
-    "url": "https://github.com/ranxianglei/billion-context/issues"
+    "url": "https://github.com/ranxianglei/sigma/issues"
   },
   "dependencies": {
     "zod": "4.1.8"
@@ -76,7 +78,7 @@
     "hermes-plugin"
   ],
   "pi": {
-    "image": "https://raw.githubusercontent.com/ranxianglei/billion-context/master/docs/logo.png",
+    "image": "https://raw.githubusercontent.com/ranxianglei/sigma/master/docs/logo.png",
     "extensions": [
       "./dist/agent/pi-native.js"
     ]

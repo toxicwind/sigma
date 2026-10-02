@@ -8,7 +8,7 @@ import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter, stri
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
 import { extractResponsesTextTriggers, PROXY_TOOL_NAMES } from "../compress-tool.js";
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 import type {
     CompressLoopAdapter,
     EmitCompletionOpts,
@@ -28,8 +28,8 @@ interface FunctionCallBuffer {
 const RESPONSES_ITEM_ID_MAX = 64;
 
 /**
- * Heal client rollouts already poisoned with over-long Bili-generated ids
- * (they 400 every request otherwise). Only the msg-proxy-* namespace bili
+ * Heal client rollouts already poisoned with over-long Sigma-generated ids
+ * (they 400 every request otherwise). Only the msg-proxy-* namespace sigma
  * owns is rewritten — in place and deterministically, so repeated requests
  * keep referencing the same replacement id (#242). Provider-issued opaque
  * ids (reasoning rs_*, function_call fc_*, ...) validate against their
@@ -286,7 +286,7 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
         buildRequest(coreMessages, systemPrompt, requestBody) {
             const customToolCallIds = new Set<string>();
             for (const m of coreMessages) {
-                const bm = m as BiliMessage;
+                const bm = m as SigmaMessage;
                 const raw = bm?.rawResponsesItem as Record<string, unknown> | undefined;
                 if (raw && (raw.type === "custom_tool_call" || raw.type === "custom_tool_call_output")) {
                     const id = typeof raw.call_id === "string" ? raw.call_id : (typeof raw.id === "string" ? raw.id : "");

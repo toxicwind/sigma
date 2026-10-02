@@ -7,7 +7,7 @@ import {
 import { handleAcpStatus } from "../acp-status.js";
 import { handleAcpCache, recordCacheSample } from "../cache-ledger.js";
 import { lastCompressSuffix, withSessionLock, type Session } from "../session.js";
-import type { BiliMessage } from "acp-kernel/wire";
+import type { SigmaMessage } from "acp-kernel/wire";
 import {
     parseCompressInput,
     ABSORB_TOOL_NAME,
@@ -66,7 +66,7 @@ export function buildVisibilityMarker(toolName: string, result: string): string 
 // committed to coreMessages/session state.
 const TRUNCATION_CONTINUATION_TAIL_CHARS = 800;
 const truncationContinuationNudge = (tail: string): string =>
-    `[billion-context] Your previous response was cut off mid-transmission by a network failure before the stream could complete. The client already received the response up to and including this text:\n\n---\n${tail}\n---\n\nContinue the response seamlessly from exactly where that text ends (mid-sentence if necessary). Do not repeat any part of the received text and do not start over — just pick up where it stopped and finish the response.`;
+    `[sigma] Your previous response was cut off mid-transmission by a network failure before the stream could complete. The client already received the response up to and including this text:\n\n---\n${tail}\n---\n\nContinue the response seamlessly from exactly where that text ends (mid-sentence if necessary). Do not repeat any part of the received text and do not start over — just pick up where it stopped and finish the response.`;
 
 function isLoopThinking(m: CoreMessage): boolean {
     return m.contentType === "reasoning" && typeof m.id === "string" && m.id.startsWith("acp_loop_");
@@ -741,7 +741,7 @@ export async function* runCompressLoop(
                     for (let i = 0; i < reasoningSegments.length; i++) {
                         const seg = reasoningSegments[i];
                         if (seg.text.length === 0 || (requiresThinkingSignature && seg.signature.length === 0)) continue;
-                        const reasoningMsg: BiliMessage = {
+                        const reasoningMsg: SigmaMessage = {
                             id: i === 0 ? `acp_loop_r${round}_reasoning` : `acp_loop_r${round}_reasoning_${i + 1}`,
                             role: "assistant",
                             contentType: "reasoning",
@@ -999,7 +999,7 @@ export async function* runCompressLoop(
                     ctx.log(`[acp-loop] 400 mentions reasoning_content — learned strict reasoning echo for this session; #651 reasoning-drop disabled (#684)`);
                     loggerLog("warn", `[acp-loop] learned strictReasoningEcho (session ${ctx.session.id}); reasoning-drop disabled (#684)`);
                 }
-                // #762: persist the exact re-requested body on 4xx (env-gated: BILI_DUMP_4XX=1).
+                // #762: persist the exact re-requested body on 4xx (env-gated: SIGMA_DUMP_4XX=1).
                 if (e.status >= 400 && e.status < 500) {
                     dumpRejectedBody(e.status, ctx.session.id ?? "unknown", JSON.stringify(newBody));
                 }

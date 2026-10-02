@@ -1,7 +1,7 @@
 {
   "ok": true,
   "protocolVersion": 1,
-  "proxy": "billion-context",
+  "proxy": "sigma",
   "version": "<VERSION>",
   "toolNames": [
     "compress",
@@ -129,7 +129,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -162,7 +162,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           },
           "required": [
@@ -186,7 +186,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -202,7 +202,7 @@
           "properties": {
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -223,7 +223,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -349,7 +349,7 @@
               },
               "conversation_id": {
                 "type": "string",
-                "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+                "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
               }
             }
           }
@@ -385,7 +385,7 @@
               },
               "conversation_id": {
                 "type": "string",
-                "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+                "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
               }
             },
             "required": [
@@ -412,7 +412,7 @@
               },
               "conversation_id": {
                 "type": "string",
-                "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+                "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
               }
             },
             "required": [
@@ -431,7 +431,7 @@
             "properties": {
               "conversation_id": {
                 "type": "string",
-                "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+                "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
               }
             }
           }
@@ -455,7 +455,7 @@
               },
               "conversation_id": {
                 "type": "string",
-                "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+                "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
               }
             }
           }
@@ -581,7 +581,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -615,7 +615,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           },
           "required": [
@@ -640,7 +640,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Target bili conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
+              "description": "Target sigma conversation id. Defaults to the current conversation. May reference another historical pfa-* session for read-only search."
             }
           },
           "required": [
@@ -657,7 +657,7 @@
           "properties": {
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -679,7 +679,7 @@
             },
             "conversation_id": {
               "type": "string",
-              "description": "Your bili conversation id (the value from the 'your bili conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
+              "description": "Your sigma conversation id (the value from the 'your sigma conversation id' line in the proxy notes). Pass it on every call when your host shares one MCP process across several concurrent conversations; omit it when the host bound the session itself."
             }
           }
         }
@@ -687,12 +687,12 @@
     ]
   },
   "headers": {
-    "agent": "x-bili-plugin",
-    "conversation": "x-bili-plugin-conversation",
-    "contextWindow": "x-bili-plugin-context-window",
-    "maxOutput": "x-bili-plugin-max-output",
-    "model": "x-bili-plugin-model",
-    "instructionsMutable": "x-bili-plugin-instructions-mutable"
+    "agent": "x-sigma-plugin",
+    "conversation": "x-sigma-plugin-conversation",
+    "contextWindow": "x-sigma-plugin-context-window",
+    "maxOutput": "x-sigma-plugin-max-output",
+    "model": "x-sigma-plugin-model",
+    "instructionsMutable": "x-sigma-plugin-instructions-mutable"
   },
   "toolEndpoint": "/__bili/plugin/tool",
   "statusEndpoint": "/__bili/plugin/status",

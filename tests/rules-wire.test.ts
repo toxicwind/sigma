@@ -96,7 +96,7 @@ test("#749 anthropic wire: acp_rule injected alongside ACP tools when rules enab
     await once(proxy, "listening");
     const pport = (proxy.address() as { port: number }).port;
     try {
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/messages`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/messages`,
             { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-acp-session": "rw-ant-on" },
             JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         assert.equal(up.bodies().length, 1, "exactly one upstream request");
@@ -126,7 +126,7 @@ test("#1399 anthropic wire: acp_rule NOT injected when unset (opt-in)", async ()
     await once(proxy, "listening");
     const pport = (proxy.address() as { port: number }).port;
     try {
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/messages`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/messages`,
             { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-acp-session": "rw-ant-default" },
             JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         const tools = up.bodies()[0].tools as Array<{ name?: unknown }>;
@@ -147,7 +147,7 @@ test("#749 anthropic wire: acp_rule NOT injected when explicitly disabled", asyn
     await once(proxy, "listening");
     const pport = (proxy.address() as { port: number }).port;
     try {
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/messages`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/messages`,
             { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-acp-session": "rw-ant-off" },
             JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         const tools = up.bodies()[0].tools as Array<{ name?: unknown }>;
@@ -170,7 +170,7 @@ test("#749 openai wire: acp_rule function tool injected when rules enabled", asy
     try {
         // max_tokens > 200 keeps the request out of title-gen mode (which
         // skips ALL tool injection).
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/chat/completions`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/chat/completions`,
             { "content-type": "application/json", "x-acp-session": "rw-oai-on" },
             JSON.stringify({ model: "m-test", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hi" }] }));
         const tools = up.bodies()[0].tools as Array<{ type?: unknown; function?: { name?: unknown } }>;
@@ -196,7 +196,7 @@ test("#749 responses wire: acp_rule flat tool injected when rules enabled", asyn
     await once(proxy, "listening");
     const pport = (proxy.address() as { port: number }).port;
     try {
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/responses`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/responses`,
             { "content-type": "application/json", "x-acp-session": "rw-resp-on" },
             JSON.stringify({ model: "m-test", stream: true, instructions: "You are a test agent.", input: [{ type: "message", role: "user", content: "hi" }] }));
         const tools = up.bodies()[0].tools as Array<{ name?: unknown }>;
@@ -219,7 +219,7 @@ test("#749 anthropic wire: client-supplied tools merge without duplicating acp_r
     await once(proxy, "listening");
     const pport = (proxy.address() as { port: number }).port;
     try {
-        await post(`http://127.0.0.1:${pport}/bili/http://127.0.0.1:${up.port}/v1/messages`,
+        await post(`http://127.0.0.1:${pport}/sigma/http://127.0.0.1:${up.port}/v1/messages`,
             { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-acp-session": "rw-ant-dedup" },
             JSON.stringify({
                 model: "m-test", max_tokens: 1024, stream: true,

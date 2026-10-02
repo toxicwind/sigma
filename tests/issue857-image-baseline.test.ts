@@ -137,7 +137,7 @@ test("#857 A: legacy poisoned baseline + fake confirmed window — image turn is
     const { server: upstream, port: uport, stats } = await startMockUpstream();
     const { proxy, port } = await startProxy(uport, { [MODEL]: { context: WINDOW } }, WINDOW);
     try {
-        const url = `http://127.0.0.1:${port}/bili/http://127.0.0.1:${uport}/v1/responses`;
+        const url = `http://127.0.0.1:${port}/sigma/http://127.0.0.1:${uport}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, { method: "POST", headers, body: body(MODEL, "s857a", [{ type: "message", role: "user", content: "hello there" }]) });
@@ -180,7 +180,7 @@ test("#857 B: genuine overflow evidence (learned limit == configured window) sti
     const { server: upstream, port: uport, stats } = await startMockUpstream();
     const { proxy, port } = await startProxy(uport, { [MODEL]: { context: WINDOW } }, WINDOW);
     try {
-        const url = `http://127.0.0.1:${port}/bili/http://127.0.0.1:${uport}/v1/responses`;
+        const url = `http://127.0.0.1:${port}/sigma/http://127.0.0.1:${uport}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, { method: "POST", headers, body: body(MODEL, "s857b", [{ type: "message", role: "user", content: "hello there" }]) });
@@ -211,7 +211,7 @@ test("#857 C: usage-grounded over-window baseline — hatch stays closed AND the
     // self-heal (which requires nativeFromFallback) can confirm it.
     const { proxy, port } = await startProxy(uport, {}, WINDOW);
     try {
-        const url = `http://127.0.0.1:${port}/bili/http://127.0.0.1:${uport}/v1/responses`;
+        const url = `http://127.0.0.1:${port}/sigma/http://127.0.0.1:${uport}/v1/responses`;
         const headers = { "content-type": "application/json" };
 
         const r1 = await fetch(url, { method: "POST", headers, body: body(FALLBACK_MODEL, "s857c", [{ type: "message", role: "user", content: "hello there" }]) });

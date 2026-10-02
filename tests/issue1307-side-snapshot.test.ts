@@ -21,7 +21,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { getSession, _resetSessionsForTest } from "../src/session.ts";
 
 process.env.NODE_ENV = "test";
-process.env.BILI_PERSIST = "0";
+process.env.SIGMA_PERSIST = "0";
 
 const MODEL = "claude-sonnet-4-5";
 
@@ -123,8 +123,8 @@ const CONV = "iso1307-conv";
 test("e2e plugin lane: review-shaped request keeps the snapshot; compress still anchors (#1307)", async () => {
     const rig = await startRig();
     try {
-        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/chat/completions`;
-        const headers: Record<string, string> = { "content-type": "application/json", "x-bili-plugin": "test-agent", "x-acp-session": CONV };
+        const url = `http://127.0.0.1:${rig.proxyPort}/sigma/http://127.0.0.1:${rig.upstreamPort}/v1/chat/completions`;
+        const headers: Record<string, string> = { "content-type": "application/json", "x-sigma-plugin": "test-agent", "x-acp-session": CONV };
         const tools = [{ type: "function", function: { name: "bash", description: "run", parameters: { type: "object", properties: {} } } }];
 
         // Phase 1 — main turn: 12 × ~6k-char messages + tools → refs assigned,

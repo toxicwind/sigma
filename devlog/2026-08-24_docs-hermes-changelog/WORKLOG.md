@@ -1,7 +1,7 @@
 # WORKLOG - Docs update for v0.1.47–v0.1.50 (hermes launcher + changelog backfill)
 
 - Task ID: `2026-08-24_docs-hermes-changelog`
-- Home Repo: `billion-context`
+- Home Repo: `sigma`
 - Status: Done
 - Updated: 2026-08-24
 
@@ -21,12 +21,12 @@
   - pi/omp: `buildPiEnv` → HTTPS_PROXY + NODE_EXTRA_CA_CERTS; omp rides an
     isolated `PI_CODING_AGENT_DIR` temp copy of `~/.omp/agent/models.yml`.
   - codex: HTTPS_PROXY + SSL_CERT_FILE (combined-ca.pem).
-  - claude: undici ignores HTTPS_PROXY → `ANTHROPIC_BASE_URL` /bili/ form.
+  - claude: undici ignores HTTPS_PROXY → `ANTHROPIC_BASE_URL` /sigma/ form.
   - opencode: HTTPS_PROXY + NODE_EXTRA_CA_CERTS + `OPENCODE_CONFIG` temp
-    opencode.json (HTTP→/bili/, plugin appended, BILLION_CONTEXT_PROXY
+    opencode.json (HTTP→/sigma/, plugin appended, SIGMA_PROXY
     self-disable signal).
   - hermes: no MITM (httpx/certifi ignores SSL_CERT_FILE) → isolated
-    `HERMES_HOME`, every upstream /bili/, skills/memories/sessions shared
+    `HERMES_HOME`, every upstream /sigma/, skills/memories/sessions shared
     via symlinks, CRLF preserved, loud warnings on no-provider/rewrite-fail.
 - Config discovery paths (src/client-config.ts): `~/.omp/agent/models.yml`,
   `~/.hermes/config.yaml`, `~/.config/opencode/opencode.json`.
@@ -49,8 +49,8 @@
   entire missing install block (commands, thin-plugin note, kill switch,
   launcher note). Facts verified: PLUGIN_AGENTS=[pi,omp,claude,codex,opencode]
   (src/plugin-install.ts:22), plugin install|remove|list actions (src/cli.ts),
-  *.bili-bak once-backup (src/plugin-install.ts:38), launcherInjectMcp gates
-  MCP injection to claude/codex via BILI_LAUNCHER_PLUGIN=1; opencode launcher
+  *.sigma-bak once-backup (src/plugin-install.ts:38), launcherInjectMcp gates
+  MCP injection to claude/codex via SIGMA_LAUNCHER_PLUGIN=1; opencode launcher
   auto-injects via OPENCODE_CONFIG (src/launcher.ts:357).
 - CHANGELOG.md: [Unreleased] += #222 (thinking-replay degraded retry),
   #223 (hermes launcher, under Features), #224 (SSE name-split,
@@ -84,7 +84,7 @@ fixed in e6e481d plus 9a52eca:
 
 1. The opening said "2 种方式" (two ways) while the document actually had three sections → changed to
    "3 种方式" and added the third bullet (editing the config file by hand).
-2. A dead anchor at line 349, `#方式-a-零配置bili-前缀`, pointed at a heading that had changed →
+2. A dead anchor at line 349, `#方式-a-零配置sigma-前缀`, pointed at a heading that had changed →
    replaced with a plain-text reference to 「方式 2 —— 改url」.
 3. A leftover TODO line → turned into a real body section, 「什么时候才需要 install?」, covering
    what compression never needs (wire injection is the fallback), what the launcher never needs, and

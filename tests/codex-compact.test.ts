@@ -9,9 +9,9 @@ import {
     codexCompactMode,
     isCodexClient,
     hasCompactionTrigger,
-    isBiliCompactionItem,
-    stripBiliCompactionItems,
-    replaceBiliCompactionItems,
+    isSigmaCompactionItem,
+    stripSigmaCompactionItems,
+    replaceSigmaCompactionItems,
     codexCompactGate,
     buildTriggerForgeBody,
     renderForgedSummary,
@@ -21,23 +21,23 @@ import {
 } from "../src/codex-compact.ts";
 
 test("codexCompactMode: kill-switch two states + default + case/trim", () => {
-    const prev = process.env.BILI_CODEX_COMPACT;
+    const prev = process.env.SIGMA_CODEX_COMPACT;
     try {
-        delete process.env.BILI_CODEX_COMPACT;
+        delete process.env.SIGMA_CODEX_COMPACT;
         assert.equal(codexCompactMode(), "intercept", "default is intercept");
-        process.env.BILI_CODEX_COMPACT = "pass";
+        process.env.SIGMA_CODEX_COMPACT = "pass";
         assert.equal(codexCompactMode(), "pass");
-        process.env.BILI_CODEX_COMPACT = "intercept";
+        process.env.SIGMA_CODEX_COMPACT = "intercept";
         assert.equal(codexCompactMode(), "intercept");
-        process.env.BILI_CODEX_COMPACT = "INTERCEPT";
+        process.env.SIGMA_CODEX_COMPACT = "INTERCEPT";
         assert.equal(codexCompactMode(), "intercept", "case-insensitive");
-        process.env.BILI_CODEX_COMPACT = "  pass  ";
+        process.env.SIGMA_CODEX_COMPACT = "  pass  ";
         assert.equal(codexCompactMode(), "pass", "trimmed");
-        process.env.BILI_CODEX_COMPACT = "banana";
+        process.env.SIGMA_CODEX_COMPACT = "banana";
         assert.equal(codexCompactMode(), "intercept", "unknown value stays on intercept");
     } finally {
-        if (prev === undefined) delete process.env.BILI_CODEX_COMPACT;
-        else process.env.BILI_CODEX_COMPACT = prev;
+        if (prev === undefined) delete process.env.SIGMA_CODEX_COMPACT;
+        else process.env.SIGMA_CODEX_COMPACT = prev;
     }
 });
 
@@ -73,19 +73,19 @@ test("hasCompactionTrigger: only a FINAL compaction_trigger counts", () => {
     assert.equal(hasCompactionTrigger("a string"), false);
 });
 
-test("isBiliCompactionItem: our-vs-real-blob distinction", () => {
-    assert.equal(isBiliCompactionItem({ type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}abc` }), true, "id prefix");
-    assert.equal(isBiliCompactionItem({ type: "compaction", encrypted_content: `${CODEX_COMPACT_SENTINEL}summary` }), true, "sentinel");
-    assert.equal(isBiliCompactionItem({ type: "compaction", id: "fc_real", encrypted_content: "opaque-blob" }), false, "real OpenAI blob untouched");
-    assert.equal(isBiliCompactionItem({ type: "message", role: "user", content: "hi" }), false, "not a compaction item");
-    assert.equal(isBiliCompactionItem(null), false);
+test("isSigmaCompactionItem: our-vs-real-blob distinction", () => {
+    assert.equal(isSigmaCompactionItem({ type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}abc` }), true, "id prefix");
+    assert.equal(isSigmaCompactionItem({ type: "compaction", encrypted_content: `${CODEX_COMPACT_SENTINEL}summary` }), true, "sentinel");
+    assert.equal(isSigmaCompactionItem({ type: "compaction", id: "fc_real", encrypted_content: "opaque-blob" }), false, "real OpenAI blob untouched");
+    assert.equal(isSigmaCompactionItem({ type: "message", role: "user", content: "hi" }), false, "not a compaction item");
+    assert.equal(isSigmaCompactionItem(null), false);
 });
 
-test("stripBiliCompactionItems: removes ours, keeps real blobs + messages", () => {
+test("stripSigmaCompactionItems: removes ours, keeps real blobs + messages", () => {
     const ours = { type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}x`, encrypted_content: `${CODEX_COMPACT_SENTINEL}s` };
     const real = { type: "compaction", id: "fc_real", encrypted_content: "opaque" };
     const msg = { type: "message", role: "user", content: "hi" };
-    const out = stripBiliCompactionItems([ours, real, msg]);
+    const out = stripSigmaCompactionItems([ours, real, msg]);
     assert.equal(out.length, 2);
     assert.ok(out.includes(real), "real blob kept");
     assert.ok(out.includes(msg), "message kept");
@@ -129,11 +129,11 @@ test("codexCompactGate: safety-valve matrix", () => {
     assert.equal(codexCompactGate(mockSession(1_000, [block(true)]), 0, true), false, "zero limit → pass through");
 });
 
-test("replaceBiliCompactionItems: echo becomes a summary handoff message in place", () => {
+test("replaceSigmaCompactionItems: echo becomes a summary handoff message in place", () => {
     const ours = { type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}x`, encrypted_content: `${CODEX_COMPACT_SENTINEL}summary text` };
     const real = { type: "compaction", id: "fc_real", encrypted_content: "opaque" };
     const msg = { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] };
-    const { items, replaced, dropped } = replaceBiliCompactionItems([msg, ours, real]);
+    const { items, replaced, dropped } = replaceSigmaCompactionItems([msg, ours, real]);
     assert.equal(replaced, 1);
     assert.equal(dropped, 0);
     assert.equal(items.length, 3, "position-preserving replacement, real blob kept");
@@ -145,10 +145,10 @@ test("replaceBiliCompactionItems: echo becomes a summary handoff message in plac
     assert.ok(items.includes(real) && items.includes(msg), "neighbors untouched");
 });
 
-test("replaceBiliCompactionItems: legacy id-only marker items still drop; empty blob drops", () => {
+test("replaceSigmaCompactionItems: legacy id-only marker items still drop; empty blob drops", () => {
     const legacy = { type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}old`, encrypted_content: "not-ours" };
     const empty = { type: "compaction", id: `${CODEX_COMPACT_ID_PREFIX}e`, encrypted_content: CODEX_COMPACT_SENTINEL };
-    const { items, replaced, dropped } = replaceBiliCompactionItems([legacy, empty]);
+    const { items, replaced, dropped } = replaceSigmaCompactionItems([legacy, empty]);
     assert.equal(replaced, 0);
     assert.equal(dropped, 2);
     assert.equal(items.length, 0);
@@ -162,7 +162,7 @@ test("buildTriggerForgeBody: minimal legal 2-frame stream", () => {
     const e1 = JSON.parse(frames[0]!.slice("data: ".length)) as { type: string; item: { type: string; id: string; encrypted_content: string } };
     assert.equal(e1.type, "response.output_item.done");
     assert.equal(e1.item.type, "compaction");
-    assert.ok(e1.item.id.startsWith(CODEX_COMPACT_ID_PREFIX), "compaction id has bili prefix");
+    assert.ok(e1.item.id.startsWith(CODEX_COMPACT_ID_PREFIX), "compaction id has sigma prefix");
     assert.ok(e1.item.encrypted_content.startsWith(CODEX_COMPACT_SENTINEL), "blob carries the sentinel");
     assert.ok(e1.item.encrypted_content.includes("SUMMARY-TEXT"), "summary text in blob");
     const e2 = JSON.parse(frames[1]!.slice("data: ".length)) as { type: string; response: { id: string; usage: { input_tokens: number; output_tokens: number; total_tokens: number } } };

@@ -211,7 +211,7 @@ interface AnthropicUserMessage {
 
 async function callAnthropic(h: Harness, messages: AnthropicUserMessage[], tools?: unknown[]): Promise<{ raw: string; events: SseEvent[]; arrivals: number[] }> {
     const started = Date.now();
-    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+    const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": "e2e-anthropic" },
         body: JSON.stringify({
@@ -325,7 +325,7 @@ test("e2e anthropic: compress tool_use round-trip — 2nd upstream request carri
 test("e2e anthropic: auto-mode classifier (stop_sequences </severity>/</block>) bypasses compress injection (#353)", async () => {
     const h = await startHarness([textScript()]);
     try {
-        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+        const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "e2e-classifier" },
             body: JSON.stringify({
@@ -373,7 +373,7 @@ test("e2e anthropic: client-sent cache_control breakpoints ride their logical bl
         let hist: AnthropicUserMessage[] = [];
         for (const [sysText, userText] of [["CC-SYS-V1", "cc-hello-1"], ["CC-SYS-V2", "cc-hello-2"], ["CC-SYS-V2", "cc-hello-3"]] as Array<[string, string]>) {
             const newMsg: AnthropicUserMessage = { role: "user", content: [{ type: "text", text: userText, ...(hist.length === 0 ? { cache_control: CC } : {}) }] };
-            const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
+            const resp = await fetch(`http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.upstreamPort}/v1/messages`, {
                 method: "POST",
                 headers: { "content-type": "application/json", "x-acp-session": "e2e-anthropic-cc" },
                 body: JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, system: [{ type: "text", text: sysText, cache_control: CC }], messages: [...hist, newMsg] }),

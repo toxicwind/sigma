@@ -9,25 +9,25 @@ import { nativeProxyScriptPath } from "../src/agent/native-bootstrap.ts";
 import { pluginInstall, pluginRemove, pluginStatusAll, selfPackageRoot, ompPluginLoadedFrom } from "../src/plugin-install.ts";
 
 // #957 coexistence: markNativeHost must be set synchronously during module
-// evaluation so any in-process bili extension backs off in THIS process.
+// evaluation so any in-process sigma extension backs off in THIS process.
 test("module evaluation marks the process as a native omp host", () => {
-    assert.equal(process.env.BILLION_CONTEXT_NATIVE, "omp");
+    assert.equal(process.env.SIGMA_NATIVE, "omp");
 });
 
-test("shouldBootstrapNativeOmp: true in a bare host with no bili env", () => {
+test("shouldBootstrapNativeOmp: true in a bare host with no sigma env", () => {
     assert.equal(shouldBootstrapNativeOmp({}), true);
 });
 
 test("shouldBootstrapNativeOmp: false when the plugin or native mode is opted out", () => {
-    assert.equal(shouldBootstrapNativeOmp({ BILLION_CONTEXT_PLUGIN: "0" }), false);
-    assert.equal(shouldBootstrapNativeOmp({ BILI_NATIVE_OMP: "0" }), false);
-    assert.equal(shouldBootstrapNativeOmp({ BILI_NATIVE_PI: "0" }), true, "another host's opt-out does not affect omp");
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_PLUGIN: "0" }), false);
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_NATIVE_OMP: "0" }), false);
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_NATIVE_PI: "0" }), true, "another host's opt-out does not affect omp");
 });
 
-test("shouldBootstrapNativeOmp: false when a bili launch already owns a proxy", () => {
-    assert.equal(shouldBootstrapNativeOmp({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:36485" }), false);
-    assert.equal(shouldBootstrapNativeOmp({ BILLION_CONTEXT_PROXY: "  " }), true);
-    assert.equal(shouldBootstrapNativeOmp({ BILI_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/bili/http://x"}' }), false);
+test("shouldBootstrapNativeOmp: false when a sigma launch already owns a proxy", () => {
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_PROXY: "http://127.0.0.1:36485" }), false);
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_PROXY: "  " }), true);
+    assert.equal(shouldBootstrapNativeOmp({ SIGMA_PROVIDER_REWRITES: '{"vllm":"http://127.0.0.1:1/sigma/http://x"}' }), false);
 });
 
 test("nativeProxyScriptPath: dist/agent/omp-native.js resolves to the package bin", () => {
@@ -40,7 +40,7 @@ test("default export is an ExtensionFactory (loaded by omp's extensions loader)"
     assert.equal(typeof factory, "function");
 });
 
-// — installer: `bili plugin install omp` targets the native entry (#957) ——
+// — installer: `sigma plugin install omp` targets the native entry (#957) ——
 
 const NATIVE_ENTRY = path.join(selfPackageRoot(), "dist", "agent", "omp-native.js");
 

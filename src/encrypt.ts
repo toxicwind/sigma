@@ -11,25 +11,25 @@ import type { StateStoreCodec } from "acp-kernel/persist";
  * THREAT MODEL (#708): the proxy may run on untrusted nodes; session files
  * hold block summaries plus up to ~16k tokens of folded conversation per
  * session — effectively full conversation content (code, pasted credentials).
- * The key comes ONLY from the BILI_ENCRYPTION_KEY environment variable: a key
+ * The key comes ONLY from the SIGMA_ENCRYPTION_KEY environment variable: a key
  * file next to the data sits on the same untrusted filesystem and defeats the
  * purpose.
  *
  * COMPRESSION (#1080, owner decision): session JSON is zstd-compressed only
- * when opted in (BILI_PERSIST_ZSTD=1/true); the default stays plain JSON for
+ * when opted in (SIGMA_PERSIST_ZSTD=1/true); the default stays plain JSON for
  * recoverability and downgrade safety. Clients and tools never see the
- * on-disk format — the store decodes transparently and `bili export` renders
+ * on-disk format — the store decodes transparently and `sigma export` renders
  * plaintext.
  *
  * FORMATS (v1):
- *   encrypted (BILIENC1):
- *     offset 0..7    magic "BILIENC1"
+ *   encrypted (SIGMAENC1):
+ *     offset 0..7    magic "SIGMAENC1"
  *     offset 8       format version (0x01)
  *     offset 9       body mode (0x00 raw, 0x01 zstd)
  *     offset 10..21  GCM nonce (random per write)
  *     offset 22..    AES-256-GCM ciphertext, final 16 bytes = auth tag
- *   compressed (BILIZSTD1):
- *     offset 0..8    magic "BILIZSTD1"
+ *   compressed (SIGMAZSTD1):
+ *     offset 0..8    magic "SIGMAZSTD1"
  *     offset 9       format version (0x01)
  *     offset 10      body mode (0x00 raw, 0x01 zstd)
  *     offset 11..    body (JSON or zstd stream)
@@ -41,8 +41,8 @@ import type { StateStoreCodec } from "acp-kernel/persist";
  * file written by any supported version reads back on every supported one.
  */
 
-export const ENCRYPT_MAGIC = Buffer.from("BILIENC1", "utf8");
-export const ZSTD_MAGIC = Buffer.from("BILIZSTD1", "utf8");
+export const ENCRYPT_MAGIC = Buffer.from("SIGMAENC1", "utf8");
+export const ZSTD_MAGIC = Buffer.from("SIGMAZSTD1", "utf8");
 const FORMAT_VERSION = 0x01;
 const MODE_RAW = 0x00;
 const MODE_ZSTD = 0x01;
@@ -52,7 +52,7 @@ const ENCRYPT_HEADER_LEN = ENCRYPT_MAGIC.length + 2 + NONCE_LEN;
 const MIN_ENCRYPTED_LEN = ENCRYPT_HEADER_LEN + TAG_LEN;
 const PLAIN_HEADER_LEN = ZSTD_MAGIC.length + 2;
 
-/** Parse the BILI_ENCRYPTION_KEY value: hex or base64, must decode to
+/** Parse the SIGMA_ENCRYPTION_KEY value: hex or base64, must decode to
  *  exactly 32 bytes. Hex wins when both parse (a base64 string made only of
  *  hex digits is ambiguous — hex-first is the documented rule). Throws with
  *  an actionable message; the caller surfaces it as a startup crash (fail
@@ -68,7 +68,7 @@ export function parseEncryptionKey(value: string): Buffer {
     if (!buf || buf.length !== 32) {
         const got = buf ? `${buf.length} bytes` : "an undecodable value";
         throw new Error(
-            `[encrypt] BILI_ENCRYPTION_KEY must be exactly 32 bytes encoded as hex (64 chars) or base64 — got ${got}`,
+            `[encrypt] SIGMA_ENCRYPTION_KEY must be exactly 32 bytes encoded as hex (64 chars) or base64 — got ${got}`,
         );
     }
     return buf;
@@ -99,7 +99,7 @@ function inflateZstd(body: Buffer): Buffer {
 }
 
 export interface StorageCodecOptions {
-    /** AES-256-GCM key (#708). Without one, BILIENC1 files cannot be read —
+    /** AES-256-GCM key (#708). Without one, SIGMAENC1 files cannot be read —
      *  they surface as an actionable corrupt-file error instead of garbage. */
     key?: Buffer | null;
     /** zstd-compress bodies (#1080, default true) — applies to BOTH formats;
@@ -110,7 +110,7 @@ export interface StorageCodecOptions {
 
 /** Build the StateStore codec for session files, or undefined when neither
  *  encryption nor compression applies (plain JSON on disk). decode()
- *  dispatches on magic — BILIENC1 → AES-256-GCM, BILIZSTD1 → zstd/raw,
+ *  dispatches on magic — SIGMAENC1 → AES-256-GCM, SIGMAZSTD1 → zstd/raw,
  *  anything else passes through untouched (legacy plaintext) — so mixed
  *  trees load fine under any codec configuration.
  *  A decode failure throws and the kernel store treats the file as corrupt
@@ -162,7 +162,7 @@ export function createStorageCodec(opts: StorageCodecOptions = {}): StateStoreCo
 
 function decryptEnvelope(buf: Buffer, key: Buffer | null): string {
     if (!key) {
-        throw new Error("[storage] session file is BILIENC1-encrypted but no BILI_ENCRYPTION_KEY is set — cannot read it");
+        throw new Error("[storage] session file is SIGMAENC1-encrypted but no SIGMA_ENCRYPTION_KEY is set — cannot read it");
     }
     if (buf.length < MIN_ENCRYPTED_LEN || buf[ENCRYPT_MAGIC.length] !== FORMAT_VERSION) {
         throw new Error(`[encrypt] unsupported session file format version ${buf[ENCRYPT_MAGIC.length]}`);

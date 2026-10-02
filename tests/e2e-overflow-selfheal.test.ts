@@ -142,7 +142,7 @@ test("e2e #987/#1195 T1: a stated-window overflow arms the one-shot shrink, lear
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
         const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: bigConversation() });
         const headers = { "content-type": "application/json", "x-acp-session": "t1-sess" };
 
@@ -223,7 +223,7 @@ test("e2e #987 T2: an overflow WITHOUT a window number arms at the declared wind
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
         const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: bigConversation() });
         const headers = { "content-type": "application/json", "x-acp-session": "t2-sess" };
 
@@ -295,7 +295,7 @@ test("e2e #987 T3: with a CORRECT declared window, an oversized turn still recov
     const proxyPort = proxy.address().port;
 
     try {
-        const url = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`;
+        const url = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`;
         const body = JSON.stringify({ model: "claude-test", max_tokens: 1024, stream: true, messages: bigConversation() });
         const headers = { "content-type": "application/json", "x-acp-session": "t3-sess" };
 

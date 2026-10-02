@@ -19,8 +19,8 @@ function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-// #619: an undecodable content-encoding body must not 400 in bili - relay the
-// original bytes verbatim so the upstream, not bili, handles the failure.
+// #619: an undecodable content-encoding body must not 400 in sigma - relay the
+// original bytes verbatim so the upstream, not sigma, handles the failure.
 test("undecodable content-encoding body is forwarded verbatim instead of 400", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
@@ -60,7 +60,7 @@ test("undecodable content-encoding body is forwarded verbatim instead of 400", a
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     const badBody = Buffer.from("definitely-not-a-gzip-stream", "utf8");
     try {
         const res = await fetch(`${base}/v1/messages`, {
@@ -84,7 +84,7 @@ test("undecodable content-encoding body is forwarded verbatim instead of 400", a
 });
 
 // #619 gap: the decompression-bomb size guard must survive the decode-failure
-// passthrough - an oversized DECOMPRESSED body is rejected 413 by bili, never relayed.
+// passthrough - an oversized DECOMPRESSED body is rejected 413 by sigma, never relayed.
 test("oversized decompressed body is rejected 413 and not forwarded", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
@@ -123,7 +123,7 @@ test("oversized decompressed body is rejected 413 and not forwarded", async () =
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     const { gzipSync } = await import("node:zlib");
     // ~120MB of zeros gzips to ~120KB on the wire but decompresses past the 100MB cap.
     const bomb = gzipSync(Buffer.alloc(120 * 1024 * 1024, 0));
@@ -186,7 +186,7 @@ test("unknown-path passthrough keeps content-encoding on the forwarded request",
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     const { gzipSync } = await import("node:zlib");
     const wireBody = gzipSync(Buffer.from(JSON.stringify({ input: ["hi"] }), "utf8"));
     try {
@@ -246,7 +246,7 @@ test("response content-encoding is stripped when forwarding upstream responses",
     const proxy = await startServer(opts);
     await listen(proxy);
     const proxyPort = (proxy.address() as { port: number }).port;
-    const base = `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`;
+    const base = `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`;
     try {
         const res = await fetch(`${base}/v1/embeddings`, { method: "POST", body: "{}" });
         assert.equal(res.status, 200);

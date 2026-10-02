@@ -24,7 +24,7 @@
 
 ## Incident and recovery
 - One launcher test was missing PI_CODING_AGENT_DIR, so it rewrote the user overlay
-  agent-bili/models.yml to the dead port 19998 → restored with sed to the user's live proxy 42947
+  agent-sigma/models.yml to the dead port 19998 → restored with sed to the user's live proxy 42947
   (6 places), backup at /tmp/ompreg/models.yml.clobbered.bak.
 - The first chatmock used `req.on("close")`, which fires too early on Node 25 and cleared the interval
   → SSE returned zero bytes. Removing the close handler fixed it.

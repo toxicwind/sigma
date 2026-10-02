@@ -65,7 +65,7 @@ test("provider-issued over-64 ids stay byte-identical across item types (#1474)"
     ];
     const expected = structuredClone(input);
     sanitizeResponsesInputIds(input);
-    assert.deepEqual(input, expected, "ids bili does not own reach the upstream byte-identical");
+    assert.deepEqual(input, expected, "ids sigma does not own reach the upstream byte-identical");
 });
 
 test("over-64 id healing stays scoped to the msg-proxy namespace (#242/#1474)", () => {
@@ -78,7 +78,7 @@ test("over-64 id healing stays scoped to the msg-proxy namespace (#242/#1474)", 
     ];
     sanitizeResponsesInputIds(input);
     assert.equal(input[0].id, "x".repeat(64), "64-char boundary preserved");
-    assert.equal(input[1].id, "x".repeat(65), "over-64 ids outside Bili's namespace are untouched");
+    assert.equal(input[1].id, "x".repeat(65), "over-64 ids outside Sigma's namespace are untouched");
     assert.equal(input[2].id, "x".repeat(65));
     assert.equal(input[2].call_id, "y".repeat(80));
     const healed = String(input[3].id);

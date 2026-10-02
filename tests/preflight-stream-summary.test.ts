@@ -6,7 +6,7 @@ import test from "node:test";
 process.env.NODE_ENV = "test";
 // Fail fast on 4xx retries so the #626 learn path exercises immediately
 // instead of burning the default replay attempts.
-process.env.BILI_REPLAY_RETRY_MAX = "1";
+process.env.SIGMA_REPLAY_RETRY_MAX = "1";
 
 import { defaultConfig } from "acp-kernel";
 import { startServer, type ProxyOptions } from "../src/server.ts";
@@ -112,7 +112,7 @@ function startProxy(upstreamPort: number): Promise<http.Server> {
 }
 
 async function driveResponsesPreflight(proxyPort: number, upstreamPort: number, session: string, calls: Call[]): Promise<Response> {
-    return await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/responses`, {
+    return await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/responses`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-acp-session": session },
         body: JSON.stringify({ model: "gpt-6-astra", stream: true, input: longResponsesInput() }),
@@ -266,7 +266,7 @@ test("e2e #626 (Anthropic): stream-only upstream → learn on 400, text_delta SS
     const proxyPort = (proxy.address() as { port: number }).port;
 
     try {
-        const r = await fetch(`http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}/v1/messages`, {
+        const r = await fetch(`http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}/v1/messages`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-acp-session": "s626-anth-1" },
             body: JSON.stringify({ model: "claude-test", stream: true, max_tokens: 1024, system: "You are a test assistant.", messages: longAnthropicMessages() }),

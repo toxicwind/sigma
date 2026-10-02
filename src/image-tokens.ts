@@ -58,7 +58,7 @@ export function resolveImageBilling(mode: ImageBillingMode | undefined, upstream
 }
 
 function imageTokenCap(): number {
-    const v = Number(process.env.BILI_IMAGE_TOKEN_CAP ?? "");
+    const v = Number(process.env.SIGMA_IMAGE_TOKEN_CAP ?? "");
     return Number.isInteger(v) && v > 0 ? v : 0;
 }
 
@@ -280,7 +280,7 @@ export function imageTokensInParsedBody(protocol: "anthropic" | "openai" | "resp
 }
 
 // Cheap gate: most bodies carry no images — skip the JSON parse entirely then.
-// prepared.body is bili's own compact JSON.stringify, but client raw buffers
+// prepared.body is sigma's own compact JSON.stringify, but client raw buffers
 // may carry spaces, so probe both forms.
 export function imageTokensInRawBody(protocol: "anthropic" | "openai" | "responses" | "google", raw: string | Buffer, billing: ResolvedImageBilling = "bytes"): number {
     const s = typeof raw === "string" ? raw : raw.toString("utf8");

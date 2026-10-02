@@ -81,7 +81,7 @@ async function startHarness(routeCompress: ProxyOptions["routes"][string]): Prom
     const proxyPort = (proxy.address() as { port: number }).port;
 
     return {
-        proxyUrl: `http://127.0.0.1:${proxyPort}/bili/http://127.0.0.1:${upstreamPort}`,
+        proxyUrl: `http://127.0.0.1:${proxyPort}/sigma/http://127.0.0.1:${upstreamPort}`,
         captured,
         close: async () => {
             await new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve())));
@@ -175,12 +175,12 @@ test("#747: responses wire — lean pack toolPrompts applied to injected ACP too
 });
 
 test("#747-sibling: anthropic wire — pack promptSections reach the system block via injectSystem", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "bili-pack-e2e-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "sigma-pack-e2e-"));
     const prevCwd = process.cwd();
     try {
-        mkdirSync(path.join(dir, ".billion-context", "packs"), { recursive: true });
+        mkdirSync(path.join(dir, ".sigma", "packs"), { recursive: true });
         writeFileSync(
-            path.join(dir, ".billion-context", "packs", "sectionspack.json"),
+            path.join(dir, ".sigma", "packs", "sectionspack.json"),
             JSON.stringify({ promptSections: { acpTags: "PACK-ACP-TAGS-E2E-MARKER" } }),
         );
         process.chdir(dir);

@@ -211,7 +211,7 @@ function parseSse(raw: string): ClientEvent[] {
 }
 
 async function callResponses(h: Harness, input: unknown[], tools?: unknown[]): Promise<{ raw: string; events: ClientEvent[]; arrivals: { t: number; text: string }[] }> {
-    const url = `http://127.0.0.1:${h.proxyPort}/bili/http://127.0.0.1:${h.bridgePort}/v1/responses`;
+    const url = `http://127.0.0.1:${h.proxyPort}/sigma/http://127.0.0.1:${h.bridgePort}/v1/responses`;
     const body: Record<string, unknown> = {
         model: "gpt-test",
         stream: true,
@@ -238,7 +238,7 @@ async function callResponses(h: Harness, input: unknown[], tools?: unknown[]): P
 
 const USER_INPUT = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
 
-test("e2e chat relay: responses text streams through bili with incremental deltas (native protocol)", async () => {
+test("e2e chat relay: responses text streams through sigma with incremental deltas (native protocol)", async () => {
     const h = await startHarness((i) => (i === 0 ? textScript() : roundTwoTextScript()), false);
     try {
         const { events, arrivals } = await callResponses(h, USER_INPUT);
@@ -256,7 +256,7 @@ test("e2e chat relay: responses text streams through bili with incremental delta
         assert.match(systemMsg?.content ?? "", /test assistant/);
         assert.ok(
             (chatRelayReq.tools ?? []).some((t) => t.type === "function" && t.function.name === "compress"),
-            `bili-injected compress tool not converted to nested chat format: ${JSON.stringify(chatRelayReq.tools)}`,
+            `sigma-injected compress tool not converted to nested chat format: ${JSON.stringify(chatRelayReq.tools)}`,
         );
     } finally {
         await h.cleanup();
@@ -275,7 +275,7 @@ test("e2e chat relay: marker protocol coalesces text into one delta and rebuilds
         const done = events.find((e) => e.event === "response.output_item.done");
         assert.ok(done, "rebuilt output_item.done missing");
         const itemId = String((added?.data?.item as Record<string, unknown> | undefined)?.id ?? "");
-        assert.ok(itemId.startsWith("msg-proxy-"), `expected bili-rebuilt msg-proxy- item id, got ${itemId}`);
+        assert.ok(itemId.startsWith("msg-proxy-"), `expected sigma-rebuilt msg-proxy- item id, got ${itemId}`);
         for (const e of ["response.output_text.done", "response.content_part.added", "response.content_part.done", "response.completed"]) {
             assert.ok(events.some((x) => x.event === e), `${e} missing`);
         }
