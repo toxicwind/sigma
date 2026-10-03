@@ -11,8 +11,6 @@
   },
   "bin": {
     "sigma": "./dist/index.js",
-    "sigma-proxy": "./dist/index.js",
-    "sigma": "./dist/index.js",
     "sigma-proxy": "./dist/index.js"
   },
   "scripts": {
