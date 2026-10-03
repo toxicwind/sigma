@@ -22,7 +22,7 @@
 // (BILLION_CONTEXT_PLUGIN=0 / BILI_NATIVE_OMP=0).
 
 import { ensureProxyRunning, LAUNCHER_DEFAULT_HOST } from "../launcher.js";
-import { createBiliPlugin } from "./pi.js";
+import { createSigmaPlugin } from "./pi.js";
 import { applyOmpFirstEventTimeout, markNativeHost, nativeAttachOrigin, nativeBootstrapGate, nativeProxyScriptPath, proxyEnvOrigin, setNativeOriginWaiter, singleFlight } from "./native-bootstrap.js";
 import { installNativeFetchIntercept, noteRoutedOrigin, observeRoutedOrigin, readyOrigin, type NativeInterceptState } from "./native-intercept.js";
 import { fetchProxyVersion, waitForProxyVersion } from "./shared.js";
@@ -253,4 +253,4 @@ export function _resetNativeStateForTest(): void {
     delete process.env.BILLION_CONTEXT_PROXY;
 }
 
-export default createBiliPlugin("omp");
+export default createSigmaPlugin("omp");

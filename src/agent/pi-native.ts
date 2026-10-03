@@ -24,7 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ensureProxyRunning, LAUNCHER_DEFAULT_HOST } from "../launcher.js";
-import { createBiliPlugin } from "./pi.js";
+import { createSigmaPlugin } from "./pi.js";
 import { isLegacyBcpEntry, markNativeHost, nativeAttachOrigin, nativeBootstrapGate, nativeProxyScriptPath, proxyEnvOrigin, setNativeOriginWaiter, singleFlight } from "./native-bootstrap.js";
 import { installNativeFetchIntercept, noteRoutedOrigin, observeRoutedOrigin, readyOrigin, type NativeInterceptState } from "./native-intercept.js";
 import { fetchProxyVersion, fetchStatus, waitForProxyVersion } from "./shared.js";
@@ -274,6 +274,6 @@ export function _resetNativeStateForTest(): void {
     delete process.env.BILLION_CONTEXT_PROXY;
 }
 
-export default createBiliPlugin();
+export default createSigmaPlugin();
 
 export { fetchStatus } from "./pi.js";

@@ -39,7 +39,7 @@ import { applyEdits, modify as jsoncModify, parse as jsoncParse, type ParseError
 import { resolveDshHome, resolveHermesHome, resolveKimiHome, resolvePiHome } from "./client-config.js";
 import { resolveClaudeNativePort } from "./config.js";
 import { lanePreferredPort } from "./instance.js";
-import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnBili, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
+import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnSigma, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
 import { fetchRegistryVersion } from "./update.js";
 import { restoreKimiBackup, unrouteKimi } from "./kimi/native.js";
 import { inspectZcodeRouting, resolveZcodeDataDir } from "./zcode/json-edit.js";

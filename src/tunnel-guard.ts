@@ -45,7 +45,7 @@ const RESOLVE_MAX_ATTEMPTS = 3;
 const RESOLVE_BACKOFF_MS = 250;
 const RESOLVE_TIMEOUT_MS = 2000;
 
-export const BILI_TUNNEL_HEADER = "x-bili-tunnel";
+export const SIGMA_TUNNEL_HEADER = "x-bili-tunnel";
 
 export type IpClass = "loopback" | "linkLocal" | "private" | "public";
 
@@ -225,3 +225,4 @@ export function tunnelAllowlistFromEnv(env: NodeJS.ProcessEnv = process.env): st
         .map((s) => s.trim().toLowerCase())
         .filter((s) => s.length > 0);
 }
+export { SIGMA_TUNNEL_HEADER as BILI_TUNNEL_HEADER };

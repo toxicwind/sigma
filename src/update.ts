@@ -30,7 +30,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { cacheDir } from "./paths.js";
 import { log as loggerLog, type Logger } from "./logger.js";
-import { refreshDshProfileBundles, isDshProfileCopy, dshProfileDirs, dshProfileDependsOnBili, dshProfileDepSpec, isRegistryDepSpec, DSH_PACKAGE, DSH_DESKTOP_PROFILE } from "./dsh-channel.js";
+import { refreshDshProfileBundles, isDshProfileCopy, dshProfileDirs, dshProfileDependsOnSigma, dshProfileDepSpec, isRegistryDepSpec, DSH_PACKAGE, DSH_DESKTOP_PROFILE } from "./dsh-channel.js";
 import { isPiNpmCopy, piNpmEntrySpec, runPiAsync, PI_NPM_SPEC } from "./pi-channel.js";
 import { resolveDshHome, resolveKimiHome, resolveOmpHome, resolvePiHome } from "./client-config.js";
 import { proxyDispatcher } from "./upstream-proxy.js";
@@ -782,7 +782,7 @@ async function staleDshProfileCopies(globalVersion: string, env: NodeJS.ProcessE
     }
     const out: string[] = [];
     for (const dir of dirs) {
-        if (!dshProfileDependsOnBili(dir)) continue;
+        if (!dshProfileDependsOnSigma(dir)) continue;
         const spec = dshProfileDepSpec(dir);
         if (spec !== undefined && !isRegistryDepSpec(spec)) continue;
         const version = await readDiskVersion(path.join(dir, "node_modules", DSH_PACKAGE));

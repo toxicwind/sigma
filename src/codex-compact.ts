@@ -84,7 +84,7 @@ export function extractSigmaSummary(item: unknown): string | undefined {
 // output-side stripper keys off this constant (single source of truth).
 export const CODEX_FORGED_HANDOFF_HEADER = "[bili] context summary after compaction:";
 
-export function replaceBiliCompactionItems<T>(input: T[]): { items: T[]; replaced: number; dropped: number } {
+export function replaceSigmaCompactionItems<T>(input: T[]): { items: T[]; replaced: number; dropped: number } {
     const items: T[] = [];
     let replaced = 0;
     let dropped = 0;
@@ -184,3 +184,4 @@ export function mergeForgedSummaries(existing: string[] | undefined, blocks: rea
     }
     return merged;
 }
+export { replaceSigmaCompactionItems as replaceBiliCompactionItems };

@@ -405,7 +405,7 @@ export async function refreshDshProfileBundles(
     } catch {
         return 0; // dsh has never run on this machine — nothing to keep in step
     }
-    const targets = dirs.filter((dir) => dshProfileDependsOnBili(dir));
+    const targets = dirs.filter((dir) => dshProfileDependsOnSigma(dir));
     if (targets.length === 0) return 0;
     let refreshed = 0;
     for (const dir of targets) {
@@ -436,3 +436,4 @@ export async function refreshDshProfileBundles(
     }
     return refreshed;
 }
+export { dshProfileDependsOnSigma as dshProfileDependsOnBili };

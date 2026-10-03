@@ -835,3 +835,4 @@ export function createSigmaPlugin(agentOverride?: string, opts?: { retryInterval
 export default createSigmaPlugin();
 
 export { fetchStatus };
+export { createSigmaPlugin as createBiliPlugin };
