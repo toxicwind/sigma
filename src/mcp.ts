@@ -226,6 +226,12 @@ async function handleMessage(msg: {
                 sendError(id, -32002, "server not initialized");
                 return;
             }
+            if (degradedReason !== undefined) {
+                // #1892: idle shim — advertise nothing rather than blocking on
+                // (or erroring against) an origin that is not there.
+                sendResult(id, { tools: [] });
+                return;
+            }
             try {
                 await ensureManifest();
                 sendResult(id, { tools: manifestTools });
@@ -239,6 +245,10 @@ async function handleMessage(msg: {
             const rawArgs: Record<string, unknown> = params.arguments && typeof params.arguments === "object" ? (params.arguments as Record<string, unknown>) : {};
             if (!tool) {
                 sendError(id, ERR_TOOL, "params.name is required");
+                return;
+            }
+            if (degradedReason !== undefined) {
+                sendResult(id, { content: [{ type: "text", text: `bili is idle: ${degradedReason}` }], isError: true });
                 return;
             }
             // #760: per-call conversation_id — the model copies the id the
@@ -259,10 +269,10 @@ async function handleMessage(msg: {
             const args = { ...rawArgs };
             if (!keepForSearch) delete args.conversation_id;
             const routeOverride = keepForSearch ? undefined : perCall || undefined;
-            if (!routeOverride && !conversationId) {
-                sendError(id, ERR_TOOL, "no conversation id (pass the conversation_id argument — see the 'your sigma conversation id' line in the proxy notes — or set SIGMA_CONVERSATION_ID or connect via Claude Code MCP session meta)");
-                return;
-            }
+            // #1685: with no binding and no per-call id, forward anyway — the
+            // proxy routes the id-less POST itself (outbound tool_use witness,
+            // else single-active arbitration) and answers a loud 400 when it
+            // genuinely cannot tell. The shim no longer hard-fails here.
             try {
                 const text = await forwardTool(tool, args, TOOL_TIMEOUT_MS, routeOverride);
                 sendResult(id, { content: [{ type: "text", text }], isError: false });
@@ -305,8 +315,16 @@ async function mcpMain(): Promise<void> {
     process.stdin.on("end", () => process.exit(0));
 }
 
-/** CLI entry (`sigma mcp`): the stdio loop keeps the process alive. */
-export function runMcpStdio(): void {
+/** Set when this shim serves WITHOUT a live proxy behind it (#1892,
+ *  zcode mcp-entry): tools/list answers an empty list instead of timing out
+ *  against a dead origin, and tools/call returns a loud isError explaining
+ *  why. The process stays a valid MCP server so the host handshake completes
+ *  instead of seeing the child die pre-initialize. */
+let degradedReason: string | undefined;
+
+/** CLI entry (`bili mcp`): the stdio loop keeps the process alive. */
+export function runMcpStdio(opts: { degraded?: string } = {}): void {
+    degradedReason = opts.degraded;
     void mcpMain();
 }
 

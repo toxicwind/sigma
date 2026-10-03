@@ -27,6 +27,19 @@ export interface WireRule {
 
 export const WIRE_RULES: readonly WireRule[] = [
     {
+        id: "WC-012",
+        wire: "responses",
+        summary: "a supplied compaction input item id must begin with cmp",
+        provenance: "#1763: user-reported upstream rejection for an fc_bili_ compaction item, Expected an ID that begins with 'cmp'; reproduced with a strict loopback upstream in tests/codex-compact-e2e.test.ts.",
+    },
+    {
+        id: "WC-009",
+        wire: "responses",
+        summary: "thinking-mode providers require prior-turn reasoning items echoed in resent history — an assistant run of calls/messages with no reasoning item gets 400 code 11155 reasoning_content_missing",
+        provenance:
+            "bili #762 (chat wire) and #1479 (responses wire) production 400s (code 11155 'the reasoning content from the previous turn must be passed back in thinking mode'); repair = src/strict-echo.ts blank-reasoning injection on both wires, learned per upstream origin",
+    },
+    {
         id: "WC-008",
         wire: "openai-chat",
         summary: "Copilot Gemini requires scalar schema types and self-contained typed anyOf alternatives",
@@ -84,6 +97,30 @@ export const WIRE_RULES: readonly WireRule[] = [
         provenance:
             "sigma #1403 production 400 (opencode zen https://opencode.ai/zen/v1/messages: 'prompt_cache_key: Extra inputs are not permitted', 2026-09-26); Anthropic Messages API reference (no such field)",
     },
+    {
+        id: "WC-011",
+        wire: "responses",
+        summary:
+            "consecutive configuration_update items are rejected (400 unsupported_value 'Consecutive configuration_update items are not allowed') — bili folds each adjacent run into one last-wins deep-merged item at every responses-input rebuild/forward boundary",
+        provenance:
+            "bili #1733 production 400 (OMP client via CLIProxyAPI): history compression prunes the messages separating two mid-history configuration_update items (untracked layout slots survive layout shrinkage verbatim) making them adjacent; hoistTrappedToolItems (#766) can also batch two trapped updates together without any compression; fix = mergeAdjacentConfigurationUpdates in src/responses-tool-output.ts applied at patchResponsesInputWithToolImages + all hoistTrappedToolItems call sites",
+    },
+    {
+        id: "WC-010",
+        wire: "anthropic",
+        summary:
+            "at most 4 cache_control breakpoints per request, counted across system blocks + tools entries + message content blocks COMBINED; a 5th is a 400",
+        provenance:
+            "Anthropic prompt-caching API reference ('you can define up to 4 cache breakpoints'); surfaced by the #1639 review — the #1637 stamping emits 1 system + 3 message marks and anthropicToCore harvests client marks from message blocks only, so a client marking only its tools array would have combined into a 5th breakpoint; repair = tools-mark detection suppresses bili's stamps (src/loop/cache-control.ts anthropicToolsCarryCacheControl)",
+    },
+    {
+        id: "WC-013",
+        wire: "responses",
+        summary:
+            "no reasoning.summary — not part of the OpenAI Responses API (reasoning carries effort only); strict-schema upstreams reject the unknown field with 'json: unknown field \"summary\"'. Clients such as pi-ai always send reasoning:{effort,summary:\"auto\"} when a thinking tier is requested, so bili strips it via opt-in compat.dropFields (#1757) — unconfigured, it stays untouched.",
+        provenance:
+            "bili #1757 per-field measurement against SenseNova's Responses gateway https://token.sensenova.cn/v1/responses (2026-09-30): every pi-ai outbound field 200 except reasoning.summary → 400 code InvalidParameter; OpenAI Responses API reference (reasoning.effort is the only documented subfield)",
+    },
 ];
 
 const ANTHROPIC_TOOL_NAME_RE = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -95,12 +132,26 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** WC-001..WC-003, WC-007 on an Anthropic /v1/messages body. Returns violation strings. */
+/** WC-001..WC-003, WC-007, WC-010 on an Anthropic /v1/messages body. Returns violation strings. */
 export function validateAnthropicBody(body: unknown): string[] {
     const out: string[] = [];
     if (!isPlainObject(body)) return out;
     if ("prompt_cache_key" in body)
         out.push("WC-007 top-level prompt_cache_key is not part of the Anthropic Messages API (#1403)");
+    // WC-010 runs before the tools early-return: breakpoints can live in
+    // system blocks and message content blocks with no tools array at all.
+    let breakpoints = 0;
+    if (Array.isArray(body.system))
+        for (const b of body.system) if (isPlainObject(b) && b.cache_control !== undefined) breakpoints++;
+    if (Array.isArray(body.tools))
+        for (const t of body.tools) if (isPlainObject(t) && t.cache_control !== undefined) breakpoints++;
+    if (Array.isArray(body.messages))
+        for (const m of body.messages) {
+            if (!isPlainObject(m) || !Array.isArray(m.content)) continue;
+            for (const b of m.content) if (isPlainObject(b) && b.cache_control !== undefined) breakpoints++;
+        }
+    if (breakpoints > 4)
+        out.push(`WC-010 ${breakpoints} cache_control breakpoints (system + tools + messages combined) — Anthropic allows at most 4`);
     if (!Array.isArray(body.tools)) return out;
     body.tools.forEach((t, i) => {
         if (!isPlainObject(t)) {
@@ -165,10 +216,30 @@ function validateGeminiSchema(schema: unknown, path: string, out: string[]): voi
     validateGeminiSchema(schema.items, `${path}.items`, out);
 }
 
-/** WC-005 on a Responses-API body (flat function entries). */
+/** WC-005, WC-009, WC-011, WC-012, WC-013 on a Responses-API body (flat function entries). */
 export function validateResponsesBody(body: unknown): string[] {
     const out: string[] = [];
-    if (!isPlainObject(body) || !Array.isArray(body.tools)) return out;
+    if (!isPlainObject(body)) return out;
+    // WC-011 (#1733): runs before the tools early-return — the adjacency ban
+    // applies to any array input, tools or not.
+    if (Array.isArray(body.input)) {
+        for (let i = 1; i < body.input.length; i++) {
+            const prev = body.input[i - 1];
+            const cur = body.input[i];
+            if (isPlainObject(prev) && prev.type === "configuration_update" && isPlainObject(cur) && cur.type === "configuration_update")
+                out.push(`WC-011 input[${i}]: consecutive configuration_update items are not allowed`);
+        }
+        body.input.forEach((item, i) => {
+            if (isPlainObject(item) && item.type === "compaction" && item.id !== undefined
+                && (typeof item.id !== "string" || !item.id.startsWith("cmp")))
+                out.push(`WC-012 input[${i}].id: expected an ID that begins with 'cmp'`);
+        });
+    }
+    // WC-013 (#1757): runs before the tools early-return — reasoning.summary
+    // exists on bodies without tools.
+    if (isPlainObject(body.reasoning) && "summary" in body.reasoning)
+        out.push('WC-013 reasoning.summary is not part of the OpenAI Responses API — strict-schema upstreams 400 (json: unknown field "summary"); drop it via compat.dropFields (#1757)');
+    if (!Array.isArray(body.tools)) return out;
     body.tools.forEach((t, i) => {
         if (!isPlainObject(t)) return;
         if (t.type !== "function") return;
@@ -183,6 +254,39 @@ export function validateResponsesBody(body: unknown): string[] {
                 out.push(`WC-005 ${label}: top-level "${kw}" not portable — banned on every wire shape (#1302 policy, restored by #1305 review)`);
         }
     });
+    // WC-009 (#762 chat / #1479 responses): thinking-mode providers reject resent
+    // history where an assistant run (calls/messages) carries no reasoning item —
+    // 400 code 11155 reasoning_content_missing. Validation-parity: the fake enforces
+    // the strictest known shape; the repair (src/strict-echo.ts) injects a blank
+    // reasoning item at orphan run starts before forwarding.
+    if (Array.isArray(body.input)) {
+        const RUN_ITEMS = new Set(["reasoning", "function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"]);
+        let runStart = -1;
+        let runHasReasoning = false;
+        const closeRun = (endIdx: number): void => {
+            if (runStart >= 0 && !runHasReasoning)
+                out.push(`WC-009 input[${runStart}..${endIdx}]: assistant run carries no reasoning item — thinking-mode providers 400 code 11155 reasoning_content_missing`);
+            runStart = -1;
+            runHasReasoning = false;
+        };
+        body.input.forEach((it, i) => {
+            if (!isPlainObject(it)) {
+                closeRun(i - 1);
+                return;
+            }
+            if (it.type === "reasoning") {
+                if (runStart < 0) runStart = i;
+                runHasReasoning = true;
+                return;
+            }
+            if (RUN_ITEMS.has(it.type as string) || (it.type === "message" && it.role === "assistant")) {
+                if (runStart < 0) runStart = i;
+                return;
+            }
+            closeRun(i - 1);
+        });
+        closeRun(body.input.length - 1);
+    }
     return out;
 }
 

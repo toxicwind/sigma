@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -10,6 +10,7 @@ import { SIGMA_ACP_READONLY_TOOLS_RESPONSES, SIGMA_ACP_TOOLS_ANTHROPIC, SIGMA_AC
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _resetSessionsForTest, getSession, type Session } from "../src/session.ts";
 import { executeSearchContext, executeSearchContextTarget } from "../src/decompress-shared.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 function makeSession(id: string): Session {
     return {
@@ -59,7 +60,7 @@ function paramsOf(entry: FlatTool): Record<string, unknown> {
     return entry.parameters ?? entry.input_schema ?? entry.function?.parameters ?? {};
 }
 
-test("#841 schema: SIGMA arrays add optional conversation_id to search_context (+ #1179 range args to decompress)", () => {
+test("#841 schema: BILI arrays no longer add conversation_id to search_context (#1685); #1179 range args stay on decompress", () => {
     const cases: [unknown[], unknown[], "flat" | "openai"][] = [
         [SIGMA_ACP_TOOLS_ANTHROPIC, ACP_TOOLS_ANTHROPIC, "flat"],
         [SIGMA_ACP_TOOLS_OPENAI, ACP_TOOLS_OPENAI, "openai"],
@@ -69,10 +70,9 @@ test("#841 schema: SIGMA arrays add optional conversation_id to search_context (
         const entry = searchEntry(sigma, shape);
         assert.ok(entry, `search_context missing in ${shape} array`);
         const props = paramsOf(entry).properties as Record<string, Record<string, unknown>>;
-        assert.equal(props.conversation_id?.type, "string");
-        assert.match(String(props.conversation_id?.description), /historical pfa-\*/);
+        assert.equal(props.conversation_id, undefined, "#1685: conversation_id NOT advertised (zero-injection)");
         const required = paramsOf(entry).required as string[];
-        assert.ok(!required.includes("conversation_id"), "conversation_id must stay optional");
+        assert.ok(!required.includes("conversation_id"), "conversation_id must stay out of required");
 
         const kernelEntry = searchEntry(kernel, shape);
         const kernelProps = paramsOf(kernelEntry!).properties as Record<string, unknown>;
@@ -107,8 +107,8 @@ test("#841 schema: SIGMA arrays add optional conversation_id to search_context (
         const kernelRest = kernel.filter((t) => t !== kernelEntry && nameOf(t) !== DECOMPRESS_TOOL_NAME);
         assert.deepEqual(biliRest, kernelRest, "no other tool may change");
     }
-    const ro = searchEntry(SIGMA_ACP_READONLY_TOOLS_RESPONSES, "flat")!;
-    assert.equal((paramsOf(ro).properties as Record<string, Record<string, unknown>>).conversation_id?.type, "string");
+    const ro = searchEntry(BILI_ACP_READONLY_TOOLS_RESPONSES, "flat")!;
+    assert.equal((paramsOf(ro).properties as Record<string, unknown>).conversation_id, undefined, "#1685: readonly array clean too");
     assert.equal((paramsOf(searchEntry(ACP_READONLY_TOOLS_RESPONSES, "flat")!).properties as Record<string, unknown>).conversation_id, undefined, "kernel readonly constant must not be mutated");
 });
 
@@ -211,6 +211,6 @@ test("#841 cold-loaded historical session: read-only, file untouched, no save sc
     } finally {
         _setStoreForTest(new SessionStore({ enabled: false }));
         _resetSessionsForTest();
-        rmSync(dir, { recursive: true, force: true });
+        rmrf(dir);
     }
 });

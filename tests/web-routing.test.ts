@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { defaultConfig } from "acp-kernel";
@@ -13,6 +13,7 @@ import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { WEB_CLIENT } from "../src/web/client.ts";
 import { rootCaPath } from "../src/ca.ts";
 import { parseCompressSettings } from "../src/config.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -21,15 +22,6 @@ function close(server: http.Server): Promise<void> {
 test("embedded Web client is valid JavaScript", () => {
     assert.doesNotThrow(() => new Function(WEB_CLIENT));
 });
-
-async function freePort(): Promise<number> {
-    const server = http.createServer();
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-    await close(server);
-    return port;
-}
 
 test("Web UI exposes upstream controls without inline handlers", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
@@ -42,10 +34,9 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
     const previous = {
         config: process.env.SIGMA_CONFIG_FILE,
     };
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
-    const port = await freePort();
+    process.env.BILI_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1:1",
         routes: {},
@@ -65,6 +56,7 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
     try {
         const ui = await (await fetch(`${base}/__bili/`)).text();
@@ -101,8 +93,8 @@ test("Web UI exposes upstream controls without inline handlers", async () => {
 
     } finally {
         await close(proxy);
-        if (previous.config === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous.config;
-        rmSync(root, { recursive: true, force: true });
+        if (previous.config === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous.config;
+        rmrf(root);
     }
 });
 
@@ -113,11 +105,10 @@ test("PUT /__bili/config with providers takes effect without a separate reload c
     mkdirSync(root, { recursive: true });
     const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.SIGMA_CONFIG_FILE;
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
-    const port = await freePort();
+    const prevConfig = process.env.BILI_CONFIG_FILE;
+    process.env.BILI_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1:1",
         routes: {},
@@ -137,6 +128,7 @@ test("PUT /__bili/config with providers takes effect without a separate reload c
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
     try {
         const providers = { "https://api.example.com/v1": { models: { "gpt-test": { context: 123456 } } } };
@@ -150,8 +142,8 @@ test("PUT /__bili/config with providers takes effect without a separate reload c
         assert.deepEqual(after.providers, providers, "providers saved and visible after PUT without /reload");
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
-        rmSync(root, { recursive: true, force: true });
+        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        rmrf(root);
     }
 });
 
@@ -232,11 +224,10 @@ test("#154: PUT /__bili/config with compress hot-applies the global compress blo
     mkdirSync(root, { recursive: true });
     const biliConfig = path.join(root, "sigma.json");
     writeFileSync(biliConfig, '{"providers":{}}\n', "utf8");
-    const prevConfig = process.env.SIGMA_CONFIG_FILE;
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
-    const port = await freePort();
+    const prevConfig = process.env.BILI_CONFIG_FILE;
+    process.env.BILI_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1:1",
         routes: {},
@@ -256,11 +247,14 @@ test("#154: PUT /__bili/config with compress hot-applies the global compress blo
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
     try {
         const ui = await (await fetch(`${base}/__bili/`)).text();
-        assert.match(ui, /compress-json/);
-        assert.match(ui, /save-compress/);
+        // #1426: single raw config-file editor replaced the per-section JSON boxes
+        assert.match(ui, /cfg-file-edit/);
+        assert.match(ui, /<textarea/);
+        assert.match(ui, /save-file/);
 
         const before = await (await fetch(`${base}/__bili/config`)).json() as { compress: unknown };
         assert.equal(before.compress, null);
@@ -293,17 +287,17 @@ test("#154: PUT /__bili/config with compress hot-applies the global compress blo
         assert.equal(final.compress, null);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
-        rmSync(root, { recursive: true, force: true });
+        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        rmrf(root);
     }
 });
 
 // Regression: the file's compress block may carry the global injection
 // toggles (injectTool / injectNudge — FileConfig.compress, honored by
-// loadOptions via `=== false`). GET returns the raw file block, so the web
-// UI's compress textarea shows them, and an unchanged save must round-trip
-// them: dropping them silently flips injectTool:false back to the enabled
-// default on the next loadOptions().
+// loadOptions via `=== false`). GET returns the raw file block and the web
+// UI displays it verbatim (read-only), so a PUT of the displayed value must
+// round-trip unchanged: dropping fields would silently flip injectTool:false
+// back to the enabled default on the next loadOptions().
 test("compress round-trip preserves injectTool/injectNudge injection toggles", async () => {
     _setStoreForTest(new SessionStore({ enabled: false }));
     setRegistryForTest({});
@@ -312,11 +306,10 @@ test("compress round-trip preserves injectTool/injectNudge injection toggles", a
     const biliConfig = path.join(root, "sigma.json");
     const toggles = { injectTool: false, nudgeGrowthTokens: 4000 };
     writeFileSync(biliConfig, JSON.stringify({ providers: {}, compress: toggles }) + "\n", "utf8");
-    const prevConfig = process.env.SIGMA_CONFIG_FILE;
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
-    const port = await freePort();
+    const prevConfig = process.env.BILI_CONFIG_FILE;
+    process.env.BILI_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1:1",
         routes: {},
@@ -336,10 +329,11 @@ test("compress round-trip preserves injectTool/injectNudge injection toggles", a
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
     try {
-        // UI flow: GET shows the file block (incl. the toggles); "save" sends
-        // the textarea content back unchanged.
+        // UI flow: GET shows the file block (incl. the toggles); echoing the
+        // displayed value back via PUT must leave the file unchanged.
         const before = await (await fetch(`${base}/__bili/config`)).json() as { compress: Record<string, unknown> };
         assert.deepEqual(before.compress, toggles);
         const put = await fetch(`${base}/__bili/config`, {
@@ -354,8 +348,8 @@ test("compress round-trip preserves injectTool/injectNudge injection toggles", a
         assert.deepEqual(after.compress, toggles);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
-        rmSync(root, { recursive: true, force: true });
+        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        rmrf(root);
     }
 });
 
@@ -369,11 +363,10 @@ test("PUT /__bili/config refuses to overwrite a config file that does not parse"
     // sees {}. A PUT must NOT rebuild from {} (that would silently drop the
     // user's modelContextLimit etc.); it must 409 until the syntax is fixed.
     writeFileSync(biliConfig, '{"providers":{},"modelContextLimit":333000,}\n', "utf8");
-    const prevConfig = process.env.SIGMA_CONFIG_FILE;
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
-    const port = await freePort();
+    const prevConfig = process.env.BILI_CONFIG_FILE;
+    process.env.BILI_CONFIG_FILE = biliConfig;
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1:1",
         routes: {},
@@ -393,6 +386,7 @@ test("PUT /__bili/config refuses to overwrite a config file that does not parse"
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     const base = `http://127.0.0.1:${port}`;
     try {
         const get1 = await (await fetch(`${base}/__bili/config`)).json() as { parseError?: string };
@@ -425,7 +419,7 @@ test("PUT /__bili/config refuses to overwrite a config file that does not parse"
         assert.ok(get2.providers["https://api.example.com"]);
     } finally {
         await close(proxy);
-        if (prevConfig === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = prevConfig;
-        rmSync(root, { recursive: true, force: true });
+        if (prevConfig === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = prevConfig;
+        rmrf(root);
     }
 });

@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
+import { rmrf } from "./tmp-rm.ts";
 
 /** #1322: /__bili/health must expose the session-lifecycle watchdog state so
  *  attachers and operators can tell a session-owned proxy (armed — dies with
@@ -103,7 +104,7 @@ test("health exposes an armed watchdog with its owner set (#1322)", async () => 
         for (const k of [keeper, keeper2]) {
             try { k.kill("SIGKILL"); } catch {}
         }
-        delete process.env.SIGMA_PARENT_PID;
-        await rmSync(root, { recursive: true, force: true });
+        delete process.env.BILI_PARENT_PID;
+        await rmrf(root);
     }
 });

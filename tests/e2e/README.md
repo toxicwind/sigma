@@ -1,7 +1,7 @@
-# E2E: real codex client through sigma against a real upstream
+# E2E: real codex client through bili against a real upstream
 
 This suite runs the **real `codex` CLI** against a **real Responses-compatible
-upstream** through the sigma proxy, and asserts the full context-management
+upstream** through the bili proxy, and asserts the full context-management
 lifecycle end-to-end:
 
 1. **warmup** — one turn; plants a known contamination value (`1400`) that the
@@ -35,12 +35,12 @@ By default the suite **skips** (`set ACP_TEST_E2E=1`) so `npm test` stays free.
 | Variable | Default | Purpose |
 |---|---|---|
 | `ACP_TEST_E2E` | – | `1` enables the suite |
-| `E2E_UPSTREAM_URL` | `http://127.0.0.1:8199/v1` | Responses-compatible upstream (no `/sigma/` prefix) |
-| `E2E_UPSTREAM_KEY` | `sigma-local-test` | API key passed via codex `env_key` |
+| `E2E_UPSTREAM_URL` | `http://127.0.0.1:8199/v1` | Responses-compatible upstream (no `/bili/` prefix) |
+| `E2E_UPSTREAM_KEY` | `bili-local-test` | API key passed via codex `env_key` |
 | `E2E_MODEL` | `qwen3.8-27b` | model name |
-| `E2E_SIGMA_DIST` | repo `dist/index.js` | proxy entry under test — point at any build for capability-matrix runs |
+| `E2E_BILI_DIST` | repo `dist/index.js` | proxy entry under test — point at any build for capability-matrix runs |
 | `E2E_CODEX_BIN` | `codex` | codex binary |
-| `E2E_FORGE` | – | `1` runs the forge phase (needs a dist with `SIGMA_CODEX_COMPACT` support, i.e. #325+) |
+| `E2E_FORGE` | – | `1` runs the forge phase (needs a dist with `BILI_CODEX_COMPACT` support, i.e. #325+) |
 | `E2E_TMO` | `300000` | per-turn timeout ms |
 
 Preflight (no tokens): `E2E_CHECK=1 node --import tsx --test tests/e2e/e2e-codex.test.ts`
@@ -51,18 +51,18 @@ prints codex version, dist path, and an upstream `/models` probe.
 - Full isolation: `CODEX_HOME`, `XDG_{CONFIG,CACHE,STATE}_HOME` and the work
   dir (`tmp/e2e-codex-*` in the repo — **not** `/tmp`, codex refuses TMPDIR
   homes) are throwaway. Codex's **spawn cwd** is deliberately OUTSIDE the repo
-  tree (`$TMPDIR/sigma-e2e*`): codex discovers `AGENTS.md` by walking
+  tree (`$TMPDIR/billion-context-e2e*`): codex discovers `AGENTS.md` by walking
   up from its cwd, so an in-repo cwd folds the entire repo doc into every
   request payload and couples CI to doc size (#815). A stub `AGENTS.md` does
   NOT help — codex concatenates every level on the way up.
-- The sigma window is forced via the `SIGMA_LAUNCHER_MODEL_WINDOWS` env
+- The bili window is forced via the `BILI_LAUNCHER_MODEL_WINDOWS` env
   (per-model override; wins over registry peek) so compression triggers
   deterministically on every run, independent of the upstream's advertised
   window and of which window-alignment PRs are merged.
 - Provider `name = "OpenAI"` in `config.toml` keeps codex on the remote
   compaction path (V2) so the forge phase exercises the real interception.
-- Assertions scrape sigma's own log lines (`[acp-usage]`, `preflight
-  compressed`, `codex compact intercepted`, `stripped … sigma compaction
+- Assertions scrape bili's own log lines (`[acp-usage]`, `preflight
+  compressed`, `codex compact intercepted`, `stripped … bili compaction
   item(s)`) plus codex exit codes, `--output-last-message` answers, and the
   rollout JSONL.
 
@@ -89,6 +89,31 @@ resolve → tarball download → sha512 verify → staged extract → in-place i
 instance the suite **brings itself**. Loopback only; zero external network,
 zero secrets, zero tokens (#1153).
 
+`e2e-advisory-rollback.test.ts` (same gate, same fixture infra) proves the
+rollback-form advisory contract (#1588 / PR #1596) against a **live, resident
+`bili start`**: it publishes synthetic `START` (installed, affected),
+`LATEST` (registry latest, also affected) and `TARGET` (older, clean)
+versions plus a `billion-context-advisories` package whose document matches
+the affected range, then asserts the four-behavior contract —
+
+1. **control**: before the advisory exists, the normal self-update loop
+   advances `START → LATEST` (the loop is alive);
+2. **forced rollback**: once the advisory is published, the watcher
+   force-installs the older `TARGET` onto disk and keeps a persistent
+   restart banner (the running process is still affected) —
+   `runAdvisoryCheck` re-evaluates against the *running* version and surfaces
+   `pendingRestart` + `installedVersion` on `/__bili/status`;
+3. **no ping-pong (#1588-A, pre-restart)**: across ≥3 check cycles the disk
+   stays at `TARGET`; the update loop logs `deferring to the advisory loop`
+   and never re-installs `LATEST`;
+4. **candidate gate (#1588-A, post-restart)**: after restarting the proxy on
+   the clean `TARGET`, the update check **refuses** to pull the affected
+   `LATEST` back in (`skipping … covered by a critical-bug advisory's
+   affected range (#1588)`) and `/__bili/status.advisory` clears.
+
+The cycle interval is accelerated via `BILI_UPDATE_CHECK_INTERVAL_MS=2500`
+(the documented #1153 seam; default unchanged).
+
 ## Running
 
 ```bash
@@ -104,7 +129,8 @@ free (the `npm test` glob doesn't cover `tests/e2e/` anyway).
 | Variable | Default | Purpose |
 |---|---|---|
 | `ACP_TEST_REGISTRY` | – | `1` enables the suite |
-| `SIGMA_UPDATE_REGISTRY` | `https://registry.npmjs.org` | set by the suite per child process to the local registry URL |
+| `BILI_UPDATE_REGISTRY` | `https://registry.npmjs.org` | set by the suite per child process to the local registry URL |
+| `BILI_UPDATE_CHECK_INTERVAL_MS` | `180000` | accelerated to 2500 ms by the advisory-rollback suite only |
 
 ## Mechanics
 
@@ -126,7 +152,7 @@ free (the `npm test` glob doesn't cover `tests/e2e/` anyway).
   (the path shape matters: `isNpmInstallForm` keys off `node_modules`). The
   child process runs `dist/index.js update` with fully isolated
   `HOME`/`XDG_*` homes, so nothing touches the host.
-- **Assertions scrape sigma's real log lines** (`[update] checking npm
+- **Assertions scrape bili's real log lines** (`[update] checking npm
   registry for …`, `new version found: … downloading…`, `installed … → ….
   Restart to finish.`) plus the on-disk `package.json` flip, leftover
   staging/backup dirs, and lock release.
@@ -145,12 +171,12 @@ no secrets, `npm ci` + `npm run build` + the gated suite.
 
 `ACP_TEST_E2E_NATIVE=1` gates the suite (`npm test` stays free). It drives the
 **real `pi` CLI** in package-native mode (the repo root installed as a pi
-package — the `sigma plugin install pi` lane) through a **deterministic
+package — the `bili plugin install pi` lane) through a **deterministic
 chat-completions fake upstream** (`fake-upstream-chat.mjs`, zero tokens), and
 asserts the four user-facing guarantees of #1239:
 
 1. **interception + plugin-mode claim** — every upstream request carries
-   `x-sigma-plugin: pi` + `x-sigma-plugin-conversation` (the #1243 one-shot
+   `x-bili-plugin: pi` + `x-bili-plugin-conversation` (the #1243 one-shot
    stamp race is asserted per request, not just on the first);
 2. **`/acp` command works** — exit 0, no error strings, and the
    `/__bili/plugin/status` endpoint it consumes answers JSON;
@@ -174,8 +200,8 @@ asserts the four user-facing guarantees of #1239:
   `compress` call.
 - The suite spawns pi with a **hermetic `PI_CODING_AGENT_DIR`** (models.json
   pointing at the fake, settings.json loading the repo root as a package) and
-  hermetic XDG dirs. `cleanEnv()` strips every sigma side-channel
-  (`SIGMA_PROXY`, `SIGMA_*`, `ACP_*`, host pi overrides) **and
+  hermetic XDG dirs. `cleanEnv()` strips every bili side-channel
+  (`BILLION_CONTEXT_PROXY`, `BILI_*`, `ACP_*`, host pi overrides) **and
   `NODE_TEST_CONTEXT`** — pi-native deliberately stands down inside
   node:test, and the runner exports that variable into every spawned child.
 - The spawn cwd is outside the repo (#815, same reason as codex).
@@ -197,15 +223,15 @@ the codex pin (#815).
 ## Native-lane suite (`e2e-native-opencode.test.ts`) — real `opencode` plugin-native vs deterministic fake
 
 `ACP_TEST_E2E_OC_NATIVE=1` gates the suite (`npm test` stays free). It drives
-the **real `opencode` CLI** in headless `run` mode with sigma's native plugin
+the **real `opencode` CLI** in headless `run` mode with bili's native plugin
 (`dist/agent/opencode-native.js` — the self-spawn lane; V1 `.server()` on 1.x,
 V2 `setup` on 2.x; `E2E_OC_BIN` picks the binary) through the **same
 deterministic fake** (`fake-upstream-chat.mjs`, zero tokens), asserting the
 same four #1239 guarantees on the opencode surface:
 
 1. **interception + plugin-mode claim** — every upstream request (including
-   the title side-channel call) carries `x-sigma-plugin: opencode` +
-   `x-sigma-plugin-conversation: ses_…`;
+   the title side-channel call) carries `x-bili-plugin: opencode` +
+   `x-bili-plugin-conversation: ses_…`;
 2. **session binding + status reachable** — `/__bili/plugin/status` answers
    `{ok:true}` for the bound conversation while the proxy is alive (the `/acp`
    slash command itself is TUI-only — `run` dispatches no commands);
@@ -251,3 +277,30 @@ same four #1239 guarantees on the opencode surface:
 on `workflow_dispatch` with `@opencode/cli@2.0.3` pinned (V2 lane), same
 discipline as the pi/codex pins (#815). The V1 lane (1.x) is exercised by the
 same suite via `E2E_OC_BIN`.
+
+## Release canary (`e2e-release-canary.test.ts`) — automated no-op self-update drill
+
+`ACP_TEST_CANARY=1` runs the #1811 release-receive drill: the BUILT tree is
+packed twice with identical content at versions N-1 and N (patch ≥ 2 required;
+prerelease/dev tags skip loudly), both published to the hermetic loopback
+registry. A live proxy boots from the N-1 install with
+`BILI_UPDATE_REGISTRY` pointed at the fixture (1s check interval) and must:
+
+- converge a stale dsh profile copy (N-2) via the up-to-date branch alone
+  (#1804 path, driven through a fake `BILI_DSH_BIN` shim that logs its calls),
+- flip its own disk in place when N is published ("installed N-1 → N.
+  Restart to finish.") while still serving traffic on the old in-memory code,
+- refresh (case-3) and then converge post-flip-stale profiles and go silent,
+- restart from the updated tree and pass the ACP smoke: model turn → plugin
+  `compress` fold → post-fold turn, plus a `plugin install opencode` entry.
+
+On failure the whole work dir (`tmp/e2e-canary-*`, incl. proxy output in
+`diagnostics.txt`) is kept for artifacts; on success it is cleaned.
+
+### CI
+
+`.github/workflows/ci-release-canary.yml` — fires ONLY on `release:
+published` (plus `workflow_dispatch` for backfilling any tag). Because
+release events read the workflow from the tag's tree, the lane takes effect
+from the first release AFTER this workflow lands; earlier tags can be
+drilled manually via dispatch.

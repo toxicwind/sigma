@@ -1,7 +1,9 @@
 import type { CoreMessage } from "acp-kernel";
-import { coreToAnthropic, extractSystem, buildSystem, type AnthropicRequestBody } from "acp-kernel/wire";
+import { coreToAnthropic, type AnthropicRequestBody } from "acp-kernel/wire";
+import { appendSystemText } from "../util.js";
+import { stampAnthropicSystemCacheControl } from "./cache-control.js";
 import { buildVisibilityMarker } from "./core.js";
-import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
+import { composeStreamFilters, createBiliArtifactFilter, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
 import type {
@@ -150,7 +152,38 @@ function buildTextDeltaEvent(index: number, text: string): Buffer {
     );
 }
 
-export function createAnthropicAdapter(requestBody: Record<string, unknown>, originalSystem?: AnthropicRequestBody["system"], notes?: string[], errorShape: "protocol" | "completion" = "protocol"): CompressLoopAdapter {
+function rewriteThinkingDeltaEvent(eventStr: string, newIndex: number, newThinking: string): Buffer {
+    const lines = eventStr.split("\n");
+    const rebuilt: string[] = [];
+    for (const l of lines) {
+        if (l.startsWith("data:")) {
+            const jsonStr = l.slice(5).replace(/^ /, "");
+            try {
+                const obj = JSON.parse(jsonStr) as Record<string, unknown>;
+                if (typeof obj === "object" && obj !== null && typeof obj.index === "number") {
+                    obj.index = newIndex;
+                    const d = obj.delta as Record<string, unknown> | undefined;
+                    if (d && typeof d.thinking === "string") d.thinking = newThinking;
+                    rebuilt.push(`data: ${JSON.stringify(obj)}`);
+                    continue;
+                }
+            } catch {
+            }
+        }
+        rebuilt.push(l);
+    }
+    return Buffer.from(rebuilt.join("\n") + "\n\n", "utf8");
+}
+
+function buildThinkingDeltaEvent(index: number, thinking: string): Buffer {
+    return Buffer.from(
+        `event: content_block_delta\n` +
+        `data: ${JSON.stringify({ type: "content_block_delta", index, delta: { type: "thinking_delta", thinking } })}\n\n`,
+        "utf8",
+    );
+}
+
+export function createAnthropicAdapter(requestBody: Record<string, unknown>, originalSystem?: AnthropicRequestBody["system"], notes?: string[], errorShape: "protocol" | "completion" = "protocol", cacheMarks?: Map<string, { type: "ephemeral" }>): CompressLoopAdapter {
     const model = (requestBody.model as string) ?? undefined;
     let messageId: string | undefined;
     let clientIndex = 0;
@@ -206,12 +239,25 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
             "utf8",
         );
 
+    // #1766: unmodeled keys on upstream terminal frames must ride the synthetic
+    // completion below (see EmitCompletionOpts.terminalExtra), not vanish.
+    const MESSAGE_DELTA_KNOWN_KEYS = new Set(["type", "delta", "usage", "request_id"]);
+    const MESSAGE_STOP_KNOWN_KEYS = new Set(["type", "request_id"]);
+    const terminalExtrasOf = (data: Record<string, unknown>, known: ReadonlySet<string>): Record<string, unknown> | undefined => {
+        const out: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (!known.has(key)) out[key] = value;
+        }
+        return Object.keys(out).length > 0 ? out : undefined;
+    };
+
     const buildTerminal = (
         stopReason: string,
         outputTokens: number,
         inputTokens: number,
         cachedTokens: number,
         creationTokens?: number,
+        extras?: Record<string, unknown>,
     ): Buffer => {
         const usage: Record<string, unknown> = {
             input_tokens: inputTokens,
@@ -224,7 +270,7 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
         if (model) extra.model = model;
         return Buffer.from(
             `event: message_delta\n` +
-            `data: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage, ...extra })}\n\n` +
+            `data: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage, ...extras, ...extra })}\n\n` +
             `event: message_stop\n` +
             `data: ${JSON.stringify({ type: "message_stop" })}\n\n`,
             "utf8",
@@ -233,14 +279,19 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
 
     return {
         buildRequest(coreMessages, systemPrompt, body) {
-            const messages = coreToAnthropic(coreMessages);
-            const baseText = originalSystem !== undefined ? extractSystem(originalSystem) : "";
-            const full = baseText ? `${baseText}\n\n---\n\n${systemPrompt}` : systemPrompt;
-            const system = originalSystem !== undefined ? buildSystem(full, originalSystem) : full;
+            // #1637: round-2 rebuilds apply the SAME cumulative cache_control
+            // marks through the SAME kernel applier as the steady path
+            // (coreToAnthropic) — a marker present on the trigger turn must be
+            // present here too or the byte prefix breaks at that element.
+            const messages = coreToAnthropic(coreMessages, cacheMarks);
+            // #1876: same append-not-merge rebuild as the steady path's
+            // injectSystem — both must emit byte-identical system (F2 seam).
+            const system = originalSystem !== undefined ? appendSystemText(systemPrompt, originalSystem) : systemPrompt;
+            const stamped = cacheMarks ? stampAnthropicSystemCacheControl(system) : system;
             const withNotes = notes && notes.length > 0
                 ? [...messages, ...notes.map((text) => ({ role: "user" as const, content: text }))]
                 : messages;
-            return { ...body, system, messages: withNotes };
+            return { ...body, system: stamped, messages: withNotes };
         },
 
         async *parseStream(upstream, round) {
@@ -253,24 +304,38 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
             let usageYielded = false;
             const indexMap = new Map<number, number>();
             const thinkingIndexes = new Set<number>();
-            // #206: strip model-imitated render tags from text deltas before
-            // they reach the client (and before coreText accumulates them for
+            // #206: strip model-imitated render tags from PROSE deltas before
+            // they reach the client (and before the loop accumulates them for
             // re-request rounds). Flush at the owning block's stop so held-back
-            // fragments still emit while the block is open.
-            const tagFilter = composeStreamFilters(
-                createTagEchoFilter((snippet) => {
-                    loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
-                }),
-                createMarkerLineFilter((snippet) => {
-                    loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+            // fragments still emit while the block is open. #1881: one instance
+            // per prose field — text and thinking deltas interleave across one
+            // stream, so a shared instance would hold a tag-shaped tail against
+            // the wrong field's bytes.
+            const makeFilter = () => composeStreamFilters(
+                composeStreamFilters(
+                    createTagEchoFilter((snippet) => {
+                        loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                    createMarkerLineFilter((snippet) => {
+                        loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                ),
+                createBiliArtifactFilter((snippet) => {
+                    loggerLog("warn", `[bili-artifact] stripped model-emitted internal artifact: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
                 }),
             );
+            const tagFilter = makeFilter();
+            const thinkingFilter = makeFilter();
             let lastTextIndex: number | null = null;
+            let lastThinkingIndex: number | null = null;
             let sawThinking = false;
             let toolCallsEmitted = 0;
             let degenerateWarned = false;
             const maybeWarnDegenerate = (reason: string | undefined) => {
                 if (degenerateWarned) return;
+                // #1881: the gate reads the TEXT channel only — thinking
+                // presence reaches it via sawThinking, and counting thinking
+                // chars as visible output would silence a tag-echo-only turn.
                 const msg = degenerateTurnWarning({ reason, terminalReason: "end_turn", toolCalls: toolCallsEmitted, text: tagFilter.stats(), sawThinking, wire: "anthropic" });
                 if (msg) {
                     degenerateWarned = true;
@@ -362,12 +427,20 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                             yield { kind: "text", delta: clean, raw } as ParsedStreamEvent;
                         }
                     } else if (delta.type === "thinking_delta" && typeof delta.thinking === "string" && delta.thinking.length > 0) {
+                        // #1881: thinking prose goes through its own filter —
+                        // the raw passthrough here was the leak path. Signature
+                        // deltas below stay verbatim (opaque, not prose).
                         const ci = indexMap.get(upstreamIndex) ?? upstreamIndex;
-                        yield {
-                            kind: "reasoning",
-                            delta: delta.thinking,
-                            raw: remapIndexInEvent(eventStr, ci),
-                        } as ParsedStreamEvent;
+                        lastThinkingIndex = ci;
+                        const clean = thinkingFilter.push(delta.thinking);
+                        if (clean.length > 0) {
+                            const raw = clean === delta.thinking ? remapIndexInEvent(eventStr, ci) : rewriteThinkingDeltaEvent(eventStr, ci, clean);
+                            yield {
+                                kind: "reasoning",
+                                delta: clean,
+                                raw,
+                            } as ParsedStreamEvent;
+                        }
                     } else if (delta.type === "signature_delta" && typeof delta.signature === "string") {
                         const ci = indexMap.get(upstreamIndex) ?? upstreamIndex;
                         yield {
@@ -398,6 +471,13 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                         // blocks each keep their own signature on rebuild.
                         const ci = indexMap.get(upstreamIndex) ?? upstreamIndex;
                         removeOpenBlock(ci);
+                        if (lastThinkingIndex !== null) {
+                            const tail = thinkingFilter.flush();
+                            if (tail.length > 0) {
+                                yield { kind: "reasoning", delta: tail, raw: buildThinkingDeltaEvent(lastThinkingIndex, tail) } as ParsedStreamEvent;
+                            }
+                            lastThinkingIndex = null;
+                        }
                         yield { kind: "meta", chunk: remapIndexInEvent(eventStr, ci), firstRoundOnly: false } as ParsedStreamEvent;
                         yield { kind: "reasoning", delta: "", blockEnd: true } as ParsedStreamEvent;
                     } else {
@@ -447,6 +527,7 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                     }
                     const d = (data.delta ?? {}) as Record<string, unknown>;
                     if (typeof d.stop_reason === "string") stopReason = d.stop_reason;
+                    const deltaExtras = terminalExtrasOf(data, MESSAGE_DELTA_KNOWN_KEYS);
                     if (!usageYielded) {
                         usageYielded = true;
                         yield {
@@ -458,7 +539,7 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                         } as ParsedStreamEvent;
                     }
                     maybeWarnDegenerate(stopReason);
-                    yield { kind: "done", finishReason: stopReason, thinking: sawThinking } as ParsedStreamEvent;
+                    yield { kind: "done", finishReason: stopReason, thinking: sawThinking, ...(deltaExtras ? { terminalExtra: deltaExtras } : {}) } as ParsedStreamEvent;
                 } else if (type === "message_stop") {
                     if (lastTextIndex !== null) {
                         const tail = tagFilter.flush();
@@ -467,6 +548,14 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                         }
                         lastTextIndex = null;
                     }
+                    if (lastThinkingIndex !== null) {
+                        const tail = thinkingFilter.flush();
+                        if (tail.length > 0) {
+                            yield { kind: "reasoning", delta: tail, raw: buildThinkingDeltaEvent(lastThinkingIndex, tail) } as ParsedStreamEvent;
+                        }
+                        lastThinkingIndex = null;
+                    }
+                    const stopExtras = terminalExtrasOf(data, MESSAGE_STOP_KNOWN_KEYS);
                     if (!usageYielded) {
                         usageYielded = true;
                         yield {
@@ -478,7 +567,7 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                         } as ParsedStreamEvent;
                     }
                     maybeWarnDegenerate(stopReason);
-                    yield { kind: "done", finishReason: stopReason ?? "end_turn", thinking: sawThinking } as ParsedStreamEvent;
+                    yield { kind: "done", finishReason: stopReason ?? "end_turn", thinking: sawThinking, ...(stopExtras ? { terminalExtra: stopExtras } : {}) } as ParsedStreamEvent;
                 } else if (round === 1) {
                     yield { kind: "meta", chunk: rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
                 }
@@ -518,6 +607,7 @@ export function createAnthropicAdapter(requestBody: Record<string, unknown>, ori
                 opts?.usage?.inputTokens ?? 0,
                 opts?.usage?.cachedTokens ?? 0,
                 opts?.usage?.creationTokens,
+                opts?.terminalExtra,
             );
         },
 

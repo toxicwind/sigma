@@ -37,9 +37,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { applyEdits, modify as jsoncModify, parse as jsoncParse, type ParseError } from "jsonc-parser";
 import { resolveDshHome, resolveHermesHome, resolveKimiHome, resolvePiHome } from "./client-config.js";
-import { clearClaudeNativePort, resolveClaudeNativePort, saveClaudeNativePort } from "./config.js";
-import { isPidAlive, isProxyInstanceFile, readProxyInstanceFile } from "./instance.js";
-import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnSigma, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
+import { resolveClaudeNativePort } from "./config.js";
+import { lanePreferredPort } from "./instance.js";
+import { DSH_PACKAGE, dshBundleInstalled, dshHasLegacyManagedBlock, dshProfileDependsOnBili, dshProfileDepSpec, dshProfileDirs, isRegistryDepSpec, planDshSpawn, refreshDshProfileBundles, runDshPlugin, stripLegacyManagedBlock } from "./dsh-channel.js";
 import { fetchRegistryVersion } from "./update.js";
 import { restoreKimiBackup, unrouteKimi } from "./kimi/native.js";
 import { inspectZcodeRouting, resolveZcodeDataDir } from "./zcode/json-edit.js";
@@ -65,35 +65,22 @@ import { restoreZcodeBackup, unrouteZcode } from "./zcode/native.js";
  *     argument after it the whole command dies at parse time, and alone it
  *     exits 0 having run nothing — a silent no-op, worse than an error.
  *
- *     No spelling covers a spaced command path in all three, so the only
- *     question is which shell to keep working. Claude Code runs hooks through
- *     PowerShell on Windows (probe-verified: a cmd-only builtin writes nothing,
- *     a PowerShell-only one writes its file), so `&` is what keeps the real
- *     path alive. cmd never sees a spaced command here — the kimi hook resolves
- *     a bare `node` through PATH, so it is never quoted. Exported for tests. */
+ *     No spelling covers a spaced command path in all three, and the client's
+ *     shell is not stable across versions anyway: #1376 probe-verified
+ *     PowerShell on Claude Code 2.1.282, while #1902 measured cmd.exe on
+ *     2.1.284 (`& was unexpected at this time.` — the lane silently never
+ *     started). So shipped hooks must never emit a spaced COMMAND token at
+ *     all: claude and kimi both pass a bare `node`, which every shell resolves
+ *     through PATH — and claude cannot run without `node` on PATH in the first
+ *     place (its npm shim invokes bare `node` itself, in the very environment
+ *     the hook later inherits). The `&` fallback below stays for hypothetical
+ *     spaced-head callers, but no shipped hook uses it. Exported for tests. */
 export function portableHookCommand(exe: string, args: string[] = []): string {
     const fwd = (p: string): string => p.replaceAll("\\", "/");
     const quoteArg = (p: string): string => (/\s/.test(p) ? `"${p}"` : p);
     const head = fwd(exe);
     const tail = args.map((a) => quoteArg(fwd(a)));
     return /\s/.test(head) ? [`& "${head}"`, ...tail].join(" ") : [head, ...tail].join(" ");
-}
-
-/** #403: never freeze a dead or unverifiable origin into a client's
- *  persistent config — the MCP shell would dial it forever. An explicit
- *  SIGMA_MCP_PROXY env wins (the user said so); otherwise a recorded
- *  instance must be pid-alive. */
-function proxyOriginForInstall(): string {
-    const fromEnv = process.env.SIGMA_MCP_PROXY?.trim();
-    if (fromEnv && fromEnv.length > 0) return fromEnv;
-    const inst = readProxyInstanceFile();
-    if (inst === undefined) {
-        throw new Error("no sigma proxy origin found — start sigma first (\`sigma start\` or \`sigma <client>\`), then retry, or set SIGMA_MCP_PROXY explicitly");
-    }
-    if (isProxyInstanceFile(inst) && !isPidAlive(inst.pid)) {
-        throw new Error(`the recorded sigma proxy (pid ${inst.pid}, ${inst.origin}) is not running — start sigma and retry so a dead origin is not frozen into the client config`);
-    }
-    return inst.origin;
 }
 
 export const PLUGIN_AGENTS = ["pi", "omp", "claude", "codex", "opencode", "dsh", "kimi", "hermes", "zcode"] as const;
@@ -246,7 +233,7 @@ function piInstall(): string {
         ? `\npi: replaced existing entries: ${removed.join(", ")}`
           + "\npi: also check <project>/.pi/settings.json — a project-scope sigma-pi entry (pi install -l) lives there, not in this global settings"
         : "";
-    const form = entry === PI_NPM_ENTRY ? " (pi-managed — pi installs/updates it; `pi update` upgrades)" : "";
+    const form = entry === PI_NPM_ENTRY ? " (pi-managed — pi installs it; the proxy self-refreshes it via `pi update --extension npm:billion-context`, or run that manually)" : "";
     return `pi: installed -> ${file} packages += ${entry}${form}${note}`;
 }
 
@@ -499,11 +486,52 @@ export function isSigmaClaudeBaseUrl(value: unknown): boolean {
 }
 
 export function claudeNativeBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-    const origin = `http://127.0.0.1:${resolveClaudeNativePort(env)}`;
-    const relay = env.SIGMA_CLAUDE_UPSTREAM?.trim();
-    const upstream = (relay && relay.length > 0 ? relay : "https://api.anthropic.com").replace(/\/+$/, "");
-    const prefix = origin + "/sigma/";
-    return upstream.startsWith(prefix) ? upstream : prefix + upstream;
+    const origin = `http://127.0.0.1:${resolveClaudeNativePort(env) ?? lanePreferredPort("claude", env)}`;
+    return claudeNativeBaseUrlForOrigin(origin, undefined, env);
+}
+
+/** #1660: the wrapped base URL for an arbitrary live origin — the
+ *  SessionStart hook's drift-repair path (the managed block must follow the
+ *  lane's zone-drifted port). `upstream`, when given, overrides the default
+ *  resolution (BILI_CLAUDE_UPSTREAM > https://api.anthropic.com) — pass the
+ *  UNWRAPPED value of the current settings URL to preserve a relay an
+ *  earlier install baked in. */
+export function claudeNativeBaseUrlForOrigin(origin: string, upstream: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
+    const relay = env.BILI_CLAUDE_UPSTREAM?.trim();
+    const base = (upstream !== undefined && upstream.length > 0
+        ? upstream
+        : relay && relay.length > 0
+          ? relay
+          : "https://api.anthropic.com").replace(/\/+$/, "");
+    const prefix = origin.replace(/\/+$/, "") + "/bili/";
+    return base.startsWith(prefix) ? base : prefix + base;
+}
+
+/** The inverse of the wrap: strip a bili wrapper (any loopback port) from a
+ *  base URL. Returns undefined for anything not written by us. */
+export function unwrapBiliBaseUrl(value: string): string | undefined {
+    const m = /^http:\/\/127\.0\.0\.1:\d{1,5}\/bili\/(https?:\/\/.+)$/.exec(value);
+    return m ? m[1] : undefined;
+}
+
+/** #1660: SessionStart drift-repair — repin the managed block's
+ *  ANTHROPIC_BASE_URL to `origin` (the lane's live zone port, which the +1
+ *  ladder may have drifted off the last install's baked port). The wrapped
+ *  upstream is PRESERVED from the current value unless BILI_CLAUDE_UPSTREAM
+ *  overrides it; a foreign ANTHROPIC_BASE_URL is never touched (same rule as
+ *  install). Also upserts the SessionStart hook, keeping a stale command
+ *  fresh across upgrades. Returns the change notes for the hook's log;
+ *  never throws, and writes only when the file actually changes. */
+export function repinClaudeManagedBaseUrl(origin: string, env: NodeJS.ProcessEnv = process.env): string[] {
+    const file = claudeSettingsFile(env);
+    const settings = readJson(file);
+    const cur = (settings.env as Record<string, unknown> | undefined)?.ANTHROPIC_BASE_URL;
+    const baseUrl = claudeNativeBaseUrlForOrigin(origin, typeof cur === "string" ? unwrapBiliBaseUrl(cur) : undefined, env);
+    // #1902: bare `node`, PATH-resolved by whichever client shell runs the hook.
+    const hookCommand = portableHookCommand("node", [path.join(selfPackageRoot(), "dist", "claude-native-bootstrap.js")]);
+    const { data, notes } = applyClaudeManagedBlock(settings, { baseUrl, hookCommand });
+    if (JSON.stringify(data) !== JSON.stringify(settings)) writeJson(file, data);
+    return notes;
 }
 
 /** Pure merge of the #964 managed block into parsed settings (install path).
@@ -648,14 +676,44 @@ function runClaudeCli(claude: string, args: string[]): void {
  *  would ENOENT before runClaudeCli ever sees the .cmd. Uses where.exe; on
  *  failure or non-Windows the input is returned untouched (the original
  *  ENOENT error stays truthful). The resolver is injectable so tests never
- *  depend on a real where.exe spawn finishing in time (#1445). */
-export function resolveClaudeCli(claude: string, where?: (name: string) => { stdout: string | null }): string {
+ *  depend on a real where.exe spawn finishing in time (#1445).
+ *
+ *  #1902: npm's global dir ships three shims side by side — the extensionless
+ *  POSIX script FIRST, then .cmd, then .ps1 — and Node cannot spawn the
+ *  extensionless one (ENOENT), so taking the raw first hit breaks MCP
+ *  registration. Hits are now ranked the way cmd.exe itself resolves them:
+ *  PATH order first, PATHEXT order within each directory. When nothing
+ *  carries a PATHEXT extension the old first-hit behavior stands. */
+export function resolveClaudeCli(
+    claude: string,
+    where?: (name: string) => { stdout: string | null },
+    pathext?: string,
+): string {
     if (/[\\/]/.test(claude) || /\.[a-z]+$/i.test(claude)) return claude;
     const run = where ?? (process.platform === "win32" ? defaultWhereRunner : undefined);
     if (!run) return claude;
     try {
-        const first = (run(claude).stdout ?? "").split(/\r?\n/).find((l) => l.trim().length > 0)?.trim();
-        return first && first.length > 0 ? first : claude;
+        const hits = (run(claude).stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+        if (hits.length === 0) return claude;
+        const exts = (pathext ?? process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+            .split(";")
+            .map((e) => e.trim().toLowerCase())
+            .filter((e) => e.startsWith("."));
+        const dirs = new Map<string, string[]>();
+        for (const hit of hits) {
+            const base = /[^\\/]+$/.exec(hit)?.[0] ?? hit;
+            const dir = hit.slice(0, hit.length - base.length);
+            const list = dirs.get(dir) ?? [];
+            list.push(hit);
+            dirs.set(dir, list);
+        }
+        for (const perDir of dirs.values()) {
+            for (const ext of exts) {
+                const hit = perDir.find((h) => h.toLowerCase().endsWith(ext));
+                if (hit) return hit;
+            }
+        }
+        return hits[0];
     } catch {
         return claude;
     }
@@ -677,16 +735,18 @@ function claudeInstall(): string {
     requireDistFile(bootstrapJs);
 
     // Managed block first: the static URL + bootstrap hook + compaction off.
-    // #964: persist the resolved port into the sigma config too — the
-    // SessionStart hook does NOT inherit claude's settings.env, so without a
-    // persisted copy an env-driven port (SIGMA_CLAUDE_NATIVE_PORT=48790)
-    // would live only in settings.json while the hook resolves the default
-    // and brings the proxy up on the WRONG port.
-    const nativePort = resolveClaudeNativePort();
-    saveClaudeNativePort(nativePort);
+    // #964/#1660: the baked URL uses the explicit override
+    // (BILI_CLAUDE_NATIVE_PORT / claude.nativePort) when set — which also
+    // makes every later hook launch strict-port — else the current zone
+    // preference (sticky record > 18787 base). An explicit env-driven port
+    // can no longer desync from the hook: both resolve through
+    // resolveClaudeNativePort(), and the SessionStart hook's repin pass
+    // rewrites the baked URL to the live origin anyway (#1660).
+    const nativePort = resolveClaudeNativePort() ?? lanePreferredPort("claude");
     const file = claudeSettingsFile();
     const settings = readJson(file);
-    const hookCommand = portableHookCommand(process.execPath, [bootstrapJs]);
+    // #1902: bare `node`, PATH-resolved by whichever client shell runs the hook.
+    const hookCommand = portableHookCommand("node", [bootstrapJs]);
     const { data, notes } = applyClaudeManagedBlock(settings, {
         baseUrl: claudeNativeBaseUrl(),
         hookCommand,
@@ -724,7 +784,6 @@ function claudeInstall(): string {
 
 function claudeRemove(): string {
     const parts: string[] = [];
-    clearClaudeNativePort();
     const file = claudeSettingsFile();
     const settings = readJson(file);
     const { data, removed } = stripClaudeManagedBlock(settings);
@@ -809,7 +868,11 @@ function codexToml(): string {
 }
 
 function codexBlock(): string {
-    return `\n[mcp_servers.sigma]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(path.join(selfPackageRoot(), "dist", "mcp.js"))}]\nenv = { SIGMA_MCP_PROXY = ${JSON.stringify(proxyOriginForInstall())} }\n`;
+    // #1660: no baked origin — the MCP shell discovers the live proxy at
+    // startup (env > live instance file > 8787 user-zone default), so the
+    // block never goes stale when the proxy's port drifts or the machine
+    // reboots. BILI_MCP_PROXY in the user's environment still wins.
+    return `\n[mcp_servers.bili]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(path.join(selfPackageRoot(), "dist", "mcp.js"))}]\n`;
 }
 
 function malformedCodexArgs(block: string): boolean {
@@ -1111,7 +1174,7 @@ export function applyOpencodePluginEntry(args: { data: Record<string, unknown>; 
     }
     // Exactly our one entry, already the right form — nothing to migrate:
     // leave the key (and the file) untouched.
-    if (replaced.length === 1 && replaced[0] === entry) return ["plugin present"];
+    if (replaced.length === 1 && replaced[0] === entry) return [`${key} present`];
     if (Array.isArray(raw)) {
         data[key] = [...raw.filter((x) => !isOurs(x)), entry];
     } else if (raw !== null && typeof raw === "object") {
@@ -2066,10 +2129,10 @@ export function pluginStatusAll(): Array<{ agent: string; status: string; channe
 // (omp/claude/codex/kimi/hermes/zcode) follow the global sigma install itself —
 // hermes additionally re-copies its Python files via `sigma plugin update hermes`.
 export const UPDATE_CHANNEL: Record<PluginAgent, string> = {
-    pi: "pi update (pi owns the npm:sigma copy)",
-    omp: "the global sigma install (entry points at it)",
-    claude: "the global sigma install (hook/MCP point at it)",
-    codex: "the global sigma install (the mcp launcher shells out to it)",
+    pi: "pi update --extension npm:billion-context (pi owns the npm copy; its proxy self-drives the refresh every check cycle, #1196)",
+    omp: "the global bili install (entry points at it)",
+    claude: "the global bili install (hook/MCP point at it)",
+    codex: "the global bili install (the mcp launcher shells out to it)",
     opencode: "opencode's own plugin manager (opencode owns the copy)",
     dsh: "the global sigma self-update (profile bundles track it)",
     kimi: "the global sigma install (plugin points at its dist)",
@@ -2092,8 +2155,9 @@ export interface PluginUpdateOpts {
  *  - reference lanes (omp/claude/codex/kimi) need nothing per-lane: they
  *    point at the global install, so only the global copy updates;
  *  - host-managed copies (pi npm entry, opencode plugin entry) are never
- *    overwritten by sigma — the report says which host command upgrades
- *    them;
+ *    overwritten by bili — the report says which host command upgrades
+ *    them (the pi copy's own proxy also self-refreshes through pi's
+ *    update channel on its periodic check, #1196);
  *  - dsh profile bundles are re-resolved to the latest registry version
  *    through dsh's own plugin channel.
  *  Returns user-facing lines. Network is only touched when a dsh profile
@@ -2152,8 +2216,8 @@ async function updateLane(agent: PluginAgent, opts: PluginUpdateOpts, log: (leve
         const latest = await fetchRegistryVersion(opts, opts.packageName);
         if (!latest) return ["dsh: could not resolve the latest version from npm — leaving profile bundles alone"];
         const before = targets.length;
-        await refreshDshProfileBundles(latest, log);
-        return [`dsh: refreshing ${before} profile bundle(s) to ${latest} through dsh's plugin channel (see log for per-profile results)`];
+        const refreshed = await refreshDshProfileBundles(latest, log);
+        return [`dsh: ${refreshed}/${before} profile bundle(s) refreshed to ${latest} through dsh's plugin channel (see log for per-profile results)`];
     }
     if (agent === "hermes") {
         if (hermesStatus() !== "installed") return ["hermes: not installed — nothing to update"];

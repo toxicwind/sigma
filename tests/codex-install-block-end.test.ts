@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pluginInstall, selfPackageRoot } from "../src/plugin-install.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 // #1064: codexInstall ended the [mcp_servers.sigma] block at indexOf("\n["),
 // which misses an indented next-table header — the block ran to EOF and a
@@ -45,8 +46,8 @@ test("codex install refresh keeps content after an indented next table (#1064)",
         assert.match(pluginInstall("codex"), /already installed/, "second run is a no-op");
     } finally {
         if (prevHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prevHome;
-        if (prevProxy === undefined) delete process.env.SIGMA_MCP_PROXY; else process.env.SIGMA_MCP_PROXY = prevProxy;
-        rmSync(home, { recursive: true, force: true });
+        if (prevProxy === undefined) delete process.env.BILI_MCP_PROXY; else process.env.BILI_MCP_PROXY = prevProxy;
+        rmrf(home);
     }
 });
 
@@ -65,7 +66,7 @@ test("codex install refresh keeps content after a column-0 next table", () => {
         assert.ok(out.includes("[sandbox]") && out.includes('mode = "workspace-write"'), "trailing table survives");
     } finally {
         if (prevHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prevHome;
-        if (prevProxy === undefined) delete process.env.SIGMA_MCP_PROXY; else process.env.SIGMA_MCP_PROXY = prevProxy;
-        rmSync(home, { recursive: true, force: true });
+        if (prevProxy === undefined) delete process.env.BILI_MCP_PROXY; else process.env.BILI_MCP_PROXY = prevProxy;
+        rmrf(home);
     }
 });

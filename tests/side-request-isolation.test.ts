@@ -3,15 +3,17 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
 import { defaultConfig, createInitialState, defaultCountTokens } from "acp-kernel";
-import { startServer, type ProxyOptions, isSideRequest, outputBudgetField, restoreOutputBudget, sideRequestGuard } from "../src/server.ts";
+import { startServer, type ProxyOptions, isSideRequest, outputBudgetField, restoreOutputBudget, sideRequestGuard, resolveKnownOutputCeiling, _resetNoOutputCeilingWarningsForTest } from "../src/server.ts";
+import { recordPluginRuntimeInfo, _resetPluginStateForTest } from "../src/plugin.ts";
 import { estimateRawBodyTokens } from "../src/preflight.ts";
 import { inspectContextOverflow } from "../src/util.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { getSession, _resetSessionsForTest } from "../src/session.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 // #388: side requests (title-gen / small utility calls) share the main session
 // key but must not touch kernel state. The proxy routes them as pure passthrough
@@ -35,6 +37,24 @@ test("isSideRequest: tiny output budget across protocol field names", () => {
     assert.equal(isSideRequest({ max_tokens: 100, tools: [{ name: "compress" }] }), false, "#546: tool-carrying request is a MAIN turn even with a starved budget");
     assert.equal(isSideRequest({ max_tokens: 100, tools: [] }), true, "empty tools array does not rescue a tiny budget");
     assert.equal(isSideRequest({ max_output_tokens: 16, tools: [{ type: "function", function: { name: "f" } }] }), false, "#546: responses wire, starved budget + tools → main");
+});
+
+test("isSideRequest: host-declared side-request agent outranks the token-budget heuristic (#1699)", () => {
+    // opencode v2 title-gen carries NO max_tokens (options {} for kind==="title"),
+    // so the budget path can never see it. Declaring the persona by intent fixes
+    // the misclassification without touching any request that omits max_tokens.
+    const noBudget = { messages: [{ role: "user", content: "Generate a short title." }] };
+    assert.equal(isSideRequest(noBudget, "title"), true, "#1699: no-budget title request is a side req by intent");
+    assert.equal(isSideRequest(noBudget), false, "same body WITHOUT the agent id stays non-side (no regression)");
+    // Intent outranks even the #546 tool-carrying main-turn guard (title-gen never
+    // carries tools; if it did, the host's explicit declaration wins).
+    assert.equal(isSideRequest({ max_tokens: 100, tools: [{ name: "compress" }] }, "title"), true, "#1699: intent beats the tools heuristic");
+    // A MAIN persona is never a side request — real turns keep compression.
+    assert.equal(isSideRequest({ max_tokens: 5000 }, "build"), false, "main persona with a normal budget is not a side req");
+    assert.equal(isSideRequest({}, "build"), false, "main persona without a budget is not a side req");
+    // An unknown persona id is inert — falls back to the token-budget heuristic.
+    assert.equal(isSideRequest({}, "unknown-persona"), false, "unknown persona does not grant side status");
+    assert.equal(isSideRequest({ max_tokens: 100 }, "unknown-persona"), true, "unknown persona still honors a tiny budget");
 });
 
 const noopLog = (): void => {};
@@ -84,6 +104,116 @@ test("restoreOutputBudget: high-water learning + starved-budget restore (#546)",
     const responsesStarved = { max_output_tokens: 1, tools: [{ type: "function" }] } as { max_output_tokens: number };
     restoreOutputBudget(responsesStarved, s2, noopLog);
     assert.equal(responsesStarved.max_output_tokens, 32689, "responses field restored on the same field");
+});
+
+test("restoreOutputBudget: configured-output-limit floor for poisoned or missing high-water (#1665)", () => {
+    // Death spiral: the client decays through small positive values before
+    // starving completely — the water mark ends up holding a death rattle.
+    const s = metaSession("poison");
+    restoreOutputBudget({ max_tokens: 384000 }, s, noopLog);
+    restoreOutputBudget({ max_tokens: 680 }, s, noopLog);
+    restoreOutputBudget({ max_tokens: 234 }, s, noopLog);
+    assert.equal(s.metadata.outputBudgetHighWater, 234, "last non-starved value wins (decay tracked)");
+    const starved = { max_tokens: 1, tools: [{ name: "t" }] } as { max_tokens: number };
+    restoreOutputBudget(starved, s, noopLog, 384000);
+    assert.equal(starved.max_tokens, 384000, "death-rattle water mark floored by the configured output limit");
+    // A healthy water mark above the floor keeps winning (client intent beats declaration).
+    const s2 = metaSession("healthy");
+    restoreOutputBudget({ max_tokens: 500000 }, s2, noopLog);
+    const starved2 = { max_tokens: 1, tools: [{ name: "t" }] } as { max_tokens: number };
+    restoreOutputBudget(starved2, s2, noopLog, 384000);
+    assert.equal(starved2.max_tokens, 500000, "water mark above the floor untouched");
+    // Born-dead session: the first request bili ever sees is already starved.
+    const s3 = metaSession("borndead");
+    const bornDead = { max_tokens: 1, tools: [{ name: "t" }] } as { max_tokens: number };
+    restoreOutputBudget(bornDead, s3, noopLog, 32768);
+    assert.equal(bornDead.max_tokens, 32768, "missing water mark falls back to the configured limit");
+    // No configured limit → old behavior: nothing to restore to.
+    const s4 = metaSession("nofloor");
+    const noFloor = { max_tokens: 1, tools: [{ name: "t" }] } as { max_tokens: number };
+    restoreOutputBudget(noFloor, s4, noopLog);
+    assert.equal(noFloor.max_tokens, 1, "undefined configured limit leaves the request untouched");
+    // A limit at/below the side threshold is not a usable floor.
+    const s5 = metaSession("tinyfloor");
+    restoreOutputBudget({ max_tokens: 234 }, s5, noopLog);
+    const tinyFloor = { max_tokens: 1, tools: [{ name: "t" }] } as { max_tokens: number };
+    restoreOutputBudget(tinyFloor, s5, noopLog, 200);
+    assert.equal(tinyFloor.max_tokens, 234, "limit <= 200 cannot floor");
+    // Side requests (no tools) never receive the floor.
+    const side = { max_tokens: 100 } as { max_tokens: number };
+    restoreOutputBudget(side, s3, noopLog, 32768);
+    assert.equal(side.max_tokens, 100, "side request untouched even with a floor available");
+});
+
+test("restoreOutputBudget: warns once per model when no output ceiling backs the restore (#1840)", () => {
+    _resetNoOutputCeilingWarningsForTest();
+    const lines: string[] = [];
+    const log = (_lvl: string, msg: string): void => { lines.push(msg); };
+    const tools = [{ name: "t" }];
+    const A = "stepfun/step-5-preview";
+    // Poisoned water mark seeded by a decaying client; NO ceiling from any source.
+    const s = metaSession("nocap");
+    restoreOutputBudget({ max_tokens: 583, model: A }, s, log);
+    assert.equal(lines.length, 0, "healthy-value learning is silent");
+    const starved = { max_tokens: 1, tools, model: A } as { max_tokens: number };
+    restoreOutputBudget(starved, s, log);
+    assert.equal(starved.max_tokens, 583, "without a ceiling the (poisoned) water mark still wins");
+    let warns = lines.filter((l) => l.includes("NO known output ceiling"));
+    assert.equal(warns.length, 1, "warns once for the ceiling-less restore");
+    assert.match(warns[0] ?? "", /model=stepfun\/step-5-preview/, "names the model");
+    assert.match(warns[0] ?? "", /restored 1 -> 583/, "states what was actually restored");
+    assert.match(warns[0] ?? "", /providers\.<url>\.models/, "points at the config escape hatch");
+    // Same model again → deduped (no second warn).
+    restoreOutputBudget({ max_tokens: 1, tools, model: A }, s, log);
+    assert.equal(lines.filter((l) => l.includes("NO known output ceiling")).length, 1, "deduped per model");
+    // A different ceiling-less model warns once on its own.
+    restoreOutputBudget({ max_tokens: 1, tools, model: "other/model" }, metaSession("other"), log);
+    warns = lines.filter((l) => l.includes("NO known output ceiling"));
+    assert.equal(warns.length, 2, "per-model, not global");
+    assert.match(warns[1] ?? "", /forwarded verbatim/, "born-starved (no water yet) says so");
+    assert.equal((metaSession("other").metadata as Record<string, unknown>).outputBudgetHighWater, undefined);
+    // With a usable ceiling → no warn at all (the floor note rides on the info line).
+    _resetNoOutputCeilingWarningsForTest();
+    lines.length = 0;
+    const s2 = metaSession("capped");
+    restoreOutputBudget({ max_tokens: 583, model: "capped/model" }, s2, log);
+    const capped = { max_tokens: 1, tools, model: "capped/model" } as { max_tokens: number };
+    restoreOutputBudget(capped, s2, log, 32768);
+    assert.equal(capped.max_tokens, 32768, "ceiling lifts the death rattle");
+    assert.equal(lines.filter((l) => l.includes("NO known output ceiling")).length, 0, "a usable ceiling suppresses the warn");
+    assert.ok(lines.some((l) => l.includes("high-water 583 below known output ceiling — floored (#1665/#1840)")), "floored info note present");
+});
+
+test("resolveKnownOutputCeiling: runtime-info > launcher > declared > registry rank order (#1840)", () => {
+    _resetPluginStateForTest();
+    setRegistryForTest({ "stepfun/step-5-preview": { limit: { context: 1_000_000, output: 1_000_000 } } });
+    try {
+        const routes = { "https://api.stepfun.com": { models: { "stepfun/step-5-preview": { output: 4096 } } } };
+        const url = "https://api.stepfun.com/step_plan/v1/chat/completions";
+        const parsed = { model: "stepfun/step-5-preview" };
+        // Registry alone (no headers, no routes): last-resort source. The host is
+        // not a known models.dev provider, so the cross-provider suffix scan finds it.
+        assert.equal(resolveKnownOutputCeiling({}, parsed, {}, url), 1_000_000, "registry ceiling is the last resort");
+        // Operator-declared outranks the registry data (#924 rank).
+        assert.equal(resolveKnownOutputCeiling({}, parsed, routes, url), 4096, "declared output outranks registry data");
+        // Agent-scoped runtime-info outranks the declaration (#955 rank): what the
+        // client is configured to ask beats operator guesswork.
+        recordPluginRuntimeInfo({ agent: "dsh", model: "stepfun/step-5-preview", maxOutput: 256_000, source: "client-config", ts: Date.now() });
+        assert.equal(resolveKnownOutputCeiling({ "x-bili-plugin": "dsh" }, parsed, routes, url), 256_000, "runtime-info table outranks declared");
+        // Per-request header outranks the table (same gate as the window chain).
+        recordPluginRuntimeInfo({ agent: "dsh", model: "stepfun/step-5-preview", maxOutput: 8_000, source: "client-config", ts: Date.now() });
+        const hdrs = { "x-bili-plugin": "dsh", "x-bili-plugin-model": "step-5-preview", "x-bili-plugin-max-output": "131072" };
+        assert.equal(resolveKnownOutputCeiling(hdrs, parsed, routes, url), 131_072, "per-request header outranks the runtime table");
+        // Stale entry: a report for one model never sizes another.
+        assert.equal(resolveKnownOutputCeiling({ "x-bili-plugin": "dsh" }, { model: "other/model" }, routes, url), undefined, "stale entry never sizes another model");
+        // Unannounced max-output header (no x-bili-plugin) is inert by design.
+        assert.equal(resolveKnownOutputCeiling({ "x-bili-plugin-max-output": "999999" }, parsed, routes, url), 4096, "unannounced header ignored, falls through to declared");
+        // No model on the body → nothing to resolve.
+        assert.equal(resolveKnownOutputCeiling({}, {}, routes, url), undefined);
+    } finally {
+        setRegistryForTest({});
+        _resetPluginStateForTest();
+    }
 });
 
 const MODEL = "claude-sonnet-4-5";
@@ -140,35 +270,35 @@ test("sideRequestGuard: raw-body fit against declared ∩ armed window minus out
     const body = { model: MODEL, max_tokens: 100, stream: true, messages: [{ role: "user", content: txt }] };
     const est = estimateRawBodyTokens(body);
     assert.ok(est > 0);
-    assert.equal(sideRequestGuard(body, "anthropic", 0, undefined, 1).blocked, false, "unknown window → forward as before");
-    assert.equal(sideRequestGuard(body, "anthropic", est + 1, undefined, 1).blocked, false, "fits");
-    assert.equal(sideRequestGuard(body, "anthropic", Math.floor(est / 1.15), undefined, 1).blocked, true, "boundary: estimate == limit x 1.15 blocks");
-    assert.equal(sideRequestGuard(body, "anthropic", Math.floor(est / 1.10), undefined, 1).blocked, false, "within the 15% estimator tolerance → forward");
-    assert.equal(sideRequestGuard(body, "anthropic", 1_000_000, undefined, 1, Math.floor(est / 1.15)).blocked, true, "armed smaller (beyond tolerance) → blocks");
-    assert.equal(sideRequestGuard(body, "anthropic", est + 1, undefined, 1, 1_000_000).blocked, false, "armed larger than declared is ignored");
+    assert.equal(sideRequestGuard(body, "anthropic", 0, undefined, undefined, 1).blocked, false, "unknown window → forward as before");
+    assert.equal(sideRequestGuard(body, "anthropic", est + 1, undefined, undefined, 1).blocked, false, "fits");
+    assert.equal(sideRequestGuard(body, "anthropic", Math.floor(est / 1.15), undefined, undefined, 1).blocked, true, "boundary: estimate == limit x 1.15 blocks");
+    assert.equal(sideRequestGuard(body, "anthropic", Math.floor(est / 1.10), undefined, undefined, 1).blocked, false, "within the 15% estimator tolerance → forward");
+    assert.equal(sideRequestGuard(body, "anthropic", 1_000_000, undefined, undefined, 1, Math.floor(est / 1.15)).blocked, true, "armed smaller (beyond tolerance) → blocks");
+    assert.equal(sideRequestGuard(body, "anthropic", est + 1, undefined, undefined, 1, 1_000_000).blocked, false, "armed larger than declared is ignored");
     // OpenAI wire: the output budget counts against the window → headroom reserved.
     const oa = { model: MODEL, max_completion_tokens: 2_000, stream: true, messages: [{ role: "user", content: txt }] };
     const oaEst = estimateRawBodyTokens(oa);
     const oaLimit = Math.floor(oaEst / 1.15);
-    const g = sideRequestGuard(oa, "openai", oaLimit + 2_000, undefined, 1);
+    const g = sideRequestGuard(oa, "openai", oaLimit + 2_000, undefined, undefined, 1);
     assert.equal(g.limit, oaLimit, "limit reduced by max_completion_tokens");
     assert.equal(g.blocked, true, "boundary after reservation (with tolerance) blocks");
-    assert.equal(sideRequestGuard(oa, "openai", oaEst + 2_001, undefined, 1).blocked, false);
+    assert.equal(sideRequestGuard(oa, "openai", oaEst + 2_001, undefined, undefined, 1).blocked, false);
     // Image tokens count toward the estimate.
     const imgBody = { model: MODEL, max_tokens: 100, messages: [{ role: "user", content: [
         { type: "text", text: "z".repeat(4000) },
         { type: "image", source: { type: "base64", media_type: "image/png", data: "A".repeat(8000) } },
     ] }] };
     const imgEst = estimateRawBodyTokens(imgBody) + Math.ceil(8000 / 4);
-    assert.equal(sideRequestGuard(imgBody, "anthropic", Math.floor(imgEst / 1.15), undefined, 1).blocked, true, "image cost included at boundary");
+    assert.equal(sideRequestGuard(imgBody, "anthropic", Math.floor(imgEst / 1.15), undefined, undefined, 1).blocked, true, "image cost included at boundary");
     // CJK estimator bias: defaultCountTokens counts CJK per-char (~1.6x real),
     // so a CJK-heavy payload estimated at ~110% of the window must forward —
     // the upstream's real overflow 400 arms the evidence that blocks re-sends.
     const cjkBody = { model: MODEL, max_tokens: 100, stream: true, messages: [{ role: "user", content: "汉".repeat(4000) }] };
     const cjkEst = estimateRawBodyTokens(cjkBody);
     assert.ok(cjkEst >= 4000, "CJK counted per-char");
-    assert.equal(sideRequestGuard(cjkBody, "anthropic", Math.floor(cjkEst / 1.10), undefined, 1).blocked, false, "CJK over-estimation absorbed by tolerance");
-    assert.equal(sideRequestGuard(cjkBody, "anthropic", Math.floor(cjkEst / 1.20), undefined, 1).blocked, true, "genuinely oversized CJK still blocks");
+    assert.equal(sideRequestGuard(cjkBody, "anthropic", Math.floor(cjkEst / 1.10), undefined, undefined, 1).blocked, false, "CJK over-estimation absorbed by tolerance");
+    assert.equal(sideRequestGuard(cjkBody, "anthropic", Math.floor(cjkEst / 1.20), undefined, undefined, 1).blocked, true, "genuinely oversized CJK still blocks");
 });
 
 function okSse(inputTokens: number): string {
@@ -212,7 +342,7 @@ interface Rig {
 // sonnet-4-5 → 200k) unless the operator explicitly tunes
 // compress.modelContextLimit, which outranks everything (#344). The rig exposes
 // both so tests can pin the exact window the guard sees.
-async function startRig(opts?: { modelContextLimit?: number; compressModelContextLimit?: number; store?: SessionStore }): Promise<Rig> {
+async function startRig(opts?: { modelContextLimit?: number; compressModelContextLimit?: number; store?: SessionStore; routeModels?: Record<string, { context?: number; output?: number }> }): Promise<Rig> {
     const modelContextLimit = opts?.modelContextLimit ?? 200_000;
     const rig: Rig = { proxyPort: 0, upstreamPort: 0, proxy: null as unknown as http.Server, upstream: null as unknown as http.Server, sideScript: null, lastBody: null, upstreamHits: 0, sideErrorStatus: null, sideErrorBody: null };
     const upstream = http.createServer((req, res) => {
@@ -248,7 +378,7 @@ async function startRig(opts?: { modelContextLimit?: number; compressModelContex
         port: 0,
         host: "127.0.0.1",
         upstream: "http://127.0.0.1",
-        routes: { [`http://127.0.0.1:${upstreamPort}`]: {} },
+        routes: { [`http://127.0.0.1:${upstreamPort}`]: opts?.routeModels ? { models: opts.routeModels } : {} },
         modelContextLimit,
         kernelConfig: defaultConfig(modelContextLimit),
         compress: { injectTool: true, injectNudge: true, ...(opts?.compressModelContextLimit !== undefined ? { modelContextLimit: opts.compressModelContextLimit } : {}) },
@@ -272,6 +402,45 @@ async function closeRig(rig: Rig): Promise<void> {
     rig.upstream.close();
     await once(rig.upstream, "close");
 }
+
+test("e2e: opencode v2 title-gen is classified by intent, not token budget (#1699)", async () => {
+    const rig = await startRig();
+    try {
+        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/chat/completions`;
+        const baseHeaders: Record<string, string> = {
+            "content-type": "application/json",
+            "x-acp-session": SESSION,
+            "x-bili-plugin": "opencode",
+            "x-bili-plugin-conversation": SESSION,
+        };
+        // The exact opencode v2 title-gen shape that triggered the bug: one short
+        // instruction, NO max_tokens (options {} for kind==="title").
+        const titleBody = { model: MODEL, stream: true, messages: [{ role: "user", content: "Generate a short title for this conversation." }] };
+
+        // Repro (pre-fix behavior): WITHOUT x-bili-plugin-agent the budget heuristic
+        // sees no max_tokens → defaults to 8192 → NOT a side request → treated as a
+        // main turn, so the compress philosophy prompt + render tags get injected.
+        const rControl = await fetch(url, { method: "POST", headers: baseHeaders, body: JSON.stringify(titleBody) });
+        assert.equal(rControl.status, 200);
+        await rControl.text();
+        const controlFwd = rig.lastBody as { messages?: unknown } | null;
+        assert.ok(controlFwd, "control: upstream received the request");
+        assert.notDeepEqual(controlFwd?.messages, titleBody.messages, "control: without the agent header the title request is misclassified as a main turn and its messages are rewritten");
+        assert.ok(JSON.stringify(controlFwd ?? {}).length > JSON.stringify(titleBody).length + 1000, "control: the compress philosophy prompt inflated the forwarded payload (the reported ~11KiB injection)");
+
+        // Fix: WITH x-bili-plugin-agent=title the request is a side request by
+        // intent and is forwarded VERBATIM — its messages arrive byte-identical,
+        // nothing injected, kernel state untouched.
+        const rFix = await fetch(url, { method: "POST", headers: { ...baseHeaders, "x-bili-plugin-agent": "title" }, body: JSON.stringify(titleBody) });
+        assert.equal(rFix.status, 200);
+        await rFix.text();
+        const fixFwd = rig.lastBody as { messages?: unknown } | null;
+        assert.ok(fixFwd, "fix: upstream received the request");
+        assert.deepEqual(fixFwd?.messages, titleBody.messages, "fix: title-gen messages forwarded verbatim (no compress prompt/render tags injected)");
+    } finally {
+        await closeRig(rig);
+    }
+});
 
 test("e2e: side request response still gets render-tag stripping (#460 contract)", async () => {
     const LT = "\x3c";
@@ -395,6 +564,76 @@ test("e2e: starved tool-carrying main request re-enters pipeline at restored bud
         assert.equal(JSON.stringify(s3.state), stateBeforeSide, "side request left kernel state untouched");
         assert.equal(JSON.stringify(s3.stats), statsBeforeSide, "side request left stats untouched");
     } finally {
+        await closeRig(rig);
+    }
+});
+
+test("e2e: starved main request with a poisoned high-water is floored by the configured output limit (#1665)", async () => {
+    const rig = await startRig({ routeModels: { [MODEL]: { output: 4096 } } });
+    try {
+        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
+        const tools = [{ name: "compress", description: "compress", input_schema: { type: "object", properties: {} } }];
+
+        // First request bili sees for this session is already mid-death-spiral:
+        // the client's raw-history estimate decayed its budget to 234 (>200, so it
+        // seeds the water mark) — without the floor every later starved turn would
+        // restore 234 forever.
+        const r1 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 234, stream: true, tools, messages: mainConversation(8) }) });
+        assert.equal(r1.status, 200);
+        await r1.text();
+        assert.equal(getSession(SESSION).metadata.outputBudgetHighWater, 234, "poisoned water mark seeded from the decaying client");
+
+        // Fully starved now: the configured output limit must floor the restore.
+        const r2 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 1, stream: true, tools, messages: mainConversation(9) }) });
+        assert.equal(r2.status, 200);
+        await r2.text();
+        assert.equal(rig.lastBody && rig.lastBody.max_tokens, 4096, "configured output limit floors the poisoned restore (#1665)");
+    } finally {
+        await closeRig(rig);
+    }
+});
+
+test("e2e: poisoned high-water is floored by the known output ceiling when no route output is declared (#1840)", async () => {
+    // NO routeModels: nothing operator-declared on this route — exactly the
+    // stepfun scenario where the bili config stayed empty and only the registry
+    // (or the client itself) knows the model's output ceiling.
+    const rig = await startRig();
+    try {
+        setRegistryForTest({ [MODEL]: { limit: { output: 8192 } } });
+        const url = `http://127.0.0.1:${rig.proxyPort}/bili/http://127.0.0.1:${rig.upstreamPort}/v1/messages`;
+        const headers: Record<string, string> = { "content-type": "application/json", "x-acp-session": SESSION };
+        const tools = [{ name: "compress", description: "compress", input_schema: { type: "object", properties: {} } }];
+
+        // First request bili sees is already mid-death-spiral (budget decayed to
+        // 234) — seeds the poisoned water mark exactly like #1665.
+        const r1 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 234, stream: true, tools, messages: mainConversation(8) }) });
+        assert.equal(r1.status, 200);
+        await r1.text();
+        assert.equal(getSession(SESSION).metadata.outputBudgetHighWater, 234, "poisoned water mark seeded");
+
+        // Fully starved, nothing declared anywhere but the registry knows the
+        // ceiling → the registry floor must lift the restore out of the rattle.
+        const r2 = await fetch(url, { method: "POST", headers, body: JSON.stringify({ model: MODEL, max_tokens: 1, stream: true, tools, messages: mainConversation(9) }) });
+        assert.equal(r2.status, 200);
+        await r2.text();
+        assert.equal(rig.lastBody && rig.lastBody.max_tokens, 8192, "registry ceiling floors the poisoned restore when nothing is declared (#1840)");
+
+        // Born-starved session (fresh id, first request already <=200): the floor
+        // applies even though no high-water was ever learned.
+        const r3 = await fetch(url, { method: "POST", headers: { ...headers, "x-acp-session": SESSION + "-born" }, body: JSON.stringify({ model: MODEL, max_tokens: 1, stream: true, tools, messages: mainConversation(8) }) });
+        assert.equal(r3.status, 200);
+        await r3.text();
+        assert.equal(rig.lastBody && rig.lastBody.max_tokens, 8192, "never-seeded session restored to the known ceiling (#1840)");
+
+        // Per-request runtime-info header (what dsh stamps from its own profile)
+        // outranks the registry listing — the client's configured budget wins.
+        const r4 = await fetch(url, { method: "POST", headers: { ...headers, "x-bili-plugin": "dsh", "x-bili-plugin-model": MODEL, "x-bili-plugin-max-output": "16384" }, body: JSON.stringify({ model: MODEL, max_tokens: 1, stream: true, tools, messages: mainConversation(10) }) });
+        assert.equal(r4.status, 200);
+        await r4.text();
+        assert.equal(rig.lastBody && rig.lastBody.max_tokens, 16384, "client-reported max output outranks the registry listing (#1840)");
+    } finally {
+        setRegistryForTest({});
         await closeRig(rig);
     }
 });
@@ -617,6 +856,6 @@ test("e2e: the overflow arm survives a restart round-trip; usage after reload re
         await closeRig(rig);
         store.cancelAll();
         store2?.cancelAll();
-        rmSync(dir, { recursive: true, force: true });
+        rmrf(dir);
     }
 });

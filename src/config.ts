@@ -4,9 +4,11 @@ import { dirname } from "node:path";
 import { configFile } from "./paths.js";
 import { log as loggerLog } from "./logger.js";
 import { validateHttpProxy, type ProxyFallbackOptions } from "./upstream-proxy.js";
+import { maskUrlForLog } from "./log-mask.js";
 import { resolveOutputHeadroomCap } from "./util.js";
 
 import { parseCompatRoles } from "./compat-roles.js";
+import { parseCompatDropFields } from "./compat-drop.js";
 import type { ImageBillingMode } from "./image-tokens.js";
 import type { ReasoningGuardConfig } from "./reasoning-guard.js";
 import type { OutputSteeringConfig } from "./output-steering.js";
@@ -59,9 +61,12 @@ export type ProviderRoute = {
     /** Per-provider wire-compat overrides. `roles` maps message roles to the
      *  role name this upstream accepts (e.g. `"developer": "system"`) —
      *  applied at the forward boundary to the FINAL wire body, covering
-     *  client-sent roles and sigma's own injected prompt alike (#552). Wins
-     *  per key over the global `compat` block. */
-    compat?: { roles?: Record<string, string> };
+     *  client-sent roles and bili's own injected prompt alike (#552). Wins
+     *  per key over the global `compat` block. `dropFields` (#1757) is an
+     *  ADDITIVE union with the global list (a provider entry adds paths but
+     *  cannot retract global ones): dot-separated plain-object key paths of
+     *  client-sent fields this upstream's strict schema rejects. */
+    compat?: { roles?: Record<string, string>; dropFields?: string[] };
     /** Route-scoped passthrough (#661): same semantics as the global
      *  `passthrough` flag, but only for requests whose upstream URL matches
      *  this route — request body forwarded byte-for-byte (no kernel
@@ -69,12 +74,26 @@ export type ProviderRoute = {
      *  verbatim, no session state. For upstreams whose anti-cheat fingerprints
      *  the request body (e.g. ZCode 405/3012). */
     passthrough?: boolean;
-    /** Per-provider image billing mode (#767): "bytes" = ceil(base64/4)
-     *  (conservative, matches byte-counting relays); "pixels" = dimension-
-     *  based tile estimate (matches first-party pixel-tile upstreams);
-     *  "auto" (default) classifies known first-party pixel hosts. Wins over
-     *  the global `imageBilling`; env SIGMA_IMAGE_BILLING wins over both. */
+    /** Client-side routing exemption (#1622): this upstream never gets pointed
+     *  through bili at all. Store-rewriting native lanes (zcode today) skip
+     *  matching entries instead of wrapping them, so traffic flows
+     *  client→upstream untouched — unlike `passthrough`, which still
+     *  terminates at the proxy. Matched by the same longest-URL-prefix rule
+     *  as every other provider field, so it is generic across lanes (an MITM
+     *  lane could honor it by skipping interception for the domain). */
+    direct?: boolean;
+    /** Per-provider image billing mode (#767): "bytes" = ceil(base64/4), an
+     *  EXPLICIT opt-in for byte-counting relays only; "pixels" = dimension-
+     *  based tile estimate; "auto" (default) resolves to pixels for every host
+     *  (#1843: base64/4 as an implicit default was a ±1500% estimate that
+     *  poisoned every window gate). Wins over the global `imageBilling`; env
+     *  BILI_IMAGE_BILLING wins over both. */
     imageBilling?: ImageBillingMode;
+    /** #1843 L3: per-image token ceiling for this route — clamps each image's
+     *  estimated cost (both billing modes). Wins over the global
+     *  `imageTokenCap`; env BILI_IMAGE_TOKEN_CAP wins over both. Positive
+     *  integer; undefined/unset = no cap. */
+    imageTokenCap?: number;
 };
 export type ProviderRoutes = Record<string, ProviderRoute>; // key = upstream URL prefix (the /sigma/<this> string)
 
@@ -409,6 +428,21 @@ export type CompressSettings = {
      *  every report face. Merged sub-field-wise across the three levels like
      *  `absorb`. */
     priceProfile?: { w?: number; r?: number; q?: number };
+    /** [#1921] Fold-state reconciliation — how the proxy reacts when the
+     *  resent history no longer contains a folded message's content-hash id
+     *  (client restart/resume re-serialized the history, formatting churn on
+     *  tool results, duplicate-cluster shift after a deletion; see
+     *  src/fold-reconcile.ts). `"repair"` (default) matches each missing
+     *  covered id against an inbound candidate via its protocol-stable
+     *  toolCallId or its normalized identity (NFC + whitespace-collapsed text
+     *  equality at the same duplicate ordinal inside the aligned churn
+     *  region) and rewrites the fold blocks' covered ids, so the fold
+     *  survives byte churn. `"warn"` computes and logs the matches but never
+     *  rewrites. `"off"` disables the layer entirely (pre-#1921 behavior).
+     *  Env `BILI_FOLD_RECONCILE` (off|warn|repair) overrides every level.
+     *  Real edits never match (normalized text differs) and honestly
+     *  re-enter the wire unfolded, exactly as before. */
+    reconcile?: "off" | "warn" | "repair";
 };
 export type PromptCacheRouting = "auto" | "enabled" | "disabled";
 export type UpstreamProxyMode = "auto" | "manual" | "direct";
@@ -605,8 +639,11 @@ export type ProxyOptions = {
     /** Wire-compat role map (global level; per-provider `compat.roles` overlays
      *  it per key). `{"developer":"system"}` rewrites developer→system on the
      *  forwarded body for upstreams without the developer role (#552). Empty =
-     *  byte-for-byte transparent. */
-    compat: { roles: Record<string, string> };
+     *  byte-for-byte transparent. `dropFields` (#1757): dot-separated
+     *  plain-object key paths of client-fixed fields to strip before forward
+     *  for strict-schema gateways that 400 on unknown fields; per-provider
+     *  lists union onto it additively. Empty = byte-for-byte transparent. */
+    compat: { roles: Record<string, string>; dropFields?: string[] };
     /** #1455: how upstream stream failures are presented to the client on the
      *  anthropic/openai wire — "protocol" (default) = protocol-native error
      *  frames; "completion" = legacy synthesized-completion shape for hosts
@@ -614,8 +651,13 @@ export type ProxyOptions = {
      *  wins over the file's compat.streamErrorShape. */
     streamErrorShape: "protocol" | "completion";
     /** Global-level image billing mode (#767); per-provider route entries
-     *  override it, env SIGMA_IMAGE_BILLING overrides both. undefined = auto. */
+     *  override it, env BILI_IMAGE_BILLING overrides both. undefined = auto
+     *  (= pixels for every host since #1843). */
     imageBilling?: ImageBillingMode;
+    /** #1843 L3: global per-image token ceiling; per-provider route entries
+     *  override it, env BILI_IMAGE_TOKEN_CAP overrides both. Positive integer;
+     *  undefined/unset = no cap. */
+    imageTokenCap?: number;
     sessionHeader: string;
     log: boolean;
     debug: boolean;
@@ -631,6 +673,18 @@ export type ProxyOptions = {
     autoRestartOnUpdate: boolean;
     /** Dist-tag channel the auto-updater follows (default "latest"). */
     updateTag: string;
+    /** Critical-defect advisory watcher (#1481): runs INDEPENDENTLY of
+     *  autoUpdate and force-installs the owner-recommended version when the
+     *  local version falls inside an affected range. Default ON. */
+    advisoryCheck: boolean;
+    /** Tiered release-notes visibility (#1870): fetch + cache only — never
+     *  installs, never restarts. Default ON. */
+    releaseNotesCheck: boolean;
+    /** Override for the advisory document URL (env BILI_ADVISORY_URL wins). */
+    advisoryUrl?: string;
+    /** Override for the release-notes document URL (env
+     *  BILI_RELEASE_NOTES_URL wins) (#1870). */
+    releaseNotesUrl?: string;
     logFile?: string;
     /** MITM transparent-proxy mode. When enabled, an HTTP CONNECT handler is
      *  attached so clients that only know how to set HTTP_PROXY (ZCode with a
@@ -647,20 +701,48 @@ export type ProxyOptions = {
      *  (#970, default on). Opt out with env SIGMA_SUBAGENT_SPLIT=0 or
      *  `subagentSplit: false` in the config file (env wins). */
     subagentSplit?: boolean;
-    /** Opt-in fork block-adoption (#629, default off). Anonymous clients
+    /** Opt-in fork block-adoption (#629, default off). ANONYMOUS clients
      *  (prefix-affinity) that fork their history inherit the parent's
      *  fully-present compression blocks instead of restarting at zero.
-     *  Enable with `forkAdoption: true` or env SIGMA_FORK_ADOPTION=1. */
+     *  Identified resume-forks are NOT governed by this switch — they adopt
+     *  blocks with resumeInheritance (#1834, default on).
+     *  Enable with `forkAdoption: true` or env BILI_FORK_ADOPTION=1. */
     forkAdoption?: boolean;
-    /** Content detection of the sigma→sigma chain awareness: when an inbound
-     *  request carries ACP artifacts (render tags / ACP tool-call history)
-     *  but no x-sigma-hop header and no local compression state for the
-     *  session, record one advisory observation and process normally (#1086,
-     *  advisory-only since #1357) — never verbatim passthrough.
-     *  Default ON; escape valve via env SIGMA_CHAIN_CONTENT=0 or
-     *  `chainContentDetection: false` in the config file (env wins). The
-     *  x-sigma-hop signal is unaffected by this switch. */
+    /** Resume-fork inheritance (#1486, default ON). Identified clients that
+     *  resume a conversation under a NEW client-provided session id (Claude
+     *  Code --resume forks a fresh UUID while replaying the full transcript)
+     *  would otherwise start at zero compression state and renumber refs from
+     *  m00001, so the model's stale citations mis-hit renumbered messages.
+     *  The proxy detects the resume by byte-exact full-history match against
+     *  tracked chains and inherits the parent's ref assignments, its
+     *  fully-present compression blocks (#1834: adopted together with this
+     *  inheritance — losing them on resume meant the folded originals came
+     *  back on the wire), and the derivedFrom lineage. Disable with
+     *  `resumeInheritance: false` or env BILI_RESUME_INHERITANCE=0. */
+    resumeInheritance?: boolean;
+    /** Body-content detection of the bili→bili chain awareness: when an inbound
+     *  request carries ACP artifacts / a `<bili-chain …/>` checkpoint in the
+     *  BODY but no x-bili-hop header, record an advisory observation and/or apply
+     *  first-processor-wins passthrough (#1086/#1421). OFF by default (#1683
+     *  follow-up): scanning the body can false-positive on CCR/file-introduced
+     *  text and model-echoed tags, so by default ONLY the x-bili-hop header drives
+     *  chain recognition. Re-enable via env BILI_CHAIN_CONTENT=1 or
+     *  `chainContentDetection: true` in the config file (env wins). The
+     *  x-bili-hop signal is unaffected by this switch. */
     chainContentDetection?: boolean;
+    /** Egress emission of the model-visible `<bili-chain …/>` checkpoint
+     *  carrier (#1683): when set, every request THIS instance processes leaves
+     *  with a digest-bearing stamp so a downstream bili applies first-processor-
+     *  wins even if x-bili-hop was stripped in transit (#1421). The carrier
+     *  lands in a slot the terminal MODEL also reads (trailing user message on
+     *  openai/responses; trailing text part on anthropic/google), so models
+     *  treat it as phantom user input and burn tokens commenting on it — hence
+     *  OFF by default. Enable it for the narrow multi-bili + hop-header-
+     *  stripped-middlebox case via env BILI_CHAIN_STAMP=1 or
+     *  `chainEgressStamp: true` in the config file (env wins). Independent of
+     *  chainContentDetection (inbound body-detection is also default OFF); the
+     *  x-bili-hop passthrough is unaffected either way. */
+    chainEgressStamp?: boolean;
     /** #1085: freeze the client's head-system text into a per-session sticky
      *  anchor and append detected changes to the conversation as trailing
      *  notes, keeping the forwarded prefix byte-stable for the provider's
@@ -670,33 +752,145 @@ export type ProxyOptions = {
     stableSystemAnchor?: boolean;
 };
 
+/** The routing fields a provider entry can carry — exactly what
+ *  {@link parseRouteEntry} consumes per route. When they sit on a non-URL key
+ *  WITHOUT `bind` they are inert (longest-prefix matching never hits a name),
+ *  so loadRoutes warns loudly instead of letting them sit dead (#1469). */
+const NAMED_PROVIDER_ROUTING_FIELDS = ["compress", "models", "proxy", "passthrough", "compressProtocol", "compat", "imageBilling", "imageTokenCap"] as const;
+
+// Once-per-signature dedup so hot-reload / repeated launcher loads don't spam
+// the same named-provider warning (same pattern as the absorb warnings below).
+const seenNamedProviderWarnings = new Set<string>();
+
+function warnNamedProviderOnce(signature: string, message: string): void {
+    if (seenNamedProviderWarnings.has(signature)) return;
+    seenNamedProviderWarnings.add(signature);
+    loggerLog("warn", `[acp-config] ${message}`);
+}
+
+function warnInertRoutingFields(key: string, obj: Record<string, unknown> | null): void {
+    if (!obj) return;
+    const inert = NAMED_PROVIDER_ROUTING_FIELDS.filter((f) => f in obj && obj[f] !== undefined);
+    if (inert.length === 0) return;
+    warnNamedProviderOnce(
+        `inert:${key}:${inert.join(",")}`,
+        `providers."${key}" carries routing fields without "bind" [${inert.join(", ")}] — they are inert (add "bind": "<upstream base URL>" to apply them, or move them under the URL entry)`,
+    );
+}
+
+/** True when the providers-map key is itself a URL lane (http/https/mitm
+ *  scheme — mitm:// is the README-documented lookup key for MITM traffic).
+ *  Anything else is a NAMED key (provider id): routing-inert on its own,
+ *  meaningful via `compactionOptIn` (#1392) and/or `bind` (#1469). */
+function isUrlLikeKey(key: string): boolean {
+    return /^(https?|mitm):\/\//i.test(key.trim());
+}
+
+/** Normalize a `bind` value to its route-table key. Only http(s) base URLs
+ *  are valid targets — the bound lane must be reachable by the request path's
+ *  URL-prefix matching. Returns undefined for anything else. */
+function normalizeBindTarget(raw: string): string | undefined {
+    try {
+        const u = new URL(raw.trim());
+        if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+        return normalizeUrlKey(u.href);
+    } catch {
+        return undefined;
+    }
+}
+
+function cloneJsonValue(value: unknown): unknown {
+    if (!value || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map(cloneJsonValue);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = cloneJsonValue(v);
+    return out;
+}
+
+/** Deep-merge two route shapes where `winner` beats `filler` field-by-field:
+ *  when both sides hold a plain object under one key the merge recurses into
+ *  it; every other case (scalar vs scalar, array vs anything, object vs
+ *  scalar) takes the winner's value wholesale — arrays are never element-
+ *  merged. The result is a fresh copy; inputs are never shared or mutated.
+ *  Used by loadRoutes to fold a named provider's `bind` alias into its URL
+ *  lane (#1469). */
+function fillRouteGaps(winner: unknown, filler: unknown): unknown {
+    const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+    const fillerObj = isObj(filler) ? filler : null;
+    if (!fillerObj) return cloneJsonValue(winner);
+    const winnerObj = isObj(winner) ? winner : null;
+    if (!winnerObj) return cloneJsonValue(filler);
+    const out: Record<string, unknown> = {};
+    for (const [k, fv] of Object.entries(fillerObj)) out[k] = cloneJsonValue(fv);
+    for (const [k, wv] of Object.entries(winnerObj)) {
+        const fv = k in out ? out[k] : undefined;
+        out[k] = isObj(wv) && isObj(fv) ? fillRouteGaps(wv, fv) : cloneJsonValue(wv);
+    }
+    return out;
+}
+
 /** Re-read ONLY the routes from the current config sources, returning a fresh
  *  ProviderRoutes object. Used by the web UI's "Apply" (hot-reload) button so
  *  provider/route changes take effect without restarting sigma. Only routes are
  *  re-read — port/host/upstream can't change on a running server (the listen
  *  socket is already bound), so those stay as they were at startup. Mirrors the
  *  exact precedence of loadOptions: external ACP_PROVIDERS path > inline
- *  providers in the config file. */
+ *  providers in the config file.
+ *
+ *  Named provider entries (#1469): a non-URL key carrying `bind` is a pure
+ *  ALIAS for the bound URL lane — resolved HERE at config-load time only, so
+ *  the request path keeps its single URL-prefix routing and names never appear
+ *  on the wire. Precedence per field: an explicit URL-key entry beats any
+ *  alias field; between sources the external ACP_PROVIDERS file beats inline
+ *  config at every level (aliases fold in source order, first-set wins). A
+ *  name key WITHOUT `bind` stays routing-inert (agent-side identity such as
+ *  `compactionOptIn` only); if it nevertheless carries routing fields, a
+ *  startup warning names the key and the inert fields instead of failing
+ *  silently. */
 export function loadRoutes(env: NodeJS.ProcessEnv = process.env): ProviderRoutes {
     const fileConfig = loadConfigFile();
     const routes: ProviderRoutes = {};
+    const aliases: Array<{ target: string; route: ProviderRoute }> = [];
+    // urlWins=true for the external ACP_PROVIDERS source (its entries replace
+    // inline ones wholesale, as before); false for inline fileConfig.providers
+    // (fills gaps only). Named entries with a valid `bind` never register under
+    // their own key — they are collected and folded onto their target lane
+    // AFTER both sources' URL keys are in place, so an explicit URL key always
+    // outranks alias fields regardless of which file either came from.
+    const ingest = (key: string, value: unknown, urlWins: boolean): void => {
+        rejectLegacyRoute(key, value);
+        const route = parseRouteEntry(value);
+        if (!route) return;
+        const obj = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+        const urlLike = isUrlLikeKey(key);
+        if (obj && "bind" in obj) {
+            const bind = obj.bind;
+            if (typeof bind !== "string") {
+                warnNamedProviderOnce(`bad-bind:${key}`, `providers."${key}".bind must be a string http(s) base URL — the entry stays routing-inert`);
+            } else if (urlLike) {
+                warnNamedProviderOnce(`bind-on-url:${key}`, `providers."${key}" has "bind" — ignored: URL keys are already lanes (remove "bind", or rename the key to make it a named entry)`);
+            } else if (bind.trim().length > 0) {
+                const target = normalizeBindTarget(bind);
+                if (target) { aliases.push({ target, route }); return; }
+                warnNamedProviderOnce(`bad-bind:${key}`, `providers."${key}".bind is not a valid http(s) base URL ("${bind}") — the entry stays routing-inert`);
+            }
+        }
+        if (!urlLike) warnInertRoutingFields(key, obj);
+        const normKey = normalizeUrlKey(key);
+        if (urlWins || !routes[normKey]) routes[normKey] = route;
+    };
     const routesPath = env.ACP_PROVIDERS ?? fileConfig.providersPath ?? "";
     if (routesPath) {
         const parsed = safeReadJson(routesPath);
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-                rejectLegacyRoute(k, v);
-                const route = parseRouteEntry(v);
-                if (route) routes[normalizeUrlKey(k)] = route;
-            }
+            for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) ingest(k, v, true);
         }
     }
     if (fileConfig.providers) {
-        for (const [k, v] of Object.entries(fileConfig.providers)) {
-            rejectLegacyRoute(k, v);
-            const route = parseRouteEntry(v);
-            if (route && !routes[normalizeUrlKey(k)]) routes[normalizeUrlKey(k)] = route;
-        }
+        for (const [k, v] of Object.entries(fileConfig.providers)) ingest(k, v, false);
+    }
+    for (const { target, route } of aliases) {
+        routes[target] = fillRouteGaps(routes[target], route) as ProviderRoute;
     }
     return routes;
 }
@@ -914,9 +1108,10 @@ export function loadOptions(env: NodeJS.ProcessEnv = process.env): ProxyOptions 
         promptCache: {
             routing: parsePromptCacheRouting(env.ACP_PROMPT_CACHE_ROUTING ?? fileConfig.promptCache?.routing),
         },
-        compat: { roles: parseCompatRoles(fileConfig.compat?.roles) ?? {} },
-        streamErrorShape: parseStreamErrorShape(env.SIGMA_STREAM_ERROR_SHAPE ?? fileConfig.compat?.streamErrorShape),
+        compat: { roles: parseCompatRoles(fileConfig.compat?.roles) ?? {}, dropFields: parseCompatDropFields(fileConfig.compat?.dropFields) ?? [] },
+        streamErrorShape: parseStreamErrorShape(env.BILI_STREAM_ERROR_SHAPE ?? fileConfig.compat?.streamErrorShape),
         imageBilling: parseImageBilling(fileConfig.imageBilling),
+        imageTokenCap: parseImageTokenCap(fileConfig.imageTokenCap),
         sessionHeader: env.ACP_SESSION_HEADER ?? fileConfig.sessionHeader ?? "x-acp-session",
         log: env.ACP_LOG !== "0" && fileConfig.log !== false,
         debug: (env.ACP_DEBUG ?? (fileConfig.debug ? "1" : "0")) === "1",
@@ -928,6 +1123,14 @@ export function loadOptions(env: NodeJS.ProcessEnv = process.env): ProxyOptions 
         // liveness, so it requires an explicit opt-in (#811).
         autoRestartOnUpdate: (env.ACP_AUTO_RESTART_ON_UPDATE ?? (fileConfig.autoRestartOnUpdate === true ? "1" : "0")) !== "0",
         updateTag: (env.ACP_UPDATE_TAG ?? fileConfig.updateTag ?? "latest").trim() || "latest",
+        // Default ON: unlike autoRestartOnUpdate, this never touches process
+        // liveness — it only installs files and warns (#1481).
+        advisoryCheck: (env.BILI_ADVISORY_CHECK ?? (fileConfig.advisoryCheck === false ? "0" : "1")) !== "0",
+        // Default ON: same reasoning as advisoryCheck — pure visibility (fetch
+        // + cache; never installs, never restarts) (#1870).
+        releaseNotesCheck: (env.BILI_RELEASE_NOTES_CHECK ?? (fileConfig.releaseNotesCheck === false ? "0" : "1")) !== "0",
+        advisoryUrl: env.BILI_ADVISORY_URL || fileConfig.advisoryUrl || undefined,
+        releaseNotesUrl: env.BILI_RELEASE_NOTES_URL || fileConfig.releaseNotesUrl || undefined,
         logFile: env.ACP_LOG_FILE !== undefined ? (env.ACP_LOG_FILE || undefined) : fileConfig.logFile,
         mitm: {
             enabled: (env.SIGMA_MITM ?? (fileConfig.mitm?.enabled === false ? "0" : "1")) !== "0",
@@ -936,11 +1139,13 @@ export function loadOptions(env: NodeJS.ProcessEnv = process.env): ProxyOptions 
                 ...splitCsv(env.SIGMA_MITM_DOMAINS),
             ]),
         },
-        maskHosts: (env.SIGMA_LOG_MASK_HOSTS ?? (fileConfig.maskHosts === false ? "0" : "1")) !== "0",
-        subagentSplit: (env.SIGMA_SUBAGENT_SPLIT ?? (fileConfig.subagentSplit === false ? "0" : "1")) !== "0",
-        forkAdoption: (env.SIGMA_FORK_ADOPTION ?? (fileConfig.forkAdoption === true ? "1" : "0")) !== "0",
-        chainContentDetection: (env.SIGMA_CHAIN_CONTENT ?? (fileConfig.chainContentDetection === false ? "0" : "1")) !== "0",
-        stableSystemAnchor: (env.SIGMA_STABLE_SYSTEM_ANCHOR ?? (fileConfig.stableSystemAnchor === true ? "1" : "0")) !== "0",
+        maskHosts: (env.BILI_LOG_MASK_HOSTS ?? (fileConfig.maskHosts === false ? "0" : "1")) !== "0",
+        subagentSplit: (env.BILI_SUBAGENT_SPLIT ?? (fileConfig.subagentSplit === false ? "0" : "1")) !== "0",
+        forkAdoption: (env.BILI_FORK_ADOPTION ?? (fileConfig.forkAdoption === true ? "1" : "0")) !== "0",
+        resumeInheritance: (env.BILI_RESUME_INHERITANCE ?? (fileConfig.resumeInheritance === false ? "0" : "1")) !== "0",
+        chainContentDetection: (env.BILI_CHAIN_CONTENT ?? (fileConfig.chainContentDetection === true ? "1" : "0")) !== "0",
+        chainEgressStamp: (env.BILI_CHAIN_STAMP ?? (fileConfig.chainEgressStamp === true ? "1" : "0")) !== "0",
+        stableSystemAnchor: (env.BILI_STABLE_SYSTEM_ANCHOR ?? (fileConfig.stableSystemAnchor === true ? "1" : "0")) !== "0",
     };
 }
 
@@ -953,6 +1158,31 @@ export function resolveMitmDomains(env: NodeJS.ProcessEnv): string[] {
         ...(loadConfigFile().mitm?.domains ?? []),
         ...splitCsv(env.SIGMA_MITM_DOMAINS),
     ]);
+}
+
+/** #1392: opted-in non-http(s) baseUrl providers — providers-table entries
+ *  (key = provider id) with `compactionOptIn: true` ∪
+ *  BILI_NON_HTTP_PROVIDERS, deduped. Exported so launchers can mirror the list
+ *  to the client env (BILI_NON_HTTP_PROVIDERS) exactly like resolveMitmDomains. */
+export function resolveNonHttpProviders(env: NodeJS.ProcessEnv = process.env): string[] {
+    const out = new Set<string>();
+    // #1392: the opt-in lives in the existing providers table — the KEY is the
+    // provider id (a non-URL key is inert for routing: longest-prefix matching
+    // never hits it), and the entry's compactionOptIn===true opts it in. Only
+    // meaningful for providers whose baseUrl is not http(s); widening the
+    // candidate set is all it does — carriage evidence still decides.
+    const providers = loadConfigFile().providers;
+    if (providers && typeof providers === "object") {
+        for (const [id, v] of Object.entries(providers)) {
+            if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+            const key = id.trim();
+            if (key.length > 0 && (v as Record<string, unknown>).compactionOptIn === true) out.add(key);
+        }
+    }
+    for (const id of splitCsv(env.BILI_NON_HTTP_PROVIDERS)) {
+        out.add(id);
+    }
+    return [...out];
 }
 
 /** Shape of the optional JSON config file. All fields optional — the file is a
@@ -979,6 +1209,17 @@ type FileConfig = {
     autoRestartOnUpdate?: boolean;
     /** Dist-tag channel the auto-updater follows (default "latest"). */
     updateTag?: string;
+    /** Set `false` to disable the critical-defect advisory watcher (#1481);
+     *  env BILI_ADVISORY_CHECK wins when set. */
+    advisoryCheck?: boolean;
+    /** Set `false` to disable the tiered release-notes visibility watcher
+     *  (#1870); env BILI_RELEASE_NOTES_CHECK wins when set. */
+    releaseNotesCheck?: boolean;
+    /** Override for the advisory document URL (env BILI_ADVISORY_URL wins). */
+    advisoryUrl?: string;
+    /** Override for the release-notes document URL (env
+     *  BILI_RELEASE_NOTES_URL wins) (#1870). */
+    releaseNotesUrl?: string;
     upstreamProxy?: string;
     upstreamProxyMode?: string;
     logFile?: string;
@@ -1002,30 +1243,45 @@ type FileConfig = {
      *  zero compression state. Default false; env SIGMA_FORK_ADOPTION=1/0
      *  wins over the file. */
     forkAdoption?: boolean;
-    /** Set `false` to disable the ACP-artifact content detection of the
-     *  sigma→sigma chain awareness (#1086, advisory-only since #1357);
-     *  x-sigma-hop stays active either way.
-     *  Env SIGMA_CHAIN_CONTENT=0 wins over the file. */
+    /** Set `false` to disable resume-fork inheritance (#1486, default ON;
+     *  env BILI_RESUME_INHERITANCE=0 wins over the file). */
+    resumeInheritance?: boolean;
+    /** Set `true` to enable body-content detection of the bili→bili chain
+     *  awareness (#1086/#1421); OFF by default — by default only x-bili-hop drives
+     *  chain recognition, since body scanning can false-positive on CCR/file-
+     *  introduced text and model-echoed tags (#1683). Env BILI_CHAIN_CONTENT=1
+     *  wins over the file. */
     chainContentDetection?: boolean;
+    /** Set `true` to enable egress emission of the model-visible
+     *  `<bili-chain …/>` checkpoint carrier (#1683, default OFF; env
+     *  BILI_CHAIN_STAMP=1 wins over the file). Independent of
+     *  chainContentDetection. */
+    chainEgressStamp?: boolean;
     /** Set `true` to enable the sticky head-system anchor (#1085, default
      *  OFF; env SIGMA_STABLE_SYSTEM_ANCHOR wins). */
     stableSystemAnchor?: boolean;
     /** Global wire-compat block. `roles` maps message roles to the role name
      *  upstreams accept (e.g. `{"developer":"system"}`) — applied to the
      *  final forwarded body for openai/responses requests (#552).
+     *  `dropFields` (#1757): dot-separated plain-object key paths of
+     *  client-fixed fields stripped from every forwarded body (strict-schema
+     *  gateways that 400 on unknown fields); per-provider lists union onto it.
      *  `streamErrorShape` (#1455): "protocol" (default) presents upstream
      *  stream failures as protocol-native error frames; "completion" restores
      *  the legacy shape that delivered the failure text inside a synthesized
-     *  successful completion. Env SIGMA_STREAM_ERROR_SHAPE wins over the file. */
-    compat?: { roles?: Record<string, string>; streamErrorShape?: string };
+     *  successful completion. Env BILI_STREAM_ERROR_SHAPE wins over the file. */
+    compat?: { roles?: Record<string, string>; streamErrorShape?: string; dropFields?: string[] };
     /** Global image billing mode (#767): "auto" | "pixels" | "bytes".
      *  Per-provider `imageBilling` overrides it; env SIGMA_IMAGE_BILLING wins
      *  over both. See ProviderRoute.imageBilling. */
     imageBilling?: string;
-    /** Claude-native install tuning (#964): the loopback port the managed
-     *  settings block pins ANTHROPIC_BASE_URL at and the SessionStart hook
-     *  brings a proxy up on. Default CLAUDE_NATIVE_DEFAULT_PORT; env
-     *  SIGMA_CLAUDE_NATIVE_PORT wins over both. */
+    /** #1843 L3: global per-image token ceiling (positive integer); per-route
+     *  `imageTokenCap` overrides it, env BILI_IMAGE_TOKEN_CAP wins over both. */
+    imageTokenCap?: number;
+    /** Claude-native port override (#964/#1660): an explicit port for the
+     *  claude lane — strict-port semantics (EADDRINUSE fails loud). Undefined
+     *  (the default) means the lane's sticky zone port (ZONE_PORT_BASE base).
+     *  Env BILI_CLAUDE_NATIVE_PORT wins over the file. */
     claude?: { nativePort?: number };
     /** Native-hook attach policy (#1335): set `true` to let native hooks
      *  attach to lifecycle-less listeners (a manually started `sigma start`
@@ -1061,28 +1317,115 @@ function dedupeDomains(list: string[]): string[] {
     return out;
 }
 
+// #1815: a top-level key the loader does not consume must not vanish without
+// feedback — a misplaced key (e.g. "promptPack" at root instead of under
+// "compress") was dropped silently, violating the never-silently-drop-user-
+// config rule (§7.3). KNOWN_TOP_LEVEL_KEYS is the runtime mirror of FileConfig
+// above; keep it in sync when adding fields there.
+const KNOWN_TOP_LEVEL_KEYS = new Set([
+    "port", "host", "upstream", "providersPath", "providers", "proxy",
+    "modelContextLimit", "sessionHeader", "log", "debug", "dumpSse",
+    "passthrough", "autoUpdate", "autoRestartOnUpdate", "updateTag",
+    "advisoryCheck", "advisoryUrl", "upstreamProxy", "upstreamProxyMode",
+    "logFile", "compress", "promptCache", "mitm", "maskHosts",
+    "subagentSplit", "forkAdoption", "resumeInheritance",
+    "chainContentDetection", "chainEgressStamp", "stableSystemAnchor",
+    "compat", "imageBilling", "claude", "native",
+]);
+
+// Every field parseCompressSettings accepts — hint source for misplaced keys:
+// an unknown top-level key that appears here almost certainly belongs one
+// level down under "compress". Keep in sync with parseCompressSettings.
+const COMPRESS_SETTING_FIELDS = new Set([
+    "modelContextLimit", "maxContextLimit", "emergencyThresholdPercent",
+    "nudgeGrowthTokens", "preserveRecentMessages", "preserveRecentTokens",
+    "minCompressRange", "minCompressRangeChars", "stripImagesKeepRecent",
+    "outputHeadroomMaxPct", "tiers", "protectedLatestTools", "protectedTools",
+    "neverPreserveRecentTools", "preserveRecentTools", "stripImages",
+    "visibilityMarkers", "rules", "injectTool", "injectNudge",
+    "acknowledgePromptsRisk", "absorb", "ccr", "search", "imageCompression",
+    "prompts", "promptPack", "reasoningGuard", "outputSteering", "priceProfile",
+    "reconcile",
+]);
+
+// Deduped per unique key set per process (same pattern as
+// seenAbsorbDivergenceWarnings): loadConfigFile() runs on every config read,
+// so without this one startup would log the same warning several times.
+const seenUnknownTopLevelKeySignatures = new Set<string>();
+
+export function warnUnknownTopLevelKeys(obj: Record<string, unknown>): void {
+    const unknown = Object.keys(obj).filter((key) => !KNOWN_TOP_LEVEL_KEYS.has(key));
+    if (unknown.length === 0) return;
+    const signature = [...unknown].sort().join("\u0000");
+    if (seenUnknownTopLevelKeySignatures.has(signature)) return;
+    seenUnknownTopLevelKeySignatures.add(signature);
+    const misplaced = unknown.filter((key) => COMPRESS_SETTING_FIELDS.has(key));
+    const hint = misplaced.length > 0
+        ? ` — ${misplaced.map((k) => `"${k}" belongs under "compress" (did you mean "compress.${k}"?)`).join("; ")}`
+        : "";
+    loggerLog("warn", `[acp-config] ignoring unknown top-level config key(s): ${unknown.join(", ")}${hint}`);
+}
+
 function loadConfigFile(): FileConfig {
     const parsed = safeReadJson(configFile());
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        warnUnknownTopLevelKeys(parsed as Record<string, unknown>);
         return parsed as FileConfig;
     }
     return {};
 }
 
-/** Default loopback port for the claude native install (#964): the value the
- *  installer bakes into ~/.claude/settings.json's env.ANTHROPIC_BASE_URL and
- *  the SessionStart hook brings a proxy up on. Documented as reserved. */
-export const CLAUDE_NATIVE_DEFAULT_PORT = 48787;
+/** #1660: the self-managed zone port base. Every launcher-spawned lane
+ *  binds here by default instead of an OS-assigned ephemeral port: a stable
+ *  origin survives instance death, and the proxy child's EADDRINUSE ladder
+ *  (+1 per attempt) resolves collisions deterministically with a sticky
+ *  record (instance.ts port-zone.json). 18787 sits below the Linux ephemeral
+ *  range (32768–60999) so the ladder never lands on OS-assigned ports; 8787
+ *  stays reserved as the USER zone (manual `bili start`). Env BILI_ZONE_PORT
+ *  overrides the base for the whole zone. */
+export const ZONE_PORT_BASE = 18787;
 
-/** The claude-native loopback port, one resolution for installer, hook, and
- *  launcher: env SIGMA_CLAUDE_NATIVE_PORT > config `claude.nativePort` >
- *  CLAUDE_NATIVE_DEFAULT_PORT. */
-export function resolveClaudeNativePort(env: NodeJS.ProcessEnv = process.env): number {
-    const fromEnv = Number.parseInt(env.SIGMA_CLAUDE_NATIVE_PORT ?? "", 10);
+export function resolveZonePortBase(env: NodeJS.ProcessEnv = process.env): number {
+    const fromEnv = Number.parseInt(env.BILI_ZONE_PORT ?? "", 10);
+    if (Number.isInteger(fromEnv) && fromEnv > 0 && fromEnv < 65536) return fromEnv;
+    return ZONE_PORT_BASE;
+}
+
+/** #1660: an explicit user override of the claude lane's port: env
+ *  BILI_CLAUDE_NATIVE_PORT > config `claude.nativePort` > undefined. A
+ *  DEFINED value means a strict-port launch (an EADDRINUSE at bind fails
+ *  loud, #964); undefined means the lane's sticky zone port
+ *  (instance.ts lanePreferredPort) with the +1 ladder absorbing collisions.
+ *  The installer no longer persists this — zone drift is repaired by the
+ *  SessionStart hook rewriting the managed block to the live origin every
+ *  session. */
+export function resolveClaudeNativePort(env: NodeJS.ProcessEnv = process.env): number | undefined {
+    const fromEnv = Number.parseInt(env.BILI_CLAUDE_NATIVE_PORT ?? "", 10);
     if (Number.isInteger(fromEnv) && fromEnv > 0 && fromEnv < 65536) return fromEnv;
     const fromFile = loadConfigFile().claude?.nativePort;
     if (typeof fromFile === "number" && Number.isInteger(fromFile) && fromFile > 0 && fromFile < 65536) return fromFile;
-    return CLAUDE_NATIVE_DEFAULT_PORT;
+    return undefined;
+}
+
+/** #1660: explicit override of the zcode lane's port (env only — the store
+ *  is re-derived at every bootstrap, nothing is baked at install time).
+ *  Defined means a strict-port launch; undefined means the lane's sticky
+ *  zone port. Legacy wrappers pinned to the old 48789 default are migrated
+ *  by the bootstrap's origin-drift repair (routeZcodeConfig rewrites the
+ *  store to the live origin). */
+export function resolveZcodeNativePort(env: NodeJS.ProcessEnv = process.env): number | undefined {
+    const fromEnv = Number.parseInt(env.BILI_ZCODE_PORT ?? "", 10);
+    if (Number.isInteger(fromEnv) && fromEnv > 0 && fromEnv < 65536) return fromEnv;
+    return undefined;
+}
+
+/** Client-side routing exemptions (#1622): providers whose route declares
+ *  `direct: true` are never pointed through bili by store-rewriting native
+ *  lanes. Returns the normalized URL keys (the same key space findRoute
+ *  matches against). */
+export function zcodeDirectPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {
+    const routes = loadRoutes(env);
+    return Object.entries(routes).filter(([, r]) => r.direct === true).map(([k]) => k);
 }
 
 /** #1335: the native-hook attach-gate escape hatch. True when the user
@@ -1097,76 +1440,6 @@ export function resolveNativeAttachExternal(env: NodeJS.ProcessEnv = process.env
     return loadConfigFile().native?.attachExternal === true;
 }
 
-/** Persist the claude-native port the installer baked into settings.json
- *  (#964). Without this, an install driven by SIGMA_CLAUDE_NATIVE_PORT writes
- *  that port into ~/.claude/settings.json but the SessionStart hook (which
- *  does NOT inherit claude's settings.env) later resolves the default —
- *  hooking the wrong port while claude dials the baked one. `claude plugin
- *  install` calls this; `claude plugin remove` calls clearClaudeNativePort. */
-/** #964: read-modify-write safety for user config files — refuse to write
- *  over a file that exists but is NOT valid JSON: loadConfigFile() degrades
- *  malformed input to {}, so an unguarded RMW would replace the user's
- *  corrupt-but-repairable config with a minimal one (silent clobber).
- *  Absent / empty / valid files are all safe to write. */
-function configFileRmwSafe(): boolean {
-    const p = configFile();
-    let raw: string;
-    try {
-        raw = readFileSync(p, "utf8");
-    } catch {
-        return true;
-    }
-    if (!raw.trim()) return true;
-    try {
-        JSON.parse(raw.replace(/^\uFEFF/, ""));
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-export function saveClaudeNativePort(port: number): void {
-    const p = configFile();
-    if (!configFileRmwSafe()) {
-        loggerLog("warn", `[acp-config] refusing to persist claude.nativePort=${port} — ${p} is not valid JSON; repair it first`);
-        return;
-    }
-    const cur = loadConfigFile() as { claude?: { nativePort?: number } } & Record<string, unknown>;
-    const next: { claude?: { nativePort?: number } } & Record<string, unknown> = { ...cur };
-    next.claude = { ...(cur.claude ?? {}), nativePort: port };
-    try {
-        mkdirSync(dirname(p), { recursive: true });
-        writeFileSync(p, JSON.stringify(next, null, 2) + "\n", "utf8");
-    } catch (err) {
-        loggerLog("warn", `[acp-config] could not persist claude.nativePort=${port} at ${p} — ${err instanceof Error ? err.message : String(err)}`);
-    }
-}
-
-/** Drop the persisted claude-native port (plugin remove) so a fresh default
- *  install resolves the default port again. Never throws. */
-export function clearClaudeNativePort(): void {
-    const p = configFile();
-    if (!configFileRmwSafe()) {
-        loggerLog("warn", `[acp-config] refusing to clear claude.nativePort — ${p} is not valid JSON; repair it first`);
-        return;
-    }
-    const cur = loadConfigFile() as { claude?: { nativePort?: number } } & Record<string, unknown>;
-    if (cur.claude?.nativePort === undefined) return;
-    const next: Record<string, unknown> = { ...cur };
-    if (Object.keys(cur.claude).length > 1) {
-        const claude = { ...cur.claude } as Record<string, unknown>;
-        delete claude.nativePort;
-        next.claude = claude;
-    } else {
-        delete next.claude;
-    }
-    try {
-        mkdirSync(dirname(p), { recursive: true });
-        writeFileSync(p, JSON.stringify(next, null, 2) + "\n", "utf8");
-    } catch (err) {
-        loggerLog("warn", `[acp-config] could not clear claude.nativePort at ${p} — ${err instanceof Error ? err.message : String(err)}`);
-    }
-}
 
 /** Template written on first run so the user has a file to edit instead
  *  of having to invent the path/schema. Left empty on purpose: the proxy
@@ -1207,17 +1480,24 @@ export function parseRouteEntry(v: unknown): ProviderRoute | undefined {
     // is the KEY in the providers map (identical to the /sigma/<url> string),
     // so it is NOT repeated inside the value.
     if (v && typeof v === "object" && !Array.isArray(v)) {
-        const obj = v as { models?: Record<string, ModelEntry>; context?: number; proxy?: string; compressProtocol?: string; compress?: CompressSettings; compat?: { roles?: unknown }; passthrough?: boolean; imageBilling?: unknown };
+        const obj = v as { models?: Record<string, ModelEntry>; proxy?: string; compressProtocol?: string; compress?: CompressSettings; compat?: { roles?: unknown; dropFields?: unknown }; passthrough?: boolean; direct?: boolean; imageBilling?: unknown; imageTokenCap?: unknown };
         const route: ProviderRoute = { models: obj.models };
         if (typeof obj.context === "number" && Number.isFinite(obj.context) && obj.context > 0) route.context = Math.floor(obj.context);
         if (typeof obj.proxy === "string") route.proxy = obj.proxy;
         if (obj.compressProtocol === "marker" || obj.compressProtocol === "tools") route.compressProtocol = obj.compressProtocol;
         if (obj.compress) route.compress = obj.compress;
+        const compat: ProviderRoute["compat"] = {};
         const compatRoles = parseCompatRoles(obj.compat?.roles);
-        if (compatRoles) route.compat = { roles: compatRoles };
+        if (compatRoles) compat.roles = compatRoles;
+        const compatDrops = parseCompatDropFields(obj.compat?.dropFields);
+        if (compatDrops) compat.dropFields = compatDrops;
+        if (Object.keys(compat).length > 0) route.compat = compat;
         if (typeof obj.passthrough === "boolean") route.passthrough = obj.passthrough;
+        if (typeof obj.direct === "boolean") route.direct = obj.direct;
         const imageBilling = parseImageBilling(obj.imageBilling);
         if (imageBilling) route.imageBilling = imageBilling;
+        const imageTokenCap = parseImageTokenCap(obj.imageTokenCap);
+        if (imageTokenCap !== undefined) route.imageTokenCap = imageTokenCap;
         return route;
     }
     // A bare value (e.g. null) means "this upstream exists, no overrides".
@@ -1227,6 +1507,12 @@ export function parseRouteEntry(v: unknown): ProviderRoute | undefined {
 
 export function parseImageBilling(value: unknown): ImageBillingMode | undefined {
     return value === "auto" || value === "pixels" || value === "bytes" ? value : undefined;
+}
+
+/** #1843 L3: per-image token ceiling — positive integer only (lenient like
+ *  parseImageBilling: anything else is dropped, never a throw). */
+export function parseImageTokenCap(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 export function parseStreamErrorShape(value: unknown): "protocol" | "completion" {
@@ -1499,10 +1785,11 @@ export function parseCompressSettings(v: unknown): (CompressSettings & { injectT
     return out;
 }
 
-function rejectLegacyRoute(key: string, value: unknown): void {
+export function rejectLegacyRoute(key: string, value: unknown): void {
     if (typeof value !== "string") return;
+    const masked = maskUrlForLog(value);
     throw new Error(
-        `[acp-config] legacy provider route \"${key}\": \"${value}\" is no longer valid; ` +
-        `use the upstream URL as the key, for example { \"${value.replace(/\/+$/, "")}\": {} }`,
+        `[acp-config] legacy provider route \"${key}\": \"${masked}\" is no longer valid; ` +
+        `use the upstream URL as the key, for example { \"${masked.replace(/\/+$/, "")}\": {} }`,
     );
 }

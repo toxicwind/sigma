@@ -17,14 +17,19 @@ import {
     claudeNativeBaseUrl,
     claudeNativeInstalled,
     claudeSettingsFile,
-    isSigmaClaudeBaseUrl,
+    claudeNativeBaseUrlForOrigin,
+    unwrapBiliBaseUrl,
+    isBiliClaudeBaseUrl,
     pluginInstall,
     pluginRemove,
+    repinClaudeManagedBaseUrl,
     resolveClaudeCli,
     stripClaudeManagedBlock,
 } from "../src/plugin-install.ts";
-import { CLAUDE_NATIVE_DEFAULT_PORT, clearClaudeNativePort, resolveClaudeNativePort, resolveNativeAttachExternal, saveClaudeNativePort } from "../src/config.ts";
+import { ensureRootCA } from "../src/ca.ts";
+import { ZONE_PORT_BASE, resolveClaudeNativePort, resolveNativeAttachExternal } from "../src/config.ts";
 import { chooseWatchdogParentPid, isClaudeHostArgv, isTransientShArgv, planClaudeNativeBootstrap, readPsProcInfo, readWinProcInfo, resolveClaudeHostPid, splitWindowsCommandLine } from "../src/claude-native-bootstrap.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 // #1248: the live tests below spawn real proxies/processes and observe real
 // /proc, ps output and network ports. On loaded shared machines (multi-agent
@@ -145,11 +150,14 @@ test("claudeNativeBaseUrl: default wraps api.anthropic.com; SIGMA_CLAUDE_UPSTREA
     const prev = process.env.SIGMA_CLAUDE_UPSTREAM;
     const prevPort = process.env.SIGMA_CLAUDE_NATIVE_PORT;
     try {
-        delete process.env.SIGMA_CLAUDE_UPSTREAM;
-        delete process.env.SIGMA_CLAUDE_NATIVE_PORT;
-        assert.equal(claudeNativeBaseUrl().includes(`/sigma/https://api.anthropic.com`), true);
-        process.env.SIGMA_CLAUDE_UPSTREAM = "https://relay.example/";
-        assert.equal(claudeNativeBaseUrl(), `http://127.0.0.1:${CLAUDE_NATIVE_DEFAULT_PORT}/sigma/https://relay.example`);
+        delete process.env.BILI_CLAUDE_UPSTREAM;
+        delete process.env.BILI_CLAUDE_NATIVE_PORT;
+        // #1660: no explicit override → the claude lane's zone preference
+        // (sticky record > 18787 base) — readZonePort has no record in tests.
+        assert.equal(claudeNativeBaseUrl().includes(`/bili/https://api.anthropic.com`), true);
+        assert.equal(claudeNativeBaseUrl(), `http://127.0.0.1:${ZONE_PORT_BASE}/bili/https://api.anthropic.com`);
+        process.env.BILI_CLAUDE_UPSTREAM = "https://relay.example/";
+        assert.equal(claudeNativeBaseUrl(), `http://127.0.0.1:${ZONE_PORT_BASE}/bili/https://relay.example`);
     } finally {
         if (prev === undefined) delete process.env.SIGMA_CLAUDE_UPSTREAM;
         else process.env.SIGMA_CLAUDE_UPSTREAM = prev;
@@ -158,11 +166,26 @@ test("claudeNativeBaseUrl: default wraps api.anthropic.com; SIGMA_CLAUDE_UPSTREA
     }
 });
 
-test("resolveClaudeNativePort: env > default; rejects junk", () => {
-    assert.equal(resolveClaudeNativePort({}), CLAUDE_NATIVE_DEFAULT_PORT);
-    assert.equal(resolveClaudeNativePort({ SIGMA_CLAUDE_NATIVE_PORT: "49999" }), 49999);
-    assert.equal(resolveClaudeNativePort({ SIGMA_CLAUDE_NATIVE_PORT: "0" }), CLAUDE_NATIVE_DEFAULT_PORT);
-    assert.equal(resolveClaudeNativePort({ SIGMA_CLAUDE_NATIVE_PORT: "not-a-number" }), CLAUDE_NATIVE_DEFAULT_PORT);
+test("claudeNativeBaseUrlForOrigin: wraps an arbitrary origin; explicit upstream preserved (#1660)", () => {
+    assert.equal(claudeNativeBaseUrlForOrigin("http://127.0.0.1:18788", undefined, {}), "http://127.0.0.1:18788/bili/https://api.anthropic.com");
+    assert.equal(claudeNativeBaseUrlForOrigin("http://127.0.0.1:18788/", "https://relay.example/", {}), "http://127.0.0.1:18788/bili/https://relay.example");
+    assert.equal(claudeNativeBaseUrlForOrigin("http://127.0.0.1:18788", "https://api.anthropic.com", { BILI_CLAUDE_UPSTREAM: "https://env.example" }), "http://127.0.0.1:18788/bili/https://api.anthropic.com");
+    // already-wrapped input is not double-wrapped
+    assert.equal(claudeNativeBaseUrlForOrigin("http://127.0.0.1:18788", "http://127.0.0.1:18788/bili/https://api.anthropic.com", {}), "http://127.0.0.1:18788/bili/https://api.anthropic.com");
+});
+
+test("unwrapBiliBaseUrl: strips any loopback-port wrapper; foreign values untouched (#1660)", () => {
+    assert.equal(unwrapBiliBaseUrl("http://127.0.0.1:48787/bili/https://api.anthropic.com"), "https://api.anthropic.com");
+    assert.equal(unwrapBiliBaseUrl("http://127.0.0.1:18788/bili/https://relay.example"), "https://relay.example");
+    assert.equal(unwrapBiliBaseUrl("https://api.anthropic.com"), undefined);
+    assert.equal(unwrapBiliBaseUrl("http://127.0.0.1:8787/v1"), undefined);
+});
+
+test("resolveClaudeNativePort: env only, undefined without an explicit override (#1660)", () => {
+    assert.equal(resolveClaudeNativePort({}), undefined);
+    assert.equal(resolveClaudeNativePort({ BILI_CLAUDE_NATIVE_PORT: "49999" }), 49999);
+    assert.equal(resolveClaudeNativePort({ BILI_CLAUDE_NATIVE_PORT: "0" }), undefined);
+    assert.equal(resolveClaudeNativePort({ BILI_CLAUDE_NATIVE_PORT: "not-a-number" }), undefined);
 });
 
 // #1335: the attach-gate escape hatch — env SIGMA_NATIVE_ATTACH_EXTERNAL wins
@@ -184,7 +207,7 @@ test("resolveNativeAttachExternal: env parsing (1/true open, 0/false close, junk
     } finally {
         if (prev === undefined) delete process.env.XDG_CONFIG_HOME;
         else process.env.XDG_CONFIG_HOME = prev;
-        fs.rmSync(dir, { recursive: true, force: true });
+        rmrf(dir);
     }
 });
 
@@ -211,20 +234,22 @@ test("resolveNativeAttachExternal: file native.attachExternal requires exact tru
     } finally {
         if (prev === undefined) delete process.env.XDG_CONFIG_HOME;
         else process.env.XDG_CONFIG_HOME = prev;
-        fs.rmSync(dir, { recursive: true, force: true });
+        rmrf(dir);
     }
 });
 
 // — hook planner ————————————————————————————————————————————
 
 test("planClaudeNativeBootstrap: launcher-owned / opt-out / start", () => {
-    assert.deepEqual(planClaudeNativeBootstrap({ SIGMA_PROXY: "http://127.0.0.1:39000" }).action, "exit");
-    assert.deepEqual(planClaudeNativeBootstrap({ SIGMA_PROVIDER_REWRITES: "x" }).action, "exit");
-    assert.deepEqual(planClaudeNativeBootstrap({ SIGMA_NATIVE_CLAUDE: "0" }).action, "passthrough");
-    assert.deepEqual(planClaudeNativeBootstrap({ SIGMA_PLUGIN: "0" }).action, "passthrough");
+    assert.deepEqual(planClaudeNativeBootstrap({ BILLION_CONTEXT_PROXY: "http://127.0.0.1:39000" }).action, "exit");
+    assert.deepEqual(planClaudeNativeBootstrap({ BILI_PROVIDER_REWRITES: "x" }).action, "exit");
+    assert.deepEqual(planClaudeNativeBootstrap({ BILI_NATIVE_CLAUDE: "0" }).action, "passthrough");
+    assert.deepEqual(planClaudeNativeBootstrap({ BILLION_CONTEXT_PLUGIN: "0" }).action, "passthrough");
+    // #1660: no explicit override → zone preference, non-strict launch.
     const start = planClaudeNativeBootstrap({});
-    assert.deepEqual(start, { action: "start", port: CLAUDE_NATIVE_DEFAULT_PORT });
-    assert.equal(planClaudeNativeBootstrap({ SIGMA_CLAUDE_NATIVE_PORT: "49999" }).port, 49999);
+    assert.deepEqual(start, { action: "start", port: ZONE_PORT_BASE, strict: false });
+    // explicit override → same port, strict-port (#964 preserved).
+    assert.deepEqual(planClaudeNativeBootstrap({ BILI_CLAUDE_NATIVE_PORT: "49999" }), { action: "start", port: 49999, strict: true });
 });
 
 // — claude host pid resolution (parent-gone regression) —————————————————
@@ -498,7 +523,7 @@ test("resolveClaudeHostPid: live ps walk finds a spawned claude host", { timeout
         // A pid that cannot exist must read as gone, not crash.
         assert.equal(readPsProcInfo(999_999_999), null);
     } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
+        rmrf(dir);
         if (claude !== null && claude.pid !== undefined && claude.pid > 1) {
             try {
                 process.kill(claude.pid, "SIGKILL");
@@ -529,10 +554,11 @@ function fakeClaude(dir: string): string {
 function sandbox(): { dir: string; settings: string; mcpJson: string; biliConfig: string } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-claude-"));
     process.env.CLAUDE_CONFIG_DIR = dir;
-    // #964: pluginInstall persists claude.nativePort into the sigma config —
-    // sandbox that too so tests never touch the real user config.
-    const biliConfig = path.join(dir, "sigma.json");
-    process.env.SIGMA_CONFIG_FILE = biliConfig;
+    // #1660: install no longer persists claude.nativePort, but the bili
+    // config path is still sandboxed so tests never touch the real user
+    // config (loadConfigFile reads it for other keys).
+    const biliConfig = path.join(dir, "billion-context.json");
+    process.env.BILI_CONFIG_FILE = biliConfig;
     return { dir, settings: path.join(dir, "settings.json"), mcpJson: path.join(dir, ".claude.json"), biliConfig };
 }
 
@@ -563,6 +589,29 @@ test("resolveClaudeCli: bare names resolve via where.exe on Windows, untouched e
         resolveClaudeCli("claude", where("C:\\tools\\nodejs\\claude.cmd\r\nC:\\other\\claude.exe\n")),
         "C:\\tools\\nodejs\\claude.cmd",
     );
+    // #1902: npm's global dir lists the extensionless POSIX shim FIRST — Node
+    // cannot spawn it (ENOENT), so the .cmd must win over list position.
+    assert.equal(
+        resolveClaudeCli(
+            "claude",
+            where("C:\\Users\\u\\AppData\\Roaming\\npm\\claude\r\nC:\\Users\\u\\AppData\\Roaming\\npm\\claude.cmd\r\nC:\\Users\\u\\AppData\\Roaming\\npm\\claude.ps1\n"),
+        ),
+        "C:\\Users\\u\\AppData\\Roaming\\npm\\claude.cmd",
+    );
+    // Within one directory PATHEXT order decides: a real .exe outranks the shim.
+    assert.equal(
+        resolveClaudeCli("claude", where("C:\\bin\\claude\r\nC:\\bin\\claude.cmd\r\nC:\\bin\\claude.exe\n")),
+        "C:\\bin\\claude.exe",
+    );
+    // PATH order still beats extension: an earlier dir's .cmd wins over a later dir's .exe.
+    assert.equal(
+        resolveClaudeCli("claude", where("C:\\first\\claude.cmd\r\nC:\\second\\claude.exe\n")),
+        "C:\\first\\claude.cmd",
+    );
+    // Nothing carries a PATHEXT extension → old first-hit behavior stands.
+    assert.equal(resolveClaudeCli("claude", where("C:\\x\\claude\r\nC:\\y\\claude.ps1\n")), "C:\\x\\claude");
+    // Injectable PATHEXT for exotic environments/tests.
+    assert.equal(resolveClaudeCli("claude", where("C:\\x\\claude\r\nC:\\x\\claude.ps1\n"), ".PS1;.CMD"), "C:\\x\\claude.ps1");
     assert.equal(resolveClaudeCli("claude", where("\r\n   \n")), "claude");
     assert.equal(resolveClaudeCli("claude", where(null)), "claude");
     assert.equal(resolveClaudeCli("claude", () => { throw new Error("where.exe ETIMEDOUT"); }), "claude");
@@ -583,12 +632,22 @@ test("installer round-trip: managed block + MCP face, then removal restores", ()
         assert.ok(note.includes("managed block"), note);
         assert.ok(fs.existsSync(box.settings));
         const after = JSON.parse(fs.readFileSync(box.settings, "utf8")) as { env?: Record<string, string>; hooks?: unknown };
-        assert.equal(after.env?.ANTHROPIC_BASE_URL, baseUrlForPort(CLAUDE_NATIVE_DEFAULT_PORT));
+        // #1660: no explicit port → the zone base is baked.
+        assert.equal(after.env?.ANTHROPIC_BASE_URL, baseUrlForPort(ZONE_PORT_BASE));
         assert.equal(after.env?.DISABLE_AUTO_COMPACT, "1");
         assert.equal(claudeNativeInstalled(), true);
-        // #964: the resolved port is persisted so the SessionStart hook (which
-        // does NOT inherit claude's settings.env) resolves the SAME port.
-        assert.deepEqual(JSON.parse(fs.readFileSync(box.biliConfig, "utf8")), { claude: { nativePort: CLAUDE_NATIVE_DEFAULT_PORT } });
+        // #1902: the emitted hook must carry a bare `node` head — parseable by
+        // whichever shell Claude Code runs hooks through (cmd on 2.1.284,
+        // PowerShell on 2.1.282), never a spaced absolute node path.
+        const hookEntries = (after.hooks as { SessionStart?: Array<{ hooks: Array<{ type: string; command: string }> }> })?.SessionStart ?? [];
+        assert.equal(hookEntries.length, 1);
+        const hookCmd = hookEntries[0].hooks[0].command;
+        assert.ok(hookCmd.startsWith("node "), hookCmd);
+        assert.ok(hookCmd.endsWith("claude-native-bootstrap.js"), hookCmd);
+        // #1660: install no longer persists claude.nativePort — the hook
+        // resolves the same zone preference, and its repin pass follows any
+        // drift. The bili config may not even exist.
+        assert.equal(fs.existsSync(box.biliConfig), false);
 
         const removeNote = pluginRemove("claude");
         assert.ok(removeNote.includes("managed block removed"), removeNote);
@@ -596,7 +655,6 @@ test("installer round-trip: managed block + MCP face, then removal restores", ()
         assert.equal(restored.env, undefined);
         assert.equal(restored.hooks, undefined);
         assert.equal(claudeNativeInstalled(), false);
-        assert.deepEqual(JSON.parse(fs.readFileSync(box.biliConfig, "utf8")), {}, "nativePort cleared on remove");
     } finally {
         unsandbox(prevDir, prevCfg);
         if (prevClaude === undefined) delete process.env.CLAUDE;
@@ -692,7 +750,7 @@ test("installer preserves foreign settings.json keys end-to-end", () => {
     }
 });
 
-test("installer persists an env-driven port so the hook resolves the SAME port", () => {
+test("install with an explicit port bakes it; without env the hook rides the zone (#1660)", () => {
     const prevDir = process.env.CLAUDE_CONFIG_DIR;
     const prevCfg = process.env.SIGMA_CONFIG_FILE;
     const prevClaude = process.env.CLAUDE;
@@ -702,20 +760,30 @@ test("installer persists an env-driven port so the hook resolves the SAME port",
     try {
         delete process.env.SIGMA_NATIVE_CLAUDE;
         process.env.CLAUDE = fakeClaude(box.dir);
-        // Live failure shape: install with an explicit port, then claude
-        // later runs the hook WITHOUT that env (claude does not inject its
-        // settings.env into hook children) — the persisted config keeps
-        // hook and settings.json on the same port.
-        process.env.SIGMA_CLAUDE_NATIVE_PORT = "49999";
+        // Live failure shape (#964): install with an explicit port, then
+        // claude later runs the hook WITHOUT that env (claude does not inject
+        // its settings.env into hook children). #1660: there is no persisted
+        // copy anymore — without the env the hook resolves the zone
+        // preference (non-strict), and its SessionStart repin pass rewrites
+        // the baked URL to the live origin so the two can never stay desynced.
+        process.env.BILI_CLAUDE_NATIVE_PORT = "49999";
         pluginInstall("claude");
         const settings = JSON.parse(fs.readFileSync(box.settings, "utf8")) as { env?: Record<string, string> };
         assert.equal(settings.env?.ANTHROPIC_BASE_URL, baseUrlForPort(49999));
-        assert.deepEqual(JSON.parse(fs.readFileSync(box.biliConfig, "utf8")), { claude: { nativePort: 49999 } });
-        delete process.env.SIGMA_CLAUDE_NATIVE_PORT;
-        assert.equal(resolveClaudeNativePort(), 49999, "hook (no env) resolves the persisted port");
-        assert.equal(planClaudeNativeBootstrap(process.env).port, 49999);
+        assert.equal(fs.existsSync(box.biliConfig), false, "no claude.nativePort persisted anymore");
+        delete process.env.BILI_CLAUDE_NATIVE_PORT;
+        // plan on a SANITIZED env copy: the dev/CI harness may itself run under
+        // a bili proxy (BILLION_CONTEXT_PROXY / BILI_PROVIDER_REWRITES force
+        // "exit"), and a fresh XDG_STATE_HOME keeps the zone preference at the
+        // base instead of following this machine's sticky record.
+        const planEnv: NodeJS.ProcessEnv = { ...process.env, XDG_STATE_HOME: path.join(box.dir, "state") };
+        delete planEnv.BILLION_CONTEXT_PROXY;
+        delete planEnv.BILI_PROVIDER_REWRITES;
+        delete planEnv.BILI_NATIVE_CLAUDE;
+        delete planEnv.BILLION_CONTEXT_PLUGIN;
+        assert.deepEqual(planClaudeNativeBootstrap(planEnv), { action: "start", port: ZONE_PORT_BASE, strict: false }, "hook (no env) rides the zone, non-strict");
         pluginRemove("claude");
-        assert.equal(resolveClaudeNativePort(), CLAUDE_NATIVE_DEFAULT_PORT, "remove restores the default");
+        assert.equal(claudeNativeInstalled(), false);
     } finally {
         unsandbox(prevDir, prevCfg);
         if (prevClaude === undefined) delete process.env.CLAUDE;
@@ -727,34 +795,42 @@ test("installer persists an env-driven port so the hook resolves the SAME port",
     }
 });
 
-test("persist/clear refuse to clobber a malformed sigma config", () => {
+test("repinClaudeManagedBaseUrl: follows a drifted origin, preserves the relay, never touches a foreign URL (#1660)", () => {
     const prevDir = process.env.CLAUDE_CONFIG_DIR;
-    const prevCfg = process.env.SIGMA_CONFIG_FILE;
+    const prevCfg = process.env.BILI_CONFIG_FILE;
+    const prevUp = process.env.BILI_CLAUDE_UPSTREAM;
     const box = sandbox();
     try {
-        const corrupt = "{ this is not json";
-        fs.writeFileSync(box.biliConfig, corrupt, "utf8");
-        assert.doesNotThrow(() => saveClaudeNativePort(49999));
-        assert.equal(fs.readFileSync(box.biliConfig, "utf8"), corrupt, "save leaves the corrupt file byte-identical");
-        assert.doesNotThrow(() => clearClaudeNativePort());
-        assert.equal(fs.readFileSync(box.biliConfig, "utf8"), corrupt, "clear leaves the corrupt file byte-identical");
-    } finally {
-        unsandbox(prevDir, prevCfg);
-    }
-});
+        delete process.env.BILI_CLAUDE_UPSTREAM;
+        // A store left over from an install that baked 48787 + a custom relay.
+        fs.writeFileSync(
+            box.settings,
+            JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:48787/bili/https://relay.example" } }),
+            "utf8",
+        );
+        const notes = repinClaudeManagedBaseUrl("http://127.0.0.1:18788");
+        const after = JSON.parse(fs.readFileSync(box.settings, "utf8")) as { env?: Record<string, string>; hooks?: unknown };
+        // The relay survives the repin; only the origin moves.
+        assert.equal(after.env?.ANTHROPIC_BASE_URL, "http://127.0.0.1:18788/bili/https://relay.example");
+        assert.ok(Array.isArray(after.hooks?.SessionStart), "the hook is upserted alongside");
+        assert.ok(notes.length > 0);
 
-test("persist preserves foreign config keys; clear drops only the persisted key", () => {
-    const prevDir = process.env.CLAUDE_CONFIG_DIR;
-    const prevCfg = process.env.SIGMA_CONFIG_FILE;
-    const box = sandbox();
-    try {
-        fs.writeFileSync(box.biliConfig, JSON.stringify({ port: 9999, claude: { nativePort: 1234 } }), "utf8");
-        saveClaudeNativePort(49999);
-        assert.deepEqual(JSON.parse(fs.readFileSync(box.biliConfig, "utf8")), { port: 9999, claude: { nativePort: 49999 } });
-        clearClaudeNativePort();
-        assert.deepEqual(JSON.parse(fs.readFileSync(box.biliConfig, "utf8")), { port: 9999 }, "clear drops only nativePort");
+        // Idempotent: a second repin to the same origin changes nothing and
+        // returns no notes (no write either).
+        const before = fs.readFileSync(box.settings, "utf8");
+        const again = repinClaudeManagedBaseUrl("http://127.0.0.1:18788");
+        assert.equal(again.length, 0);
+        assert.equal(fs.readFileSync(box.settings, "utf8"), before);
+
+        // A foreign base URL is never touched.
+        fs.writeFileSync(box.settings, JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://corporate-gateway.example" } }), "utf8");
+        repinClaudeManagedBaseUrl("http://127.0.0.1:18788");
+        const foreign = JSON.parse(fs.readFileSync(box.settings, "utf8")) as { env?: Record<string, string> };
+        assert.equal(foreign.env?.ANTHROPIC_BASE_URL, "https://corporate-gateway.example");
     } finally {
         unsandbox(prevDir, prevCfg);
+        if (prevUp === undefined) delete process.env.BILI_CLAUDE_UPSTREAM;
+        else process.env.BILI_CLAUDE_UPSTREAM = prevUp;
     }
 });
 
@@ -797,16 +873,32 @@ test("installer refuses malformed settings.json instead of overwriting", () => {
 
 // — hook e2e (real dist script brings up a real proxy) ——————————————————
 
-function freePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const srv = net.createServer();
-        srv.listen(0, "127.0.0.1", () => {
-            const port = (srv.address() as net.AddressInfo).port;
-            srv.close(() => resolve(port));
+function freePort(exclude: readonly number[] = []): Promise<number> {
+    // bind(0) can hand out the same port twice (measured ~1.3e-4/pair on
+    // Linux) — re-roll when the pick collides with one we already rely on.
+    const pick = (): Promise<number> =>
+        new Promise((resolve, reject) => {
+            const srv = net.createServer();
+            srv.listen(0, "127.0.0.1", () => {
+                const port = (srv.address() as net.AddressInfo).port;
+                srv.close(() => resolve(port));
+            });
+            srv.on("error", reject);
         });
-        srv.on("error", reject);
-    });
+    return (async () => {
+        for (;;) {
+            const port = await pick();
+            if (!exclude.includes(port)) return port;
+        }
+    })();
 }
+
+test("freePort(exclude) never hands back an excluded port", async () => {
+    const portA = await freePort();
+    for (let i = 0; i < 25; i++) {
+        assert.notEqual(await freePort([portA]), portA);
+    }
+});
 
 function canConnect(port: number, timeoutMs = 1000): Promise<boolean> {
     return new Promise((resolve) => {
@@ -846,6 +938,36 @@ async function waitForInstanceFile(file: string, ms: number): Promise<string> {
             await new Promise((r) => setTimeout(r, 50));
         }
     }
+}
+
+// #1903: TCP accept alone is NOT readiness for the hook's attach machinery —
+// the proxy publishes its identity record (proxy-origin file) inside its
+// 'listening' callback, which lags kernel accept by an event-loop-dependent
+// margin (waitForInstanceFile above documents the same window, #1031). Gate
+// the squatter on BOTH the health endpoint and the published record so the
+// hook's one-shot discovery can never race the daemon's publication (CI flake
+// on PR #1896: the hook probed between accept and publication, took the SPAWN
+// path, and its strict-port child died on EADDRINUSE).
+async function waitForProxyVisible(port: number, instanceFile: string, ms: number): Promise<boolean> {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+        let healthy = false;
+        try {
+            const res = await fetch(`http://127.0.0.1:${port}/__bili/health`, { signal: AbortSignal.timeout(2_000) });
+            if (res.ok) {
+                const body = (await res.json()) as { ok?: boolean };
+                healthy = body.ok === true;
+            }
+        } catch {}
+        if (healthy) {
+            try {
+                JSON.parse(fs.readFileSync(instanceFile, "utf8"));
+                return true;
+            } catch {}
+        }
+        await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
 }
 
 function runHook(distScript: string, port: number, xdg: Record<string, string>): Promise<{ code: number | null; stderr: string }> {
@@ -912,7 +1034,7 @@ test("hook e2e: an occupied stable port fails loud — never port-hops", { timeo
         assert.equal(await canConnect(port + 1), false, "no port-hop proxy on port+1");
     } finally {
         squatter.close();
-        fs.rmSync(home, { recursive: true, force: true });
+        rmrf(home);
     }
 });
 
@@ -922,8 +1044,8 @@ test("hook e2e: a healthy proxy on ANOTHER port is never attached (static URL)",
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "sigma-claude-hook-"));
     const xdg = { home, config: path.join(home, "cfg"), state: path.join(home, "state"), cache: path.join(home, "cache"), data: path.join(home, "data") };
     const portA = await freePort();
-    const portB = await freePort();
-    const instFile = path.join(xdg.state, "sigma", "proxy-origin");
+    const portB = await freePort([portA]);
+    const instFile = path.join(xdg.state, "billion-context", "proxy-origin");
     let pidA = 0;
     let pidB = 0;
     try {
@@ -963,7 +1085,7 @@ function killPid(pid: number): void {
 async function rmHome(home: string): Promise<void> {
     for (let i = 0; ; i++) {
         try {
-            fs.rmSync(home, { recursive: true, force: true });
+            rmrf(home);
             return;
         } catch {
             if (i >= 50) throw new Error(`cleanup: could not remove ${home} after 5s`);
@@ -995,6 +1117,26 @@ test("hook e2e: dist script spawns a proxy on the stable port, second run attach
         cache: path.join(home, "cache"),
         data: path.join(home, "data"),
     };
+    // #1807: first-run CA init now merges the OS trust store — on Windows
+    // that is a synchronous PowerShell export (~8s on loaded runners) inside
+    // the hook's 20s bring-up budget. Pre-warm the CA here (outside the
+    // budget) so the spawned proxy hits the 24h freshness gate and skips the
+    // export; the export itself stays covered end-to-end by
+    // tests/ca-combined.test.ts on native hosts.
+    if (process.platform === "win32") {
+        const prevHome = process.env.HOME;
+        const prevData = process.env.XDG_DATA_HOME;
+        process.env.HOME = xdg.home;
+        process.env.XDG_DATA_HOME = xdg.data;
+        try {
+            ensureRootCA();
+        } finally {
+            if (prevHome === undefined) delete process.env.HOME;
+            else process.env.HOME = prevHome;
+            if (prevData === undefined) delete process.env.XDG_DATA_HOME;
+            else process.env.XDG_DATA_HOME = prevData;
+        }
+    }
     const port = await freePort();
     const instanceFile = path.join(xdg.state, "sigma", "proxy-origin");
     let proxyPid = 0;
@@ -1210,14 +1352,16 @@ test("watcher route: shared proxies take watcher registrations, daemons refuse (
     }
 });
 
-// #1322 end-to-end: the reported failure shape — a manually started daemon
-// squats on the stable port BEFORE any session begins, so every claude
-// session attaches to it and its registration is refused (409). Old code
-// swallowed that silently: the "lives and dies with the session" contract was
-// void with zero signal. Now the hook must WARN loudly on stderr while
-// staying non-destructive (the daemon keeps serving; its fate is the
-// operator's). Linux-only like the other hook e2es (fake claude walks /proc).
-test("hook e2e: unarmed squatter on the pinned port is refused loudly, not silently attached (#1322/#1335)", { timeout: 180_000, skip: LIVE_E2E ? process.platform !== "linux" : liveSkip }, async () => {
+// #1322/#1335/#1660 end-to-end: a MANUALLY started `bili start` daemon
+// squats on the pinned port BEFORE any session begins. Old world: the hook
+// refused it (unarmed) and the strict pinned port then failed fast — the
+// operator had to kill their own daemon. #1660 user-zone semantics: a manual
+// start is BY DEFINITION user-maintained, so the hook attaches and rides it;
+// the daemon's fate stays the operator's. The strict fail-fast still exists
+// for lifecycle-less LANE'd squatters (unit-tested in launcher.test.ts) and
+// for non-bili listeners (spawn EADDRINUSE). Linux-only like the other hook
+// e2es (fake claude walks /proc).
+test("hook e2e: manual `bili start` on the pinned port is attached, not refused (#1322/#1335/#1660)", { timeout: 180_000, skip: LIVE_E2E ? process.platform !== "linux" : liveSkip }, async () => {
     const distCli = path.resolve(import.meta.dirname, "..", "dist", "index.js");
     const distScript = path.resolve(import.meta.dirname, "..", "dist", "claude-native-bootstrap.js");
     ensureDistBuilt(distCli);
@@ -1226,6 +1370,7 @@ test("hook e2e: unarmed squatter on the pinned port is refused loudly, not silen
     const xdg = { home, config: path.join(home, "cfg"), state: path.join(home, "state"), cache: path.join(home, "cache"), data: path.join(home, "data") };
     fs.mkdirSync(path.join(home, "tmp"), { recursive: true });
     const port = await freePort();
+    const instanceFile = path.join(xdg.state, "billion-context", "proxy-origin");
     const baseEnv = {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
         HOME: xdg.home,
@@ -1239,6 +1384,10 @@ test("hook e2e: unarmed squatter on the pinned port is refused loudly, not silen
     let claudePid = 0;
     try {
         assert.ok(await waitForPort(port, 60_000), "squatter daemon up on the stable port");
+        assert.ok(
+            await waitForProxyVisible(port, instanceFile, 60_000),
+            "squatter fully visible to the attach machinery (health + identity record, #1903)",
+        );
         // Fake claude reproducing the live SessionStart shape: node-shebang
         // binary (npm install form: argv [node, <path>/claude]), launches the
         // hook through /bin/sh -c, captures hook stderr to a file, then
@@ -1275,24 +1424,18 @@ test("hook e2e: unarmed squatter on the pinned port is refused loudly, not silen
         while (!fs.existsSync(doneFile) && Date.now() - t0 < 60_000) await new Promise((r) => setTimeout(r, 250));
         assert.ok(fs.existsSync(doneFile), "hook completed");
         const stderr = fs.readFileSync(errFile, "utf8");
-        // #1335 gate: the hook must REFUSE the lifecycle-less listener and say
-        // so — the old warn-but-attach behavior is what let #1322 happen.
-        assert.match(stderr, /refusing to attach/, "hook refused the squatting daemon");
-        assert.match(stderr, /NO session-lifecycle watchdog/s, "#1322: refusal surfaced instead of silently voiding the contract");
-        assert.match(stderr, /\(#1322\/#1335\)/, "warning cites the issues for operators");
-        assert.match(stderr, /native\.attachExternal=true/, "escape hatch surfaced");
-        // strictPort launch cannot self-host (the squatter owns the port), so
-        // bring-up fails fast with an actionable kill/attach-anyway hint.
-        assert.match(stderr, /bring-up failed.*lifecycle-less/s, "pinned-port fast-fail explains itself");
-        assert.match(stderr, /Kill that process \(kill \d+\)/, "actionable kill hint");
+        // #1660: the manual daemon is user-zone — attach by default.
+        assert.match(stderr, /proxy attached at http:\/\/127\.0\.0\.1:\d+/, "hook attached to the user's daemon");
+        assert.doesNotMatch(stderr, /refusing to attach/, "no #1335 refusal for a user-maintained daemon");
+        assert.doesNotMatch(stderr, /bring-up failed/, "no fail-fast either — the port is owned by the user, not a lane");
         // Non-destructive: killing the session must NOT take the daemon down.
         killPid(claudePid);
         claudePid = 0;
         await new Promise((r) => setTimeout(r, 15_000));
         assert.ok(await canConnect(port), "daemon survives session end — operator decides its fate");
         const h = (await (await fetch(`http://127.0.0.1:${port}/__bili/health`)).json()) as { watchdog?: { armed?: boolean; watchers?: number[] } };
-        assert.equal(h.watchdog?.armed, false, "health explains why the warning fired");
-        assert.deepEqual(h.watchdog?.watchers, []);
+        assert.equal(h.watchdog?.armed, false, "health explains the manual start (no session lifecycle)");
+        assert.deepEqual(h.watchdog?.watchers, [], "the session's watcher unregistered on exit");
     } finally {
         if (claudePid > 1) killPid(claudePid);
         if (squatter > 1) killPid(squatter);

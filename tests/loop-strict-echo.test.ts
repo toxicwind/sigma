@@ -9,11 +9,7 @@ import { startServer } from "../src/server.ts";
 import type { ProxyOptions } from "../src/config.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { setLogCapture } from "../src/logger.ts";
-import { _setForTest as setRegistryForTest } from "../src/registry.ts";
-
-// A warm registry cache also short-circuits the OpenRouter window discovery
-// that startServer kicks off, so no test reaches the network.
-setRegistryForTest({});
+import { rmrf } from "./tmp-rm.ts";
 
 // #762 residual class, loop side: the compress-loop re-request is built by
 // adapter.buildRequest from the kernel view, NOT through prepareOpenai, so the
@@ -166,6 +162,6 @@ test("#762: loop re-request carries the blank strict-echo repair", async () => {
         await close(proxy);
         await close(upstream);
         setLogCapture(null);
-        fs.rmSync(stateDir, { recursive: true, force: true });
+        rmrf(stateDir);
     }
 });

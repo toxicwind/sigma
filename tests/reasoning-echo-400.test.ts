@@ -11,6 +11,7 @@ import type { ProxyOptions } from "../src/config.ts";
 import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { setLogCapture } from "../src/logger.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 // #762 e2e: a client-originated (main-path) 400 whose body mentions
 // reasoning_content must (a) be persisted when SIGMA_DUMP_4XX=1, (b) learn
@@ -71,6 +72,7 @@ async function startHarness(captured: Captured[], onUpstreamRequest: (bodyText: 
         log: true,
         debug: false,
         passthrough: false,
+        chainContentDetection: false,
         autoUpdate: false,
         mitm: { enabled: false, domains: [] },
     };
@@ -153,9 +155,13 @@ test("#762: main-path 400 learns strict-echo, next request is normalized, reject
             const files = fs.readdirSync(dumpDir).filter((f) => f.startsWith("err-"));
             assert.equal(files.length, 1, `expected exactly one 4xx dump, got: ${files.join(", ")}`);
             assert.match(files[0]!, /^err-\d+-re400-1-400\.json$/);
-            const dumped = JSON.parse(fs.readFileSync(path.join(dumpDir, files[0]!), "utf8")) as { model: string; messages: Record<string, unknown>[] };
+            const dumped = JSON.parse(fs.readFileSync(path.join(dumpDir, files[0]!), "utf8")) as { model: string; messages: Array<{ role?: string; content?: unknown }> };
             assert.equal(dumped.model, "gpt-test");
-            assert.equal(dumped.messages.length, 6);
+            // #1881: injectTool=false sessions still carry the ACP-TAGS prohibition —
+            // the client's 6 messages + the injected head system.
+            assert.equal(dumped.messages.length, 7);
+            const injectedSys = dumped.messages.find((m) => m.role === "system");
+            assert.ok(injectedSys && typeof injectedSys.content === "string" && injectedSys.content.includes("ACP TAGS"), "injected ACP-TAGS system present in rejected body");
             const dumpedTc = dumped.messages.find((m) => Array.isArray(m.tool_calls));
             assert.ok(!("reasoning_content" in dumpedTc!), "dump must show the exact rejected projection (absent field)");
         } finally {
@@ -166,7 +172,7 @@ test("#762: main-path 400 learns strict-echo, next request is normalized, reject
         delete process.env.SIGMA_DUMP_4XX;
         delete process.env.ACP_DUMP_DIR;
         setLogCapture(null);
-        fs.rmSync(dumpDir, { recursive: true, force: true });
+        rmrf(dumpDir);
     }
 });
 
@@ -192,6 +198,6 @@ test("#762: dump stays off by default even on 4xx", async () => {
     } finally {
         delete process.env.ACP_DUMP_DIR;
         setLogCapture(null);
-        fs.rmSync(dumpDir, { recursive: true, force: true });
+        rmrf(dumpDir);
     }
 });

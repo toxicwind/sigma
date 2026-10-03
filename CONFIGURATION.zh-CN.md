@@ -1,8 +1,8 @@
-# sigma 配置参考
+# billion-context 配置参考
 
 [English](./CONFIGURATION.md) | [中文](./CONFIGURATION.zh-CN.md)
 
-`sigma` 是一个 HTTP 代理，用于将 [ACP](https://github.com/ranxianglei/acp-kernel)（Active Context Pruning，主动上下文剪枝）的上下文压缩注入到 LLM API 流中。下文所有选项都位于同一个 JSON 配置文件中（也可通过等价的环境变量 / CLI 参数设置）。
+`billion-context` 是一个 HTTP 代理，用于将 [ACP](https://github.com/ranxianglei/acp-kernel)（Active Context Pruning，主动上下文剪枝）的上下文压缩注入到 LLM API 流中。下文所有选项都位于同一个 JSON 配置文件中（也可通过等价的环境变量 / CLI 参数设置）。
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 范围 | 路径 | 说明 |
 |------|------|------|
-| **配置文件（Linux）** | `~/.config/sigma/sigma.json` | XDG 基础目录规范 —— 标准、用户可编辑的配置 |
+| **配置文件（Linux）** | `~/.config/billion-context/billion-context.json` | XDG 基础目录规范 —— 标准、用户可编辑的配置 |
 | **配置文件（覆盖目录）** | `XDG_CONFIG_HOME` 的值 | 重定位整个配置目录 |
-| **配置文件（显式指定）** | `SIGMA_CONFIG_FILE` 的值 | 直接指向任意 JSON 文件 |
-| **CLI 参数** | `--config <FILE>` | 与 `SIGMA_CONFIG_FILE` 等价，文件路径优先级最高 |
-| **会话数据** | `~/.local/share/sigma/sessions/` | 持久化的压缩状态，会随时间增长 |
+| **配置文件（显式指定）** | `BILI_CONFIG_FILE` 的值 | 直接指向任意 JSON 文件 |
+| **CLI 参数** | `--config <FILE>` | 与 `BILI_CONFIG_FILE` 等价，文件路径优先级最高 |
+| **会话数据** | `~/.local/share/billion-context/sessions/` | 持久化的压缩状态，会随时间增长 |
 
-首次运行时，`sigma` 会在配置路径下生成一个空模板（`{ "providers": {} }`），方便你直接编辑。它**不会**覆盖已存在的文件。
+首次运行时，`billion-context` 会在配置路径下生成一个空模板（`{ "providers": {} }`），方便你直接编辑。它**不会**覆盖已存在的文件。
 
 配置文件是一个纯粹的覆盖层 —— 每个字段都是可选的。任何未设置的字段都会回退到内置默认值。
 
@@ -25,7 +25,7 @@
 ## 快速开始
 
 ```jsonc
-// ~/.config/sigma/sigma.json
+// ~/.config/billion-context/billion-context.json
 {
   // 服务端
   "port": 8787,
@@ -70,14 +70,14 @@
 - **类型：** `number`
 - **默认值：** `8787`
 - **状态：** ACTIVE
-- **说明：** 代理监听的 TCP 端口。必须是 1 到 65535 之间的整数。可由 `ACP_PORT`（或 `PORT`）环境变量或 `--port` CLI 参数覆盖。非法值会导致启动中止。
+- **说明：** 代理监听的 TCP 端口。必须是 1 到 65535 之间的整数。可由 `ACP_PORT`（或 `PORT`）环境变量或 `--port` CLI 参数覆盖。非法值会导致启动中止。这是**用户主权区**（`bili start`，默认 `8787`）——这个口归你管。lane 拉起的代理（原生 hook、launcher lane）住在独立的自管区（`BILI_ZONE_PORT`，默认 `18787`），永不碰这个口（#1660）。
 
 ### `host`
 
 - **类型：** `string`
 - **默认值：** `127.0.0.1`
 - **状态：** ACTIVE
-- **说明：** 代理绑定的网络接口。`127.0.0.1`（默认）仅监听本机 —— 适合本地 sidecar。使用 `::` 可同时监听 IPv4 + IPv6 双栈。使用 `0.0.0.0`（或局域网 IP）可将代理暴露给其他机器 —— 常见于容器或可信局域网: 远程 agent 把模型 `baseURL` 指向 `http://<本机>:<端口>/sigma/…`，MITM 模式的 `CONNECT` 仅对白名单内的模型域名接受远程客户端（盲隧道仍仅限本机，`/__bili/` 管理端点也仍仅限本机）。没有任何鉴权 —— 请确保所在网络可信。可由 `ACP_HOST` / `--host` 覆盖。
+- **说明：** 代理绑定的网络接口。`127.0.0.1`（默认）仅监听本机 —— 适合本地 sidecar。使用 `::` 可同时监听 IPv4 + IPv6 双栈。使用 `0.0.0.0`（或局域网 IP）可将代理暴露给其他机器 —— 常见于容器或可信局域网: 远程 agent 把模型 `baseURL` 指向 `http://<本机>:<端口>/bili/…`，MITM 模式的 `CONNECT` 仅对白名单内的模型域名接受远程客户端（盲隧道仍仅限本机，`/__bili/` 管理端点也仍仅限本机）。没有任何鉴权 —— 请确保所在网络可信。可由 `ACP_HOST` / `--host` 覆盖。
 
 ### `sessionHeader`
 
@@ -107,35 +107,82 @@
 - **状态：** ACTIVE
 - **说明：** 将每个请求**不经过**压缩、工具注入或 nudge，直接转发到上游。等价于 `ACP_PASSTHROUGH=1`。便于与未压缩基线做 A/B 对比。
 
+### `compactionOptIn`
+
+- **类型：** `boolean`
+- **默认值：** `false`
+- **状态：** ACTIVE
+- **说明：** `#1392` —— 为**非 http(s) baseUrl 的 provider**（如 pi-claude-bridge 的字面量 `"claude-bridge"`）放行 bili 的压缩接管考量。条目的键 = provider id —— 非 URL 键本身对路由惰性无效（给它 [`bind`](#named-provider-entries-bind) 即成为真实 lane），用于启动器导出的 `BILI_NON_HTTP_PROVIDERS` 白名单，供 pi/omp 插件在原本要一票否决非 http baseUrl 的地方（#1383）查询。放行只是扩大候选集：仍需正证据（插件已盖章会话、或 `/__bili/plugin/status` 确认代理承载）才会取消原生压缩。环境变量等价： `BILI_NON_HTTP_PROVIDERS=a,b`（与文件并集去重）。仅在 `bili pi` / `bili omp` 启动器或直接安装插件时才有意义。
+
+  ```jsonc
+  {
+    "providers": {
+      "claude-bridge": { "compactionOptIn": true }
+    }
+  }
+  ```
+
 ### `compat`
 
-- **类型：** `{ roles?: Record<string, string>; streamErrorShape?: "protocol" | "completion" }`
+- **类型：** `{ roles?: Record<string, string>; dropFields?: string[]; streamErrorShape?: "protocol" | "completion" }`
 - **默认值：** `{}`（禁用）
 - **状态：** ACTIVE
 - **说明：** 全局线上兼容角色映射。`roles` 把消息角色映射为上游接受的角色名，例如 `{"compat":{"roles":{"developer":"system"}}}` 把 `developer` → `system`，用于拒绝 `developer` 角色的上游（#552，新版 codex 客户端会发送）。作用于 `openai` chat-completions 与 `responses` 请求；仅精确匹配角色，体内其它内容不动；压缩重试重发的请求体同样携带。按 provider 的 `compat.roles`（见 [Providers](#providers)）按键优先。默认 `{}` 逐字节透明转发。
-- **失败自学习：** 未配置 compat 时，上游返回 `400 Invalid role: …` 会被自动修复 —— sigma 把被拒角色改写为 `system`，重试一次，并把学到的映射记在**会话上**（仅内存，绝不写入配置）。该会话后续请求免 400 往返。修复生效时打印的 info 日志附带可永久化的 per-provider 片段。
-- **streamErrorShape：** 200 响应已提交后，上游流式失败在 anthropic/openai 线上如何呈现给客户端（默认 `"protocol"`，或 `"completion"`）。`protocol` 走协议原生失败通道——anthropic/responses 收 `event: error` 帧，openai 收顶层 `error` 帧后跟 `[DONE]`——客户端能区分「这一轮失败了」和「这一轮完成了」，自身重试逻辑保持可用（#1455：旧版合成的 `end_turn`/`finish_reason` 让死掉的回合看起来像正常完成，静默吃掉了客户端的重试预算）。`completion` 恢复该旧形状（失败文本包在合成的成功完成里），供无法呈现带内错误事件的宿主使用。配置文件：`"compat":{"streamErrorShape":"completion"}`；环境变量 `SIGMA_STREAM_ERROR_SHAPE` 优先。仅 google 线不受影响（本来就是原生错误帧）；responses 线上该开关改变的是服务端出口：从合成的 item 生命周期完成帧改为 `event: error` 帧（其循环内出口本就走 `response.failed` 原生通道）。
+- **失败自学习：** 未配置 compat 时，上游返回 `400 Invalid role: …` 会被自动修复 —— bili 把被拒角色改写为 `system`，重试一次，并把学到的映射记在**会话上**（仅内存，绝不写入配置）。该会话后续请求免 400 往返。修复生效时打印的 info 日志附带可永久化的 per-provider 片段。
+- **dropFields：** 最终转发体中要删除的字段点分路径列表 —— 用于严格 schema 上游拒绝*客户端*固定发送但上游不认的字段（#1757）。路径仅限纯对象段（如 `reasoning.summary`），不支持通配符与数组下标；不存在的路径与非对象中间节点静默跳过；字符串值永不检查或改写 —— 只删结构键，工具参数与消息内容逐字节不变。与 `roles` 不同，适用于所有 wire 协议（任意 JSON 请求体）。全局与 per-provider 列表**相加**合并（并集）—— provider 条目只能追加、不能撤销全局路径。应用于角色映射/输出转向之后的最终出站体（prompt-cache stamp 之前）、压缩重试重发的每个请求体，以及逐字节直通转发。无命中时逐字节不变；实际删除 ≥1 个字段时打一条 info 日志列出被删路径。纯 opt-in，v1 不做失败自学习：`"compat":{"dropFields":["reasoning.summary"]}`。
+- **streamErrorShape：** 200 响应已提交后，上游流式失败在 anthropic/openai 线上如何呈现给客户端（默认 `"protocol"`，或 `"completion"`）。`protocol` 走协议原生失败通道——anthropic/responses 收 `event: error` 帧，openai 收顶层 `error` 帧后跟 `[DONE]`——客户端能区分「这一轮失败了」和「这一轮完成了」，自身重试逻辑保持可用（#1455：旧版合成的 `end_turn`/`finish_reason` 让死掉的回合看起来像正常完成，静默吃掉了客户端的重试预算）。`completion` 恢复该旧形状（失败文本包在合成的成功完成里），供无法呈现带内错误事件的宿主使用。配置文件：`"compat":{"streamErrorShape":"completion"}`；环境变量 `BILI_STREAM_ERROR_SHAPE` 优先。仅 google 线不受影响（本来就是原生错误帧）；responses 线上该开关改变的是服务端出口：从合成的 item 生命周期完成帧改为 `event: error` 帧（其循环内出口本就走 `response.failed` 原生通道）。
 
 ### `proxy`
 
 - **类型：** `string`
 - **默认值：** *（无 —— 不使用上游代理）*
 - **状态：** ACTIVE
-- **说明：** 用于代理**自身**到模型 provider 的出站连接的上游 HTTP 代理（`http://host:port`）。不支持 SOCKS5。在 `providers` 条目内设置的按 URL 的 `proxy` 会针对该 provider 覆盖此项。空字符串表示"显式直连" —— 为所有 provider 禁用任何环境/系统代理回退。
+- **说明：** 用于代理**自身**到模型 provider 的出站连接的上游 HTTP 代理（`http://host:port`）—— 针对 provider 只能经 HTTP 代理才可达的主机（例如 GFW 内的 `api.openai.com`；把 bili 指向你本地的 v2rayA/clash HTTP 端口）。
+
+  **解析顺序（首个命中生效）：** per-URL `providers.<url>.proxy` → `BILI_UPSTREAM_PROXY` 环境变量 → Web UI 手动代理 → 本顶层 `proxy` → `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 环境变量 → Windows 系统代理 → 直连。auto 模式下环境/系统回退遵守 `NO_PROXY` 与 Windows 代理绕过列表。指向 bili 自身本地端口的值会被忽略或拒绝，防止成环。Windows 上常见的 Clash/Mihomo 静态系统代理会被自动发现；Web UI 显示生效来源及在 Internet Settings 里检测到的 PAC URL（如有）。
+
+  空字符串表示"显式直连"—— 覆盖并禁用其下所有层级（顶层：为所有 provider 禁用任何环境/系统代理回退；per-provider：仅该 provider）。
+
+  两条出站路径都覆盖：`/bili/` 路径模式（fetch）与 MITM CONNECT 隧道（代理到真实上游的连接也走 HTTP CONNECT 代理）。自动更新器自身的出网（npm registry 检查 + tarball 下载）对其主机使用同一决策，所以 npm 只能经代理可达的机器上 `bili update` 与自动更新同样可用（#609）。
+
+  不支持 SOCKS5：显式 `BILI_UPSTREAM_PROXY` / 配置 `proxy` 使用 `socks5`/`socks5h` scheme 会以可操作的错误启动失败；env/系统代理使用此类 scheme 则被忽略并打一次性警告（流量回落到直连）。Clash/mihomo 用户把 bili 指向同一个 mixed 端口的 `http://`（如 `http://127.0.0.1:7890`）。
+
+  ```jsonc
+  {
+    // 全局默认：所有 provider 走这个代理
+    "proxy": "http://127.0.0.1:20172",
+    "providers": {
+      "https://api.openai.com/v1": {
+        // Per-URL 覆盖全局（该主机用另一个代理）
+        "proxy": "http://127.0.0.1:20173"
+      },
+      "https://open.bigmodel.cn/api/anthropic": {
+        // 空字符串 = 显式直连，覆盖全局代理
+        "proxy": ""
+      }
+    }
+  }
+  ```
 
 ### `imageBilling`
 
 - **类型：** `"auto" | "pixels" | "bytes"`
 - **默认值：** `"auto"`
 - **状态：** ACTIVE
-- **说明：** 预检尺寸门与输出钳制对内联（base64）图片的计费方式（#488/#496/#767）。`"bytes"` 按 `base64 长度 / 4` 计 token —— 保守，且对字节计费 relay 正确。`"pixels"` 只解析图片头（PNG/JPEG/WebP/GIF/BMP）、不解码完整图像，按第一方像素 tile 计费（OpenAI high-detail 模型：512px tile、短边放大到 768px、长边封顶 2048px → 每图 765–2805 token；无法解析的格式回退为固定 16384）。远程（`https://`）图片在两种模式下都固定计 4096。按 provider 的 `providers.<url>.imageBilling` 优先于本全局项，而 `SIGMA_IMAGE_BILLING` 环境变量优先于两者（实时读取，无需重启）。
+- **说明：** 预检尺寸门与输出钳制对内联（base64）图片的计费方式（#488/#496/#767/#1843）。`"pixels"` 只解析图片头（PNG/JPEG/WebP/GIF/BMP）、不解码完整图像，按像素 tile 计费（OpenAI high-detail 模型：512px tile、短边放大到 768px、长边封顶 2048px → 每图 765–2805 token；无法解析的格式回退为固定 16384）。`"bytes"` 按 `base64 长度 / 4` 计 token —— 保守、对字节计费 relay 正确，但自 #1843 起是**显式选择**：旧默认在未知 host 上把这个 ±15× 的估算混进每个窗口决策，把真实用量明明在窗内的图片重会话永久挡死（#1800 事故：6 张截图估算 278,161 vs 实际计费 18,870）。远程（`https://`）图片在两种模式下都固定计 4096。`"auto"`（默认）对所有 host 都解析为 `pixels`。按 provider 的 `providers.<url>.imageBilling` 优先于本全局项，而 `BILI_IMAGE_BILLING` 环境变量优先于两者（实时读取，无需重启）。
+
+### `imageTokenCap`
+
+- **类型：** 正整数（每图 token）
+- **默认值：** *（未设置 —— 无上限）*
+- **状态：** ACTIVE
+- **说明：** 预检尺寸门、输出钳制与图片压缩统计所用单图 token 估算的统一天花板（#488/#496/#1843）。叠加在任何计费模式之上 —— 适用于路由真实编码器计费远低于像素先验的场景。优先级：`BILI_IMAGE_TOKEN_CAP` 环境变量（实时读取，无需重启）> 按 provider 的 `providers.<url>.imageTokenCap` > 本全局项。非数字或非正值按宽松解析丢弃（与 `imageBilling` 一致）。
 
 ---
 
 ## Providers
 
-`providers` 块将**上游 URL** 映射到按 provider 的配置。每个键是一个 URL 前缀；每个值可以声明模型上下文窗口、按 provider 的代理、压缩协议、压缩覆盖项、图片计费模式，以及按路由的透传开关。
-
+`providers` 块将**上游 URL** 映射到按 provider 的配置。每个键是一个 URL 前缀；每个值可以声明模型上下文窗口、按 provider 的代理、压缩协议、压缩覆盖项、图片计费模式、按路由的透传开关，以及客户端侧直连豁免。 也允许**命名**的非 URL 键：它们本身对路由惰性无效，可通过 [`bind`](#named-provider-entries-bind) 成为真实 lane。
 ```jsonc
 {
   "providers": {
@@ -157,36 +204,57 @@
 
 浅层键（`https://open.bigmodel.cn`）匹配该主机上的所有路径。深层键（`https://open.bigmodel.cn/api/anthropic`）仅匹配该端点。当两个键都匹配时，最长（最具体）的那个胜出。键末尾的斜杠会被自动去除。
 
+### MITM vs `/bili/` key schemes
+
+登录客户端（ZCode 经 MITM）与 API-key 客户端可能打向同一个主机（`open.bigmodel.cn`）。要让两者的配置可以不同，MITM 流量在 provider lookup key 里用 `mitm://` scheme，而 `/bili/` 流量用真实的 `https://`：
+
+| 客户端 | Lookup key 示例 |
+|---|---|
+| ZCode（MITM，登录） | `mitm://open.bigmodel.cn` |
+| API-key 客户端（`/bili/`） | `https://open.bigmodel.cn/api/anthropic` |
+
+于是可以给 ZCode 配专属上游代理而不影响 API-key 客户端：
+
+```jsonc
+{
+  "providers": {
+    "mitm://open.bigmodel.cn":            { "proxy": "http://127.0.0.1:20173" },
+    "https://open.bigmodel.cn/api/anthropic": { "proxy": "http://127.0.0.1:20172" }
+  }
+}
+```
+
+两个 scheme 互不重叠：`mitm://` 键只命中该主机的 MITM（登录客户端）流量，普通 `https://` 键只命中 `/bili/`（API-key）流量。
+
+### 命名 provider 条目（`bind`）
+
+一个不是 URL 的键（如 `"claude-bridge"`）是**命名**条目。它本身对路由惰性无效——最长前缀匹配永远命中不了它——只承载 [`compactionOptIn`](#compactionoptin) 之类的 agent 侧身份。加上 `bind` 字段后，它成为另一条 lane 的纯**别名**：
+
+- **类型：** `string` —— 被别名 lane 的 http(s) base URL。
+- 解析**纯粹发生在配置加载时**：条目的路由字段（`compress`、`models`、`proxy`、`passthrough`、`compressProtocol`、`compat`、`imageBilling`、`imageTokenCap`）被深合并到绑定 URL 的路由上，效果与直接写在该 URL 键下完全一致。名称本身绝不出现在请求路径或线上；代理保持单一 URL 前缀路由。
+- **优先级（按字段）：** 显式 URL 键条目胜过任何别名字段；跨来源时外部 `ACP_PROVIDERS` 文件在每一层都胜过内联配置（别名按来源顺序折叠，先设者胜）。对象按键合并；数组/标量整体取自胜者——不做逐元素合并。
+- 没有 `bind` 却仍携带路由字段的命名键是死配置：bili 打印启动警告，点名该键与失效字段（"add `bind`, or move these under the URL entry"），而不是静默忽略。非法 `bind` 值（非字符串、非 http(s) URL）警告并让条目保持无效；URL 键上的 `bind` 被忽略并警告（该键已是 lane）。
+
+```jsonc
+{
+  "providers": {
+    "claude-bridge": {
+      "bind": "https://api.anthropic.com",
+      "compactionOptIn": true,
+      "compress": { "maxContextLimitPct": 0.75 }
+    }
+  }
+}
+```
+
 ### `models`
 
 - **类型：** `Record<string, { context?: number; output?: number; compress?: CompressSettings }>`
 - **默认值：** *（无）*
 - **状态：** ACTIVE
-- **说明：** 将模型名映射到其上下文窗口声明。多数 LLM 的 `/models` 端点**不会**返回上下文窗口大小（已在 OpenAI、Anthropic、zhipu、comfly 上验证），因此对这些服务代理无法在运行时发现它们。OpenRouter 是例外，会被自动发现 —— 见[运行时窗口发现](#运行时窗口发现)。`context` 是模型的上下文窗口（以 token 为单位）；`output` 是最大输出大小，在请求完全不携带输出预算字段时作为 output headroom 预留的回退值（见 [`outputHeadroomMaxPct`](#outputheadroommaxpct)）。当模型未声明时，代理回退到内置上下文表或 models.dev 注册表。每个模型条目还可以携带按模型的 `compress` 块（见[压缩调优](#压缩调优)）。
+- **说明：** 将模型名映射到其上下文窗口声明。LLM 的 `/models` 端点**不会**返回上下文窗口大小（已在 OpenAI、Anthropic、zhipu、comfly 上验证），因此代理无法在运行时发现它们 —— 你必须在此声明。`context` 是模型的上下文窗口（以 token 为单位）；`output` 是最大输出大小，在请求完全不携带输出预算字段时作为 output headroom 预留的回退值（见 [`outputHeadroomMaxPct`](#outputheadroommaxpct)）。它同时是 #546 输出预算恢复的下限：当客户端自己的 `max_tokens` 在携带工具的 main 请求上萎缩到 ≤ 200 时，代理会把它恢复到该会话最近的健康预算，且恢复目标以模型已知的最大输出为下限 —— 客户端上报的 runtime-info > launcher 通道 > 此处声明值 > models.dev registry 条目（#1665/#1840）。若所有来源都不知道该模型的输出上限，代理会按模型打一条一次性警告：此时恢复只以客户端自己最后的非饥饿值为依据，长会话仍可能在 max-tokens 处被截断。当模型未声明时，代理回退到内置上下文表或 models.dev 注册表。每个模型条目还可以携带按模型的 `compress` 块（见[压缩调优](#压缩调优)）。
 
-  **解析顺序（先匹配者胜出）：**（1）每请求来源 —— 客户端的 `anthropic-beta` 更大上下文协商、协作插件的报告、以及启动器的按模型窗口；（2）本按模型 `context` 声明；（3）**已预热**的 models.dev 注册表缓存（若该模型已列出；中继/私有主机用裸模型名去匹配注册表中带 provider 前缀的条目）；（4）OpenRouter 为该确切模型 id 公布的上下文窗口（见[运行时窗口发现](#运行时窗口发现)）；（5）内置上下文表。因此本按模型 `context` 声明**优先于注册表** —— 把它设成你的中继/私有部署实际提供的窗口，即使 models.dev 为该模型列出不同的（通常更大）窗口它也会胜出。若要把窗口固定到所有路由，`compress.modelContextLimit` 仍是最高优先级来源（总是胜出）。
-
-  内置上下文表（第 5 步）是随每个版本发布的静态数据，可能过期 —— 例如 DeepSeek 的规范请求 id `deepseek-flash` 在 models.dev 上没有以该名列出（其窗口列在 `deepseek-v4-flash` 名下），因此只有兜底表能回答它（#852）。日志会为每个模型记录一次胜出来源（`[window] ... fallback=true` 表示值来自内置表）。若解析出的窗口不对，按上文声明 `models.<name>.context`（它优先于注册表、OpenRouter 发现和内置表），或固定 `compress.modelContextLimit`；注意 provider 键必须带流量的 scheme（MITM 登录态客户端流量用 `mitm://<host>`，`/sigma/` 流量用 `https://<host>`）。
-
-### `context`
-
-- **类型：** `number`（token）
-- **默认值：** *（无）*
-- **状态：** ACTIVE
-- **说明：** 该路由上所有未在 [`models`](#models) 中单独声明的模型所使用的上下文窗口。按模型的 `context` 优先于它。
-
-  上下文窗口是**服务进程**的属性，而不是模型家族的属性。一个 Ollama 或 vLLM 服务器在单一的 `num_ctx` 或 `--ctx-size` 下承载许多 tag，因此路由才是声明它的正确单位。常见写法是 `"http://127.0.0.1:11434": { "context": 32768 }`。
-
-  与按模型字段一样，它优先于热的 models.dev 注册表和内置表，因此本地服务的模型不会被家族猜测误判大小。内置表因为 `qwen2.5:7b` 是 qwen 家族 id 而给它 200K，而本地进程实际可能只有 32K。非正数和非有限值会被忽略。已声明的窗口具有权威性，因此不会被压到兜底窗口下限。
-
-#### 运行时窗口发现
-
-- **状态：** ACTIVE，无需配置
-- **说明：** OpenRouter 会在 `https://openrouter.ai/api/v1/models` 按模型公布真实的上下文窗口，即 `context_length` 与 `top_provider.max_completion_tokens`。代理在启动时后台拉取该列表并缓存，在请求路径上只读缓存 —— 从不内联发起请求。
-
-  已公布的窗口优先于内置家族表，因此 `vendor/model` 这类会被家族表误判大小的 id 能被正确标定。它**不**优先于客户端自报窗口、插件报告或运维声明；这些仍然具有权威性。OpenRouter 未公布的 id 原样回退到家族表 —— 绝不会拿兄弟模型的窗口来假设。
-
-  窗口算错不是外观问题。`stealth/space-bunny-alpha` 上的一个会话被按 200,000 的窗口做预算，而该模型实际提供 1,000,000，于是 preflight 压缩在"窗口的 526%"处触发，花费最多 330,735 ms 去压缩一个其实从未超出真实窗口的载荷。若日志仍显示窗口不对，声明 [`models.<name>.context`](#models) 把它固定下来 —— 声明优先于自动发现。
+  内置上下文表是随每个版本发布的静态数据，可能过期 —— 例如 DeepSeek 的规范请求 id `deepseek-flash` 在 models.dev 上没有以该名列出（其窗口列在 `deepseek-v4-flash` 名下），因此只有兜底表能回答它（#852）。日志会为每个模型记录一次胜出来源（`[window] ... fallback=true` 表示值来自内置表）。若解析出的窗口不对，按上文声明 `models.<name>.context`（它优先于注册表和内置表），或固定 `compress.modelContextLimit`；注意 provider 键必须带流量的 scheme（MITM 登录态客户端流量用 `mitm://<host>`，`/bili/` 流量用 `https://<host>`）。
 
 ### `proxy`
 
@@ -211,17 +279,27 @@
 
 ### `compat`
 
-- **类型：** `{ roles?: Record<string, string> }`
+- **类型：** `{ roles?: Record<string, string>; dropFields?: string[] }`
 - **默认值：** `{}`（禁用）
 - **状态：** ACTIVE
-- **说明：** 按 provider 的线上兼容覆盖。`roles` 把消息角色映射为该上游接受的角色名，例如 `{"developer": "system"}` —— 用于拒绝 `developer` 角色的上游（#552，新版 codex 客户端会发这个角色）。作用于最终转发的 `openai`/`responses` 请求体 —— 客户端发送的角色和 sigma 自己注入的提示一视同仁 —— 压缩重试循环重发的请求体同样携带该改写。按键覆盖全局 `compat` 块（见[服务端设置](#服务端设置)）。默认 `{}` 逐字节透明转发。
+- **说明：** 按 provider 的线上兼容覆盖。`roles` 把消息角色映射为该上游接受的角色名，例如 `{"developer": "system"}` —— 用于拒绝 `developer` 角色的上游（#552，新版 codex 客户端会发这个角色）。作用于最终转发的 `openai`/`responses` 请求体 —— 客户端发送的角色和 bili 自己注入的提示一视同仁 —— 压缩重试循环重发的请求体同样携带该改写。按键覆盖全局 `compat` 块（见[服务端设置](#服务端设置)）。`dropFields` 删除严格 schema 上游拒绝的客户端固定字段（#1757）：点分纯对象路径（无通配/下标），与全局列表**相加**合并（provider 只能追加、不能撤销全局路径）；仅结构删除 —— 字符串值永不改动，不存在的路径跳过，无命中时逐字节转发。canonical 用例 —— SenseNova Responses 网关对 pi-ai 固定发送的 `reasoning.summary: "auto"` 返回 400：
+
+  ```jsonc
+  {
+    "providers": {
+      "https://token.sensenova.cn/v1": {
+        "compat": { "dropFields": ["reasoning.summary"] }
+      }
+    }
+  }
+  ```
 
 ### `passthrough`
 
 - **类型：** `boolean`
 - **默认值：** *（无 —— 压缩开启）*
 - **状态：** ACTIVE
-- **说明：** 按路由覆盖全局 [`passthrough`](#passthrough) 设置。设为 `true` 时，匹配该路由的所有请求**逐字节转发**：不走 kernel 往返（不重序列化 messages、不注入 ACP 渲染标签、不删除 `prompt_cache_key`），响应原样 pipe，该路由不建立 session 状态。用于上游反作弊会拒绝 sigma 改写后请求体的场景 —— 例如 ZCode 对 kernel 重建的 `messages` 请求体返回 `405 / 3012`（"request has been blocked due to unusual activity"，#661）。`mitm://` 键只命中该 host 的 MITM（登录态客户端）流量，普通 `https://` 键只命中 `/sigma/`（API key）流量 —— 两种 scheme 互不重叠：
+- **说明：** 按路由覆盖全局 [`passthrough`](#passthrough) 设置。设为 `true` 时，匹配该路由的所有请求**逐字节转发**：不走 kernel 往返（不重序列化 messages、不注入 ACP 渲染标签、不删除 `prompt_cache_key`），响应原样 pipe，该路由不建立 session 状态。用于上游反作弊会拒绝 bili 改写后请求体的场景 —— 例如 ZCode 对 kernel 重建的 `messages` 请求体返回 `405 / 3012`（"request has been blocked due to unusual activity"，#661）。`mitm://` 键只命中该 host 的 MITM（登录态客户端）流量，普通 `https://` 键只命中 `/bili/`（API key）流量 —— 两种 scheme 互不重叠：
 
   ```jsonc
   {
@@ -231,20 +309,42 @@
   }
   ```
 
+### `direct`
+
+- **类型：** `boolean`
+- **默认值：** *（无 —— 路由走 bili）*
+- **状态：** ACTIVE
+- **说明：** 客户端侧路由豁免（#1622）：设为 `true` 时，这个上游在**客户端侧**永不被指向 bili。改写 provider store 的原生通道（目前是 ZCode）会跳过匹配的 provider 条目而非包装它们 —— 流量客户端 → 上游原样直达；与 [`passthrough`](#passthrough) 不同（后者仍在代理处终止）。匹配规则与其他 provider 字段相同（最长 URL 前缀），因此任何 lane 都能以同一方式遵守。用于必须看到客户端真实 origin 的上游（例如请求签名从 origin 派生的账号），或单纯不想让某 provider 走本机 bili 的场景：
+
+  ```jsonc
+  {
+    "providers": {
+      "https://api.moonshot.cn/v1": { "direct": true }
+    }
+  }
+  ```
+
 ### `imageBilling`
 
 - **类型：** `"auto" | "pixels" | "bytes"`
 - **默认值：** *（全局 `imageBilling`，再回退 `"auto"`）*
 - **状态：** ACTIVE
-- **说明：** 按路由覆盖尺寸门的图片计费方式（#767）。官方 Codex/OpenAI/Anthropic 端点（像素 tile 计费）设 `"pixels"`，字节计数 relay 保持 `"bytes"` —— 字节计费下，历史 baseline 超窗加上大 base64 截图会让 preflight 永远 502，而上游实际每图只收几千 token。两级都未显式设置时，按上游 host 自动选择：以 `openai.com`、`openai.azure.com`、`chatgpt.com`、`api.anthropic.com` 结尾的 host → `pixels`，其余 → `bytes`。`SIGMA_IMAGE_BILLING` 环境变量覆盖两级配置：
+- **说明：** 按路由覆盖尺寸门的图片计费方式（#767/#1843）。字节计数 relay 设 `"bytes"` —— 字节计费下，历史 baseline 超窗加上大 base64 截图会让 preflight 永远 502，而上游实际每图只收几千 token；正因如此，`"bytes"` 自 #1843 起是显式选择，而不再是未知 host 的默认。两级都未显式设置时，计费对所有 host 解析为 `"pixels"`（#1843：像素先验 —— 每张截图约 1K–3K token —— 对所有视觉编码器都是正确的数量级，而旧 bytes 默认在非 OpenAI 上游上偏差可达 15×）。`BILI_IMAGE_BILLING` 环境变量覆盖两级配置：
 
   ```jsonc
   {
     "providers": {
-      "https://chatgpt.com/backend-api/codex": { "imageBilling": "pixels" }
+      "https://relay.example.com/v1": { "imageBilling": "bytes" }
     }
   }
   ```
+
+### `imageTokenCap`
+
+- **类型：** 正整数（每图 token）
+- **默认值：** *（全局 `imageTokenCap`，再回退未设置 —— 无上限）*
+- **状态：** ACTIVE
+- **说明：** 按路由的单图 token 估算天花板（#1843），叠加在该路由解析出的任何计费模式之上。优先于全局 `imageTokenCap`；`BILI_IMAGE_TOKEN_CAP` 环境变量优先于两者。非数字或非正值按宽松解析丢弃（与 `imageBilling` 一致）。
 
 ---
 
@@ -274,7 +374,7 @@
 - **类型：** `number | string`
 - **默认值：** `0.25`
 - **状态：** ACTIVE
-- **说明：** 输出预留（output headroom）的上限，以上下文窗口的比例为单位：预留量 = `min(max_tokens, pct × window)`。**预算来源：** 当请求完全不带输出预算字段（`max_tokens` / `max_completion_tokens` / `max_output_tokens`）时 —— 例如 Codex native Responses 路径不发送 `max_output_tokens`（#924）—— 代理回退到模型声明的最大输出：先取 per-route 配置 `providers[url].models[model].output`，再取 models.dev registry 的 output ceiling（bundled snapshot 离线兜底）；都拿不到则不预留。同样的 cap 也作用于回退值。该预留让引擎的 nudge/truncate 档位位于 `window − 预留量` 之下，防止长回复把「输入+输出」推进窗口之外 —— 适用于把输出计入窗口的 API（Anthropic Messages 豁免：其 input limit 独立于 `max_tokens` 执行，故排除在外）。不设上限时，注册最大输出占窗口比例大的模型（如 262144 窗口上 maxTokens 131072）会失去大半输入预算，75% 强制压缩阈值会在约三分之一的完整窗口处就触发。默认 0.25 在控制损失的同时保证只要单轮回复不超过窗口的 25%，就不会在 95% 紧急阈值下溢出；更长的回复会溢出一次，由下一轮的 overflow self-heal 恢复。注意该上限只放宽过大的预留：当 `max_tokens` 本身 ≤ `pct × window` 时，预留仍是完整的 `max_tokens`（与旧行为逐字节一致）。接受比例（`0.25`）或百分比字符串（`"25%"`）；设 `0` 完全禁用预留；`>= 1` 恢复旧的完整预留行为（input + 用满预算的响应总能放进窗口 —— SGLang/vLLM 等严格后端的要求）。负数或无法解析的值会拒绝整个 `compress` 块。示例：窗口 262144 token、`max_tokens = 131072` → 默认 `0.25` 预留 65536 → 有效窗口 196608（旧完整预留：131072）；`max_tokens = 65536` → 预留 65536 → 196608 不变（65536 ≤ 窗口的 25%）。与 sigma-pi（`#207`）对齐，见 #896。
+- **说明：** 输出预留（output headroom）的上限，以上下文窗口的比例为单位：预留量 = `min(max_tokens, pct × window)`。**预算来源：** 当请求完全不带输出预算字段（`max_tokens` / `max_completion_tokens` / `max_output_tokens`）时 —— 例如 Codex native Responses 路径不发送 `max_output_tokens`（#924）—— 代理回退到模型声明的最大输出：先取 per-route 配置 `providers[url].models[model].output`，再取 models.dev registry 的 output ceiling（bundled snapshot 离线兜底）；都拿不到则不预留。同样的 cap 也作用于回退值。该预留让引擎的 nudge/truncate 档位位于 `window − 预留量` 之下，防止长回复把「输入+输出」推进窗口之外 —— 适用于把输出计入窗口的 API（Anthropic Messages 豁免：其 input limit 独立于 `max_tokens` 执行，故排除在外）。不设上限时，注册最大输出占窗口比例大的模型（如 262144 窗口上 maxTokens 131072）会失去大半输入预算，75% 强制压缩阈值会在约三分之一的完整窗口处就触发。默认 0.25 在控制损失的同时保证只要单轮回复不超过窗口的 25%，就不会在 95% 紧急阈值下溢出；更长的回复会溢出一次，由下一轮的 overflow self-heal 恢复。注意该上限只放宽过大的预留：当 `max_tokens` 本身 ≤ `pct × window` 时，预留仍是完整的 `max_tokens`（与旧行为逐字节一致）。接受比例（`0.25`）或百分比字符串（`"25%"`）；设 `0` 完全禁用预留；`>= 1` 恢复旧的完整预留行为（input + 用满预算的响应总能放进窗口 —— SGLang/vLLM 等严格后端的要求）。负数或无法解析的值会拒绝整个 `compress` 块。示例：窗口 262144 token、`max_tokens = 131072` → 默认 `0.25` 预留 65536 → 有效窗口 196608（旧完整预留：131072）；`max_tokens = 65536` → 预留 65536 → 196608 不变（65536 ≤ 窗口的 25%）。与 billion-context-pi（`#207`）对齐，见 #896。
 
 #### `maxContextLimit`
 
@@ -317,21 +417,6 @@
 - **默认值：** *（内核默认值，通常为 `5000`）*
 - **状态：** ACTIVE
 - **说明：** 一个消息范围可被纳入压缩的最小长度，单位为**字符**（不是 token）；更小的范围会被跳过。英文/代码平均约 4 字符/token，CJK 约 1-2 字符/token，同一数值对英文的实际语义比 token 直觉宽松约 4 倍。映射到内核字段 `compress.minCompressRange`。
-
-#### `maxPreflightMs`
-
-- **类型：** `number`
-- **默认值：** `30000`
-- **状态：** ACTIVE
-- **说明：** 单次 preflight 压缩过程的挂钟上限，单位为毫秒。每次调用的预算是 16 次摘要调用，它限制的是**调用次数**而非**时间**，因此只有在上游响应迅速时才等于限制了延迟。实测有一次调用在 3 个范围上花了 330735 毫秒（约 44 token/秒），并在客户端中途断开时丢弃了结果。该上限改为终止整个遍历，本轮以**可重试的** 502 快速失败并指明是触发了时间上限 —— 上游慢不等于内容死路，因此不会记入死路冷却。`0` 或负值表示禁用上限。层级：全局、provider、model。
-
-#### `maxSummaryLength`
-
-- **类型：** `number`
-- **默认值：** `20000`（来自内核的 `defaultConfig`）
-- **状态：** ACTIVE
-- **说明：** 单份组装后压缩摘要的长度硬上限，单位为字符。preflight 摘要器会把这个上限按范围的 chunk 数拆分，并在每个 chunk 自己的提示词中写明它应得的那一份，因此守规矩的模型永远不需要额外干预。当某个模型无视该预算时，组装后的摘要会**在句子边界处裁剪到上限并照常应用**，而不是丢弃。裁剪是刻意的选择：内核的校验针对的是**最终**长度，因此裁剪后的摘要能被接受，而完整的摘要不能；丢弃则会白白损失一次折叠，并最终以客户端无法恢复的硬 502 呈现给用户。范围仍然是原子组装的 —— 某个分段返回空内容，或上限小到裁剪后已无可用内容时，整个范围都会被丢弃，绝不会部分应用。改动前在真实流量上实测：11 份超长组装摘要（20659 到 45204 字符，其中 3 份恰好是 35246 字符对应 20000 上限），最终导致 2 次无法恢复的 502。`0` 或负值表示完全禁用该上限。
-
 
 #### `minCompressRange`
 
@@ -397,7 +482,14 @@
 - **类型：** `string`（包名，如 `"lean"`）
 - **默认值：** `default`（未设置等同——恒等表面，全部使用内核默认值）
 - **状态：** ACTIVE
-- **说明：** 选择一个具名 prompt pack —— 一套策划好的表面预设，覆盖工具描述、压缩系统提示词段落、nudge 段落 —— 从内核的包解析链解析：**项目** `./.sigma/packs/<name>.json` → **用户** `<configDir>/packs/<name>.json` → **内置**（`default`、`lean`）。内置 `lean` 把四个 ACP 工具描述换成单行版（无 snippet/guideline 包装），压缩规则保持默认。未知包名回退到恒等表面并记录一次警告。与其他字段一样三级级联合并；包的表面覆盖（工具/段落）直接生效，不经 `acknowledgePromptsRisk` 门控——该门控只管内联 `compress.prompts` 的规则文本覆盖。注意：包文件里的 `prompts` 块会被本代理忽略，规则文本只能经内联 `compress.prompts` 设置。需要 `acp-kernel` >= 0.0.66。
+- **说明：** 选择一个具名 prompt pack —— 一套策划好的表面预设，覆盖工具描述、压缩系统提示词段落、nudge 段落 —— 从内核的包解析链解析：**项目** `./.billion-context/packs/<name>.json` → **用户** `<configDir>/packs/<name>.json` → **内置**（`default`、`lean`）。内置 `lean` 把四个 ACP 工具描述换成单行版（无 snippet/guideline 包装），压缩规则保持默认。未知包名回退到恒等表面并记录一次警告。与其他字段一样三级级联合并；包的表面覆盖（工具/段落）直接生效，不经 `acknowledgePromptsRisk` 门控——该门控只管内联 `compress.prompts` 的规则文本覆盖。注意：包文件里的 `prompts` 块会被本代理忽略，规则文本只能经内联 `compress.prompts` 设置。需要 `acp-kernel` >= 0.0.66。
+
+#### `reconcile`
+
+- **类型：** `string` — `"off"` | `"warn"` | `"repair"`
+- **默认值：** `"repair"`
+- **状态：** ACTIVE
+- **说明：** 控制**折叠状态和解**（#1921）：当客户端重发的历史与已压缩内容发生漂移时怎么处理 —— 例如 fork 重新序列化了早前轮次（#1908）、客户端原地改写消息字节、或 provider 规范化空白。默认情况下消息身份是内容哈希，一字节漂移就会让受影响消息从所有压缩块中静默脱落，原文重回线上（“折叠漂移”）。`"repair"` 模式在折叠运行前逐条分类漂移：稳定的工具调用锚（`tool_use_id`）与规范化身份锚（NFC 文本、CRLF/空白折叠）把压缩块重锚到新消息 id 上，折叠在客户端漂移下存活、字节等价于一次干净重发；真正被**编辑**的消息（规范化文本不同，或长度漂移超过 `max(256, 25%)`）则诚实地重回线上（绝不静默改写）——由下一轮压缩重新折叠。`"warn"` 运行同一分类器但只记录发现；`"off"` 完全关闭该层（#1921 之前的行为）。环境变量 `BILI_FOLD_RECONCILE` 可为单个进程覆盖配置值。锚元数据按会话持久化（会话记录中的 `foldAnchors`，上限 16384 条），覆盖每个块实际引用的消息。系统提示词在无消息漂移时变化会记录一行 `info`（system-only 漂移永不影响折叠状态）。
 
 #### `absorb`
 
@@ -424,7 +516,7 @@
   - `toolName: string` — 重命名检索工具（默认 `"acp_retrieve"`）；声明、分发与占位符提示都跟随名称。必须与客户端自身工具名保持唯一。
   - `maxHeadChars: number` — 占位符中头部/命令预览的长度（kernel 默认 `96`）。
   **插件通道治理（#1345）：**插件模式下整个 `ccr` 块跟随**基础**配置——仅当基础层级显式 `enabled: true` 时武装，并以基础的 `toolName` 与阈值执行；因为插件清单（宿主声明 retrieve 能力的唯一出口）只从基础配置构建。provider/model 层级的 `ccr.*` 覆盖因此只对代理模式会话生效（代理按请求在合并块下自行声明并分发）。每个发生分歧的覆盖都会在配置加载时记录一条 `[acp-config] ccr override ignored in plugin sessions: …` 警告，指明层级、字段以及插件会话实际使用的值。
-  存储以单个信封文件（`.content-store.json`）持久化在会话 JSON 旁边，设置 `SIGMA_ENCRYPTION_KEY` 时使用与会话文件相同的静态加密编解码器；条目按内容哈希去重，按会话懒加载。只有 `tool` 结果*内部的内容*缩小——与 assistant `tool_calls` 的配对不受影响。范围门控：**全车道默认关闭（#1207 决策）— 任意层级显式 `compress.ccr.enabled: true` 方可启用**：代理模式开启即武装；anthropic + openai wire 上的插件模式需全局显式开启（插件清单才会声明 `acp_retrieve`，#1271）；responses marker/文本协议路由、`ACP_NO_INJECT_TOOL`、以及插件模式下的 responses/google wire 没有经过验证的请求内往返通道来执行 retrieve，因此存储在这些场景下自动解除武装，而不是丢失内容。v2 起（#1179），折叠同样无损：compress 折叠落定时，被覆盖的原文会持久化进存储（首次写入优先，跳过 reasoning），因此 `acp_retrieve("mNNNNN")` 对已折叠内容同样有效；`decompress` 接受可选的 `startId`/`endId` 消息 ref，只恢复块内的一个区间（临时注入，与 retrieve 同一通道）；`search_context` 命中条目携带覆盖的 ref 区间（`[m00044–m00097 · N msgs]`）；`acp_status` 列出块→ref 关联（`BLOCK SPANS`），并在 STORE 行单独计数 `range-restored`。设计定案（#1282）：**永不设上限、永不逐出**——信封随持有的唯一原文数量增长，与会话同生命周期；足迹在 `acp_status` 中可见。按会话统计（已存字节、当前线上节省字节、retrieve 率）在 `acp_status` 中展示；每次 retrieve 记录一条 `[ccr] retrieve …` 日志。
+  存储以单个信封文件（`.content-store.json`）持久化在会话 JSON 旁边，设置 `BILI_ENCRYPTION_KEY` 时使用与会话文件相同的静态加密编解码器；条目按内容哈希去重，按会话懒加载。只有 `tool` 结果*内部的内容*缩小——与 assistant `tool_calls` 的配对不受影响。范围门控：**全车道默认关闭（#1207 决策）— 任意层级显式 `compress.ccr.enabled: true` 方可启用**：代理模式开启即武装；anthropic + openai wire 上的插件模式需全局显式开启（插件清单才会声明 `acp_retrieve`，#1271）；responses marker/文本协议路由、`ACP_NO_INJECT_TOOL`、以及插件模式下的 responses/google wire 没有经过验证的请求内往返通道来执行 retrieve，因此存储在这些场景下自动解除武装，而不是丢失内容。v2 起（#1179），折叠同样无损：compress 折叠落定时，被覆盖的原文会持久化进存储（首次写入优先，跳过 reasoning），因此 `acp_retrieve("mNNNNN")` 对已折叠内容同样有效；`decompress` 接受可选的 `startId`/`endId` 消息 ref，只恢复块内的一个区间（临时注入，与 retrieve 同一通道）；`search_context` 命中条目携带覆盖的 ref 区间（`[m00044–m00097 · N msgs]`）；`acp_status` 列出块→ref 关联（`BLOCK SPANS`），并在 STORE 行单独计数 `range-restored`。设计定案（#1282）：**永不设上限、永不逐出**——信封随持有的唯一原文数量增长，与会话同生命周期；足迹在 `acp_status` 中可见。按会话统计（已存字节、当前线上节省字节、retrieve 率）在 `acp_status` 中展示；每次 retrieve 记录一条 `[ccr] retrieve …` 日志。
 
 #### `search`
 
@@ -452,15 +544,15 @@
 - **类型：** `boolean`
 - **默认值：** `false`
 - **状态：** ACTIVE
-- **说明：** **持久化模型提醒**（issue [ranxianglei/sigma-pi#433](https://github.com/ranxianglei/sigma-pi/issues/433)，经由 `acp-kernel` rules API），**默认关闭**——设 `compress.rules: true` 显式开启(#1399 定案:开启后模型对会话规则有全权,可未经提示自主调用,含 delete/clear)。启用后，一个 `acp_rule` 工具随 ACP 工具一同注入：传入简短的 `rule` 参数调用可记录一条**原则级提醒**，该提醒受**硬性保护**免于压缩（调用及结果在每次折叠中都保留在上下文中）；省略参数则列出已记录的规则。传入 `delete`(规则 id,如 `"rule3"`)删除该条规则(返回 `Removed ruleN: <text>`);传入 `clear: true` 清空全部规则。两者互斥,且均与 `rule` 互斥——一次调用只能执行一种操作——因此过时或误记的规则可以直接删除,而无需再写一条"作废声明"对冲。关于*何时*记录（用户强调的教训、用户要求记住的行为、遇到的重大陷阱）的指导完全写在工具描述里——不向系统提示词添加任何内容。受内核限制约束（50 条规则 × 每条 300 字符）；重复文本会被拒绝并指向已有的 id。注入跟随线上原生工具面，与 `absorb` 完全一致：代理模式在 anthropic/openai/responses 原生工具线上注入该工具，插件模式在插件清单中声明（执行按会话门控）。已记录的规则在会话状态中持久化，跨重启保留；删除同样持久化。要求 `acp-kernel` >= 0.0.70（delete/clear 需要 >= 0.0.84）。人也可以不经过模型执行全部操作：pi/omp 提供原生 `/acp-rule` 命令，语义与工具一致 —— 裸 `/acp-rule` 列出全部已记录规则，`/acp-rule <文本>` 直接记录一条，`/acp-rule remove <id>` 删除一条，裸 `/acp-rule clear` 清空全部（`clear <文本>` 是记录而非清空）（#1251；remove/clear 由 #1399 补齐）。
+- **说明：** **持久化模型提醒**（issue [ranxianglei/billion-context-pi#433](https://github.com/ranxianglei/billion-context-pi/issues/433)，经由 `acp-kernel` rules API），**默认关闭**——设 `compress.rules: true` 显式开启(#1399 定案:开启后模型对会话规则有全权,可未经提示自主调用,含 delete/clear)。启用后，一个 `acp_rule` 工具随 ACP 工具一同注入：传入简短的 `rule` 参数调用可记录一条**原则级提醒**，该提醒受**硬性保护**免于压缩（调用及结果在每次折叠中都保留在上下文中）；省略参数则列出已记录的规则。传入 `delete`(规则 id,如 `"rule3"`)删除该条规则(返回 `Removed ruleN: <text>`);传入 `clear: true` 清空全部规则。两者互斥,且均与 `rule` 互斥——一次调用只能执行一种操作——因此过时或误记的规则可以直接删除,而无需再写一条"作废声明"对冲。关于*何时*记录（用户强调的教训、用户要求记住的行为、遇到的重大陷阱）的指导完全写在工具描述里——不向系统提示词添加任何内容。受内核限制约束（50 条规则 × 每条 300 字符）；重复文本会被拒绝并指向已有的 id。注入跟随线上原生工具面，与 `absorb` 完全一致：代理模式在 anthropic/openai/responses 原生工具线上注入该工具，插件模式在插件清单中声明（执行按会话门控）。已记录的规则在会话状态中持久化，跨重启保留；删除同样持久化。要求 `acp-kernel` >= 0.0.70（delete/clear 需要 >= 0.0.84）。人也可以不经过模型执行全部操作：pi/omp 提供原生 `/acp-rule` 命令，语义与工具一致 —— 裸 `/acp-rule` 列出全部已记录规则，`/acp-rule <文本>` 直接记录一条，`/acp-rule remove <id>` 删除一条，裸 `/acp-rule clear` 清空全部（`clear <文本>` 是记录而非清空）（#1251；remove/clear 由 #1399 补齐）。
 
 #### `reasoning`
 
 - **类型：** `object`（`{ drop?, threshold? }`）
 - **默认值：** `drop: true`、`threshold: 2048` — 默认开启
 - **状态：** ACTIVE
-- **说明：** **压缩回执 reasoning 卫生**（issue #651，对应 `sigma-pi` #339/#348 / `opencode-acp` #377 的代理侧孪生）。把 `reasoning`/`thinking` 轨迹留在 wire 上的模型会积累一块永久不可压缩的地板：折叠的锚点是一条 `compress` 调用，而它**前方**的 reasoning 消息会作为受保护前缀活过每一次折叠——它们永远无法被重新摘要，只能被剥离。在风暴会话里这块地板曾占到可见上下文的 ~50%。开启后，代理会剥离紧邻**已闭合** `compress` 调用之前的 reasoning 连续段，闭合判定按**回合证据**：该调用的工具结果（`contentType: "tool-result"`、`toolCallId` 匹配）已出现在更晚位置，且其后至少还有一条消息——**不要求用户消息**，长 agent 会话同样能闭合回合（#348 孪生）。安全门：**在飞回合**（结果未返回、或结果仍是最后一条消息）绝不动；普通工具调用（`read`、`bash` …）的 reasoning 保留；连续段按求和后的总长判定（2×1200 字符的段仍会命中 2048 门槛）；不连续的 reasoning（片段之间夹着正文）不动。子字段与其他 CompressSettings 字段一样按“深层覆盖”合并：
-  - `drop: boolean` — 总开关；`false` 完整还原旧行为。请求携带 `tools` 时要求 `reasoning` 原样往返的 thinking 模型必须按 provider 关闭——DeepSeek、GLM thinking、Qwen-QwQ 在未回传先前 `reasoning_content` 时返回 HTTP 400。#684 起这一步基本自动：`deepseek` 上游**以及请求体 `model` id 匹配 `/deepseek/i` 的请求**（#1027——经非 deepseek 网关提供的 DeepSeek 模型）静态识别；任何上游以提及 `reasoning_content` 的 400 拒绝时仍会自动学得该会话需保留 reasoning（自愈，会话级；日志携带 `[acp-loop] learned strictReasoningEcho`）。该配置仍作为其他严格 reasoning 上游的手动兜底手段：
+- **说明：** **压缩回执 reasoning 卫生**（issue #651，对应 `billion-context-pi` #339/#348 / `opencode-acp` #377 的代理侧孪生）。把 `reasoning`/`thinking` 轨迹留在 wire 上的模型会积累一块永久不可压缩的地板：折叠的锚点是一条 `compress` 调用，而它**前方**的 reasoning 消息会作为受保护前缀活过每一次折叠——它们永远无法被重新摘要，只能被剥离。在风暴会话里这块地板曾占到可见上下文的 ~50%。开启后，代理会剥离紧邻**已闭合** `compress` 调用之前的 reasoning 连续段，闭合判定按**回合证据**：该调用的工具结果（`contentType: "tool-result"`、`toolCallId` 匹配）已出现在更晚位置，且其后至少还有一条消息——**不要求用户消息**，长 agent 会话同样能闭合回合（#348 孪生）。安全门：**在飞回合**（结果未返回、或结果仍是最后一条消息）绝不动；普通工具调用（`read`、`bash` …）的 reasoning 保留；连续段按求和后的总长判定（2×1200 字符的段仍会命中 2048 门槛）；不连续的 reasoning（片段之间夹着正文）不动。子字段与其他 CompressSettings 字段一样按“深层覆盖”合并：
+  - `drop: boolean` — 总开关；`false` 完整还原旧行为。请求携带 `tools` 时要求 `reasoning` 原样往返的 thinking 模型必须按 provider 关闭——DeepSeek、GLM thinking、Qwen-QwQ 在未回传先前 `reasoning_content` 时返回 HTTP 400。#684 起这一步基本自动：`deepseek` 上游**以及请求体 `model` id 匹配 `/deepseek/i` 的请求**（#1027——经非 deepseek 网关提供的 DeepSeek 模型）静态识别；**Anthropic wire** 上，历史里携带**带签名的 thinking 块**的请求会按请求禁用该剥离（#1658——签名 thinking 必须与其同回合的 `tool_use` 一起原样往返，否则上游拒绝该请求，剥离它会把这对块弄成孤儿；未开扩展思考的会话不受影响）；任何上游以提及 `reasoning_content` 的 400 拒绝时仍会自动学得该会话需保留 reasoning（自愈，会话级；日志携带 `[acp-loop] learned strictReasoningEcho`）。该配置仍作为其他严格 reasoning 上游的手动兜底手段：
     ```jsonc
     "providers": { "https://api.deepseek.com": { "compress": { "reasoning": { "drop": false } } } }
     ```
@@ -471,7 +563,7 @@
 - **类型：** `object`（`{ enabled?, maxContinue?, maxTierN?, markerText?, base?, offset?, debugLog? }`）
 - **默认值：** *（禁用 —— 除非在某一层设置 `enabled: true`）*
 - **状态：** ACTIVE
-- **说明：** gpt-5.x/gpt-6.x **"晶格"（lattice）推理截断**守卫（issue #739；上游 [openai/codex#30364](https://github.com/openai/codex/issues/30364)）。这些模型会间歇性地在恰好 `base*n + offset` 个 reasoning token 处（默认 `518n−2` → 516、1034、1552 …）思考到一半就停下，然后基于未完成的思路作答。当作用域内的终止回合落在晶格上**且**携带 `encrypted_content` 块时，sigma 会缓冲该响应、带着自己的 reasoning 加一条继续提示重发（最多 `maxContinue` 个续写回合），再把全部折叠成**一个**响应，其 usage 为真实求和值。折叠期间 reasoning 实时流式发给客户端（不做整段缓冲），只有最后一轮干净回合的非 reasoning 输出被透传。仅作用于 Responses/SSE 流式请求（sigma 只支持 SSE）；压缩注入的回合被豁免（由循环负责）。子字段与其他 CompressSettings 字段一样按“深层覆盖”合并：
+- **说明：** gpt-5.x/gpt-6.x **"晶格"（lattice）推理截断**守卫（issue #739；上游 [openai/codex#30364](https://github.com/openai/codex/issues/30364)）。这些模型会间歇性地在恰好 `base*n + offset` 个 reasoning token 处（默认 `518n−2` → 516、1034、1552 …）思考到一半就停下，然后基于未完成的思路作答。当作用域内的终止回合落在晶格上**且**携带 `encrypted_content` 块时，bili 会缓冲该响应、带着自己的 reasoning 加一条继续提示重发（最多 `maxContinue` 个续写回合），再把全部折叠成**一个**响应，其 usage 为真实求和值。折叠期间 reasoning 实时流式发给客户端（不做整段缓冲），只有最后一轮干净回合的非 reasoning 输出被透传。仅作用于 Responses/SSE 流式请求（bili 只支持 SSE）；压缩注入的回合被豁免（由循环负责）。子字段与其他 CompressSettings 字段一样按“深层覆盖”合并：
   - `enabled: boolean` — 总开关；非 `true` 时守卫完全关闭。作用域由该块在三级树（全局 / provider / model）**放在哪一层**决定——没有单独模型列表。严格签名（精确晶格命中 + `encrypted_content` + 无工具调用）限制哪些回合真正触发续写。
   - `maxContinue: number` — 首轮之后最多续写的回合数（默认 `3`）。
   - `maxTierN: number` — 允许续写的最高晶格层级 `n`（默认 `6`）；`0` = 不限制。遇到罕见的深层截断时调高（例如在 gpt-6-astra 上观察到一次 `n=11`）。
@@ -509,7 +601,7 @@
 - **类型:** `object`(`{ enabled?, verbosityLevel?, effortRouting? }`)
 - **默认:** *(禁用——不在任何层级设 `enabled: true` 就完全关闭)*
 - **状态:** ACTIVE
-- **描述:** 可选的**输出侧压缩**(issue #1093):两个请求期杠杆,削减的是*输出* token——它比输入贵、且一流出就计费。决策逻辑(轮次分类、L0–L4 指令措辞、effort 钳制)在 acp-kernel 内与 agent 侧共享;sigma 只负责落在 wire 上,且在所有其他 body 改写之后:
+- **描述:** 可选的**输出侧压缩**(issue #1093):两个请求期杠杆,削减的是*输出* token——它比输入贵、且一流出就计费。决策逻辑(轮次分类、L0–L4 指令措辞、effort 钳制)在 acp-kernel 内与 agent 侧共享;bili 只负责落在 wire 上,且在所有其他 body 改写之后:
   - **Verbosity steering** — 确定性的简洁指令追加到 system prompt **尾部**(绝不前置——前移会改变客户端自己的提示词字节、击穿前缀缓存)。哨兵包裹且幂等:重试不会累积,等级切换原地替换。措辞跨版本字节稳定(内核改措辞=所有该等级会话的前缀缓存一次性失效)。
   - **Effort routing** — 按结构分类最后一个 user 轮(只看块组成,不做内容模式匹配);在*机械续答*(干净的工具结果、无错误、无新用户信号)时把**客户端已发送的** effort 字段向最低档钳制。只钳不注:绝不注入客户端没发的字段(不支持 effort 的模型会 400)、绝不切换 `thinking.type`、绝不把 `minimal` 上调。覆盖:OpenAI `reasoning_effort`、Responses `reasoning.effort`、Anthropic `thinking.budget_tokens`(下限 1024)、Gemini `generationConfig.thinkingConfig.thinkingBudget`(下限 128;`-1` 动态档不动)。
   - 子字段(与其他 CompressSettings 字段一样最深层级优先):`enabled: boolean` 总开关;`verbosityLevel: number` 0–4(0=不发指令,默认 2);`effortRouting: boolean`(默认随 `enabled` 开启)。越界值**带警告**回退默认,不会整块拒绝。四条 wire 全覆盖(openai chat / responses / anthropic / google);无 system 载体的请求不动(skip-if-absent)。
@@ -651,118 +743,117 @@
 | `ACP_COMPRESS_TOOL` | 设为 `0` 禁用工具注入（等同 `"compress.injectTool": false`）。 |
 | `ACP_COMPRESS_NUDGE` | 设为 `0` 禁用 nudge 注入（等同 `"compress.injectNudge": false`）。 |
 | `ACP_MODEL_CONTEXT_LIMIT` | 全局覆盖上下文上限（绝对 token 数）。 |
-| `SIGMA_IMAGE_TOKEN_CAP` | 预检尺寸门与输出钳制用的单图 token 估算上限（#488/#496）。默认内联 `data:` 图片按 `base64 长度 / 4` 计 token、**无上限** —— 对字节计费 relay 正确，但对像素 tile 计费的官方上游（Anthropic/OpenAI）会严重高估（后者无论字节多少，每图约计 1.1K–1.6K token）。像素 tile 上游建议改用 [`imageBilling`](#imagebilling)（`"pixels"`，或 `SIGMA_IMAGE_BILLING=pixels`），按真实 tile 计费而非截断字节估算；该上限仍在两种计费模式之上作为统一天花板生效。不设置 = 无上限（默认）。 |
-| `SIGMA_IMAGE_BILLING` | 覆盖预检尺寸门与输出钳制的图片计费模式（#767）：`pixels` 或 `bytes`。每次请求实时读取（无需重启）；优先于全局 `imageBilling` 与所有按 provider 的 `providers.<url>.imageBilling`。在配置为 `"pixels"` 的路由上强制保守计费用 `bytes`（例如 OpenAI 同形 host 后面的字节计数 relay），或不想改配置文件就全进程启用 tile 计费用 `pixels`。详见 [`imageBilling`](#imagebilling)。 |
-| `SIGMA_PREFLIGHT_HOLD_MS` | 预压缩超过该宽限期（毫秒）后，代理提前提交响应并用保活字节挂住客户端（默认 `30000`；见 #568 / README「预压缩挂起」）。 |
-| `SIGMA_RECLAIM_FETCH_PATCH` | 设为 `0` 关闭 native 模式 fetch 自愈重武装（#1158）。默认情况下 native fetch 拦截会把 `globalThis.fetch` 装成受保护的访问器：第三方补丁重新赋值 `globalThis.fetch` 时（如 dsh-http-proxy 的 settings 刷新用冻结的 pre-sigma `originalFetch` 盲覆盖），会被接链为下游，模型流量继续经过 sigma。设 `0` 则回到经典直装：第三方重装生效，sigma 将看不到本会话的模型流量。**出口提示：** 自愈生效期间，被认领的模型流量由 sigma 代理自身派发——不再走第三方链的出口（例如 dsh-http-proxy 里配置的 SOCKS5；sigma 自身的上游代理仅支持 HTTP 形式）。若需要回退第三方出口，设 `0` 并在 sigma 层配置出口（`"proxy": "http://…"`）。 |
-| `SIGMA_CONFIG_FILE` | 覆盖配置文件路径（指向任意 JSON 文件）。 |
+| `BILLION_CONTEXT_NODE` | 非 Node 宿主进程拉起代理时显式指定的 Node 可执行文件路径（#819/#1429）。宿主自身不是 Node 时的解析顺序:本覆盖项 → PATH 搜索 + GUI PATH 会遗漏的众所周知安装位置（`/opt/homebrew/bin`、`/usr/local/bin`、Volta 等）→ Electron 宿主自身二进制以纯 Node 运行（`ELECTRON_RUN_AS_NODE=1`，最后手段 —— 因此 deepseek-harness desktop 这类桌面应用零配置即可用）。用于强制指定某个 Node（如比宿主捆绑运行时更新的版本）；始终优先于上述回退。 |
+| `BILI_IMAGE_TOKEN_CAP` | 预检尺寸门、输出钳制与图片压缩统计所用单图 token 估算的统一天花板（#488/#496/#1843）。叠加在任何计费模式之上 —— 适用于路由真实编码器计费低于像素先验的场景。优先于两级配置（[`imageTokenCap`](#imagetokencap)）；每次请求实时读取（无需重启）。不设置 = 回退到配置（`providers.<url>.imageTokenCap`，再全局），默认无上限。 |
+| `BILI_IMAGE_BILLING` | 覆盖预检尺寸门与输出钳制的图片计费模式（#767/#1843）：`pixels` 或 `bytes`。每次请求实时读取（无需重启）；优先于全局 `imageBilling` 与所有按 provider 的 `providers.<url>.imageBilling`。自 #1843 起默认对所有 host 解析为 `pixels`，故用 `bytes` 全进程强制保守字节计费（例如字节计数 relay）—— 更窄的场景仍用按路由设置。详见 [`imageBilling`](#imagebilling)。 |
+| `BILI_PREFLIGHT_HOLD_MS` | 预压缩超过该宽限期（毫秒）后，代理提前提交响应并用保活字节挂住客户端（默认 `30000`；见 #568）。 |
+| `BILI_STREAM_KEEPALIVE_MS` | 流式阶段客户端保活（#1647）：SSE 响应连续该毫秒数没有向客户端写出任何字节时，bili 发一条 SSE 注释行（`: bili-keepalive`，协议层 no-op），防止客户端 undici `bodyTimeout`（默认 300s；Node 内置 fetch 无法按请求覆盖）在长 prefill 时断连——上游的 ping 注释会被重写器/剥离管道吞掉。默认 `15000`；`0` 关闭。与 `BILI_PREFLIGHT_HOLD_MS` 互补：后者覆盖压缩预检期的静默，本变量覆盖流式期上游导致的静默。 |
+| `BILI_RECLAIM_FETCH_PATCH` | 设为 `0` 关闭 native 模式 fetch 自愈重武装（#1158）。默认情况下 native fetch 拦截会把 `globalThis.fetch` 装成受保护的访问器：第三方补丁重新赋值 `globalThis.fetch` 时（如 dsh-http-proxy 的 settings 刷新用冻结的 pre-bili `originalFetch` 盲覆盖），会被接链为下游，模型流量继续经过 bili。设 `0` 则回到经典直装：第三方重装生效，bili 将看不到本会话的模型流量。**出口提示：** 自愈生效期间，被认领的模型流量由 bili 代理自身派发——不再走第三方链的出口（例如 dsh-http-proxy 里配置的 SOCKS5；bili 自身的上游代理仅支持 HTTP 形式）。若需要回退第三方出口，设 `0` 并在 bili 层配置出口（`"proxy": "http://…"`）。 |
+| `BILI_CONFIG_FILE` | 覆盖配置文件路径（指向任意 JSON 文件）。 |
 | `ACP_PORT` / `PORT` | 覆盖监听端口。 |
 | `ACP_HOST` | 覆盖监听主机。 |
 | `ACP_UPSTREAM` | 覆盖默认上游 base URL。 |
 | `ACP_LOG` | 设为 `0` 关闭请求日志。 |
 | `ACP_AUTO_UPDATE` | 设为 `0` 禁用自动更新检查。 |
 | `ACP_UPDATE_TAG` | 自动更新跟随的 dist-tag 通道（默认 `latest`，如 `dev`）。文件配置键：`updateTag`。滚动 `pr` tag 指向所有 PR 中最新的测试构建；旧版按 PR 划分的 `pr-N` tag 已冻结在该 PR 的最后一个构建，仅在显式配置时才会被跟随。 |
-| `SIGMA_UPDATE_REGISTRY` | 自动更新与 `sigma update` 使用的 npm registry base URL 覆盖（默认 `https://registry.npmjs.org`）。仅供 hermetic 测试指向回环 registry（`ACP_TEST_REGISTRY` e2e 套件自带的 verdaccio 实例）；生产环境请勿设置（#1153）。 |
-| `SIGMA_UPDATE_CHECK_INTERVAL_MS` | 自动更新检查周期（毫秒，默认 `180000` 即 3 分钟；≤ 0 的值被忽略，回退默认）。hermetic e2e 套件用它缩短周期，避免等待完整间隔（#1153）。 |
-| ~~`SIGMA_HOST_USAGE_CREDIT`~~ / ~~`hostUsageCredit`~~ | **#660 已移除。** 曾用于选择宿主可见的用量模式。#408 的未折叠基线回补（backfill）已整体删除 —— 所有宿主现在统一上报“实际转发（后折叠）请求”的 provider 实测用量，与 `[acp-usage] input=` 一致。遗留该环境变量 / 配置键的旧值会被忽略，请删除。教训详见 PR #691 的 “Bug 历史教训” 一节。 |
+| `BILI_UPDATE_REGISTRY` | 自动更新与 `bili update` 使用的 npm registry base URL 覆盖（默认 `https://registry.npmjs.org`）。仅供 hermetic 测试指向回环 registry（`ACP_TEST_REGISTRY` e2e 套件自带的 verdaccio 实例）；生产环境请勿设置（#1153）。 |
+| `BILI_UPDATE_CHECK_INTERVAL_MS` | 自动更新检查周期（毫秒，默认 `180000` 即 3 分钟；≤ 0 的值被忽略，回退默认）。hermetic e2e 套件用它缩短周期，避免等待完整间隔（#1153）。 |
+| `BILI_MODEL_INFO_RETRY_MS` | dsh 原生模型窗口解析失败（或解析结果不带窗口）后的重试冷却（毫秒，#1812/#1836）：匹配的缓存条目没有 context window 时不视为最终结果 —— 不再让整个进程生命周期 latching 成无 header 状态，而是该冷却过期后由下一个请求触发重新解析。默认 `30000`；非数字或负值回退 `30000`。测试钩子 —— dsh-native 单元测试用它缩短冷却、避免真实等待；生产环境保持 unset。 |
+| `BILI_ADVISORY_CHECK` | 设为 `0` 禁用严重缺陷公告监视器（#1481）。默认开启 —— 它独立于 `ACP_AUTO_UPDATE` 运行，确保关闭了自动更新的安装也能被强制移出已知缺陷版本范围。fail-open：公告源不可达/格式错误只告警，绝不阻断模型流量。文件配置键：`advisoryCheck`。 |
+| `BILI_ADVISORY_URL` | 公告文档 URL 覆盖。默认：已配置 registry（感知 `BILI_UPDATE_REGISTRY`）上的伴生包 `billion-context-advisories`。文件配置键：`advisoryUrl`。 |
+| `BILI_RELEASE_NOTES_CHECK` | 设为 `0` 禁用分级发版说明可见性监视器（#1870）。默认开启 —— 纯可见性：拉取伴生发版说明文档，并在 `acp_status` 与 `/acp` 面板提示「更新已就绪待重启」（磁盘版本新于运行版本）或「存在推荐更新」。绝不安装、绝不重启；fail-open。文件配置键：`releaseNotesCheck`。 |
+| `BILI_RELEASE_NOTES_URL` | 发版说明文档 URL 覆盖。默认：已配置 registry（感知 `BILI_UPDATE_REGISTRY`）上的伴生包 `billion-context-release-notes`。文件配置键：`releaseNotesUrl`。 |
+| ~~`BILI_HOST_USAGE_CREDIT`~~ / ~~`hostUsageCredit`~~ | **#660 已移除。** 曾用于选择宿主可见的用量模式。#408 的未折叠基线回补（backfill）已整体删除 —— 所有宿主现在统一上报“实际转发（后折叠）请求”的 provider 实测用量，与 `[acp-usage] input=` 一致。遗留该环境变量 / 配置键的旧值会被忽略，请删除。教训详见 PR #691 的 “Bug 历史教训” 一节。 |
 | `ACP_PROVIDERS` | 指向外部 `providers.json` 的路径（旧版 / 共享文件）。 |
-| `SIGMA_REPLAY_RETRY_BASE_MS` | acp-loop 回放重试的基础退避延迟（毫秒）：上游瞬时拒绝后重试（默认 `1500`；设 `0` 关闭延迟）。见 #189。 |
-| `SIGMA_REPLAY_RETRY_MAX` | acp-loop 回放重试的总次数（默认 `3`；设 `1` 彻底关闭重试 —— 旧版 fail-fast 行为）。见 #189。 |
+| `BILI_REPLAY_RETRY_BASE_MS` | 回放重试的基础退避延迟（毫秒）：上游瞬时拒绝后重试（默认 `1500`；设 `0` 关闭延迟）。见 #189。同时驱动主路径传输重试的退避（#1688）。 |
+| `BILI_REPLAY_RETRY_MAX` | 回放重试的总次数（默认 `3`；设 `1` 彻底关闭重试 —— 旧版单次尝试行为）。见 #189。在 acp-loop/preflight/compress 循环上适用于瞬时 HTTP 故障与 #1263 fail-fast 网络故障（响应前 reset/refused —— 代理回收类），从不适用于超时/中止类。在主模型请求路径上（#1688）仅重放 fail-fast 响应前网络故障；HTTP 判定（4xx/5xx）一律原样透传、不重试。 |
+| ~~`BILI_STREAM_STALL_MS`~~ | **#1714 已移除**（退役 #1452 的可选流式阶段停滞守卫）。#1706 中一个残留的 `400` 导出把每次思考阶段的静默都误判成截断；本地模型部署在流式中途合法地静默数分钟（思考阶段、长 prefill），任何有限子预算对某些环境都不安全。上游静默——prefill 与流式中途一律——现在只受常开的 `BILI_UPSTREAM_TIMEOUT_MS` 空闲预算约束（默认 12 分钟，可调）。旧值被忽略；bili 启动时会点名一次残留导出（`no longer read`）——请从 shell profile 中删除。 |
+| `BILI_KEEP_ALIVE_TIMEOUT_MS` | 客户端侧套接字的 keep-alive 超时（毫秒，默认 `5000`，与 Node 隐式默认一致；#1452）。空闲客户端连接由 Node 内建回收器以干净 FIN 回收；此开关把原先隐式的值显式化并可配置，回收在连接生命周期台账（debug 日志）中分类为 `reason=idle-timeout`。非数字或非正值回退到 `5000`。 |
+| `BILI_EXPOSURE_LOG_INTERVAL_MS` | 长驻暴露遥测行 `[exposure] uptime=… liveConns=… tcpHandles=… handles=… sessions=… blindTunnels=… inFlight=…` 的周期（毫秒，默认 `3600000` 即每小时；#1452）。`0` 关闭。目的是让套接字句柄泄漏与僵尸连接在长期运行日志中现形，而不是靠事后取证。 |
+| `BILI_CLIENT_ERROR_BACKSTOP_MS` | clientError 排空路径的终局兜底（毫秒）（#1529，#1452 第 1 项后续）：排空 bail（300ms）对连接调用 `end()` 后，若对端始终不发 FIN，该套接字否则会在我方无限期半开滞留——keep-alive 回收器以已完成响应为键，且 Node 默认不开 SO_KEEPALIVE。bail 后静默超过此值时，代理改为销毁该套接字，在连接生命周期台账中分类为 `reason=clienterror-backstop` 并带独立的 warn 标记。对 #1452 的 RST 签名安全：整个窗口内套接字一直处于 `resume()` 排空状态，销毁时不携带未读残留字节。默认 `30000`；`0` 恢复「持有直到对端死亡」的旧行为。非数字或负值回退到 `30000`。 |
 | `ACP_SESSION_HEADER` | 会话 id 请求头名称（默认 `x-acp-session`）。 |
 | `ACP_REASONING_KEEP` | 仅 Responses API：设 `none` 丢弃全部 reasoning 项。默认让 reasoning 走压缩管道，其轮次被摘要后自动隐藏（避免无限累积破坏 Codex 的 prompt-cache 前缀）。 |
+| `ACP_RENDER_NONE` | 设为 `1` 停止向出站请求历史注入逐消息渲染标签（承载 `mNNNNN` ref 的 `` `` `` 标记）——适用于所有线格式（OpenAI chat、Anthropic、Responses）及 compact 重建（#933）。默认 `text-only`：模型靠这些 ref 在 `compress` 调用中引用消息，只有确认自己的工作流不需要基于 ref 的压缩（例如标签回声泄漏到客户端可见输出）后才应禁用。此前该变量仅在 Responses 路径与 compact 上生效；#933 扩展到了所有路径。 |
 | `ACP_LOG_FILE` | 日志文件路径（默认 XDG state 路径；`off` 关闭文件只保留 stderr）。10 MB 自动轮转。 |
 | `ACP_DUMP_SSE` | 调试用：转储原始 SSE 帧的目录——含压缩重发/截断重试的循环内上游响应（命名 `<ts>-<sid>-loop<N>-raw.sse`），外层 tee 看不到（#1455）。 |
-| `SIGMA_STREAM_ERROR_SHAPE` | 设为 `"completion"` 恢复 anthropic/openai 线上旧的失败形状（失败文本包在合成的成功完成里）；默认 `"protocol"` = 协议原生错误帧（#1455）。与 `compat.streamErrorShape` 同一开关，此环境变量优先。 |
-| `SIGMA_LOG_MASK_HOSTS` | 设为 `0` 关闭代理日志的 host 脱敏（#897）：非公开目标主机（私有 relay、内网域名）原样记录，而不是 `<private-host>`。默认开启（#255 —— 日志常被整段贴进公开 issue）；凭据头脱敏与之独立、始终开启。真实目标域名不依赖此开关也可查：`GET /__bili/stats` → `blindTunnels`、`GET /__bili/health`（均仅 loopback），以及 `acp_status` 输出。 |
-| `SIGMA_SUBAGENT_SPLIT` | 设为 `0` 关闭 Claude Code subagent 会话分流（#970）：默认情况下，anthropic 线路上同时携带 `x-claude-code-agent-id` + `x-claude-code-parent-agent-id` 头的请求（后台 subagent）会获得独立的 `<session>\|sub:<agent-id>` 会话 —— 独立的锁链与压缩状态 —— 不再排在主会话的锁后面。默认开启。配置文件中设 `"subagentSplit": false` 效果相同；环境变量优先。 |
-| `SIGMA_FORK_ADOPTION` | 设为 `1` 开启 fork 块继承（#629）：匿名（prefix-affinity）客户端在会话中途分叉历史（编辑重发 / 从更早轮次重新生成）时，新会话直接继承父会话中"源内容在分叉请求里完整存在"的压缩块 —— 而不是从零开始、把共享前缀重新折叠一遍。默认关闭。配置文件中设 `"forkAdoption": true` 效果相同；环境变量优先。无论开关如何，匿名 fork 发生时日志都会记录可继承的块清单，便于先评估收益再开启。 |
-| `SIGMA_STABLE_SYSTEM_ANCHOR` | 设为 `1` 开启稳定 system 锚定（#1085）—— **wire 层兜底（best-effort）**：根治在客户端（会话历史与指令变更的呈现方式由客户端决定），本开关只是阻止代理因头部变化而使整个已缓存前缀失效。**仅限 plain-proxy 模式**：plugin-mode agent（`x-sigma-plugin`）自管上下文、永不参与锚定，避免对已自带 cache-friendly 更新注入的客户端（如 claude-code 的 system-reminder）做双重处理。开启后，sigma 按会话记住客户端首次发送的头部 system/instructions 块并持续原样重发。**局部变更**（文件式编辑，与当前生效版本共享 ≥70% 行）追加末尾 `[System context update] …` user 注记，内含紧凑行级 diff（`-` 删除 / `+` 新增；每条注记顺序叠加在前一条之上）。**非局部变更**（结构性重排、tool 定义增删、带时间戳的 banner、超 400 行的头部）直接采用新文本 —— 一次有意的缓存失效好过追加会误导模型的噪声 diff。防抖保护：累积超过 8 条注记同样直接替换锚点为最新文本并清空日志。锚点与注记日志随会话持久化，不受压缩/compaction 影响（session metadata 而非 kernel state）。已知残留限制：客户端自放的 `cache_control` 断点在换头后仍可能错位。不参与锚定的请求：标题生成微请求（OpenAI/Google）、Responses compaction-trigger 请求、auto-mode classifier 请求。客户端自身已实现同类机制（稳定 prompt + 历史内更新）时零额外注入 —— 这类更新作为普通历史透传。默认关闭。配置文件中设 `"stableSystemAnchor": true` 效果相同；环境变量优先。 |
-| `SIGMA_CHAIN_CONTENT` | 设为 `0` 关闭 sigma→sigma 链感知的 ACP 产物内容检测（#1086，#1357 起为仅告警）：当入站请求携带压缩产物（渲染标签 / 历史 `acp_status`+`search_context` 工具调用）但既无 `x-sigma-hop` 头、本实例也无该会话的压缩状态时，sigma 只记录一次告警性观察（单条 `[chain]` warn，可在 `/acp` 查看）并正常处理请求——该会话建立自己的状态。历史中的 ACP 形内容绝大多数是用户自撰文本（AGENTS.md 示例、文档、粘贴），而非被剥头的中继，因此不再作为决定性依据；只有 `x-sigma-hop` 头仍强制字节级原样透传。代价：剥掉 `x-sigma-hop` 的 sigma→sigma 中继在签名的请求绑定链证明落地前（#1357 Phase 2/3）可能被双重处理。设为 `0` 则关闭检测本身（不观察、不告警）。默认开启。配置文件中设 `"chainContentDetection": false` 效果相同；环境变量优先。`x-sigma-hop` 信号本身不受此开关影响。 |
-| `SIGMA_CHAIN_MAX_FUTURE_SKEW_MS` | 校验链检查点 `issued-at` 时间戳时容忍的最大未来偏斜（毫秒）（#1395 step 2）：戳在比当前时间未来超过此值的检查点会被判为 `stale`（重放 / 时钟偏斜），即使其摘要校验通过。默认 `120000`（2 分钟）；非数字或非正值回退到默认值。Step 2 仅影子模式——这些旋钮只调判定日志，绝不影响转发。 |
-| `SIGMA_CHAIN_RECENT_WINDOW_MS` | 链检查点校验的近期窗口（毫秒）（#1395 step 2）：早于此窗口的检查点被判为 `stale`。默认 `600000`（10 分钟）；非数字或非正值回退到默认值。Step 2 仅影子模式——这些旋钮只调判定日志，绝不影响转发。 |
-| `SIGMA_CONFLICT_SCAN` | 设为 `0` 关闭第三方压缩插件检测（#1206）。默认开启：sigma 会扫描客户端自身的插件/扩展注册表 —— opencode 全局 + 项目配置的 `plugin` 数组、pi 全局 + 项目 `.pi/settings.json` 的 `packages`、omp `config.yml` 的 `extensions`、claude 设置的 `enabledPlugins`/`plugins` 及其插件目录、kimi `plugins/installed.json`、hermes 插件目录、dsh profile 依赖 —— 查找与 sigma 并存的另一个压缩器。两个层级：**已知冲突**（`opencode-acp`、遗留 `sigma-pi`，确定性判定）和**关键词疑似**条目（名称匹配 compress / compact / acp / summar* / context*；sigma 自身条目永远跳过，`context7` 这类非压缩工具不会误报）。发现结果出现在：客户端启动前的 launcher stderr、每个会话首个请求的一次性代理 warn 日志、以及会话冲突台账 —— `acp_status` 的 `COMPRESSION CONFLICTS` 段、`GET /__bili/stats` → `conflicts`、Web UI 横幅。运行时干扰证据（未宣告的历史改写 #1001、孤儿块废弃）记入同一台账。「扫描只读、尽力而为、5 分钟缓存，绝不阻塞或改动客户端配置。」 |
-| `SIGMA_UPSTREAM_PROXY` | 代理自身出站连接的上游代理 —— 优先级最高，高于 per-URL/per-provider 配置。见 README「上游代理」一节。 |
-| `SIGMA_INHERITED_HTTP_PROXY` / `SIGMA_INHERITED_HTTPS_PROXY` / `SIGMA_INHERITED_ALL_PROXY` / `SIGMA_INHERITED_NO_PROXY` | 非用户直接使用 —— launcher 起代理子进程时自动设置（#1012）。launcher 会从客户端和代理子进程两侧剥掉 shell 的代理变量（客户端必须把流量发给 sigma；代理的模型出网也不能被 shell 代理劫持），但会把用户剥离前的代理转发到这些变量里，让代理的**辅助出网**（MITM 盲隧道 —— 客户端侧的 MCP/web 流量）仍能走用户的 VPN。它们只作用于盲隧道的 fallback 层：显式路由 / 全局 `proxy` / `SIGMA_UPSTREAM_PROXY` / 显式 `"upstreamProxyMode": "direct"` 仍然优先，指向 sigma 自身端口的值会被丢弃。模型出网不受影响（未显式配置则保持直连）。 |
-| `SIGMA_UPSTREAM_TIMEOUT_MS` | 上游请求的空闲预算（毫秒）：首字节时间（TTFB）与响应体块之间的间隔（默认 `720000` = 12 分钟）。持续产出数据块的健康流永远不会被中途切断；静默的流才会。同一个值同时驱动底层 HTTP 客户端的传输层超时，因此这一个旋钮即可端到端约束本地大模型的超长 prefill（#551）。 |
-| `SIGMA_ATTACH_HEALTH_DEADLINE_MS` | dsh/opencode attach 校验中，attach 目标已挂但本进程模型通道**钉死**在其上（观察到指向它的 `/sigma/…` 路由流量）时的健康等待上限（毫秒）：sigma 等待目标恢复而不是 spawn 第二实例——spawn 会把会话劈成两半（模型流量保持钉死，sigma 工具在另一实例上 404）。超时后大声报错，并在每次模型请求时持续重查直到目标恢复（默认 `15000`）。见 #1365。 |
-| `SIGMA_ATTACH_EVIDENCE_GRACE_MS` | dsh/opencode attach 校验探测到目标已挂时，等待路由通道证据出现的宽限窗口（毫秒），超时才回退到旧的 spawn 路径（覆盖「判定早于首个请求」的竞态：t≈0 时探测失败、t≈1s 时首个模型请求才落地）（默认 `5000`）。见 #1365。 |
-| `SIGMA_PERSIST` | 设 `0` 关闭会话持久化（仅内存，重启即丢）。 |
-| `SIGMA_PERSIST_DEBOUNCE_MS` | 持久化写盘的防抖窗口（毫秒，默认 `500`）。 |
-| `SIGMA_PERSIST_TAIL_TOKENS` | 持久化会话快照的 token 预算（#401）。盘上记录的是**折叠视图**（压缩范围以块摘要替代）并截断到该预算内的最新消息 —— 不再存全量原始历史。默认 `16384`；设 `0` 彻底不持久化消息（块摘要与压缩原件仍会持久化，`sigma export` 退回块级渲染）。活会话内存不受影响 —— 活会话的 `sigma export` 始终完整。 |
-| `SIGMA_PERSIST_ZSTD` | 设为 `1`/`true` 启用会话文件的 zstd 压缩（#1080，owner 决定：**默认关闭**——纯 JSON 可恢复性最强：可用 jq/grep 调试，且无降级尾部风险）。启用后，每个确实能压缩变小的会话文件均以 `SIGMAZSTD1` 格式写入——即在 JSON 主体之上附加一个小头部（魔数 + 格式版本 + 模式字节），在 Node ≥ 22.15 上以 zstd 压缩存储，在旧版运行时上则原样存储；读取端兼容两种主体格式（优先使用原生 zstd，否则回退至内置的 WASM 实现），因此文件在不同运行时和版本间均可正常读取。压不小的小会话与无密钥的原始主体以裸 JSON 落盘。与 `SIGMA_ENCRYPTION_KEY` 相互独立——两者同时生效时，压缩方式会记录在 `SIGMAENC1` 内部的模式字节中。已有的纯 JSON 文件**永不在启动时改写**（降级安全——批量重编码会让回退到旧版 sigma 时把自己的写入当成“损坏文件”）；它们在其下一次保存时自然转换。注意：一旦会话已保存为 `SIGMAZSTD1`，旧版 sigma（< 0.1.135）无法读取——该限制仅对显式启用的部署生效；未设置或其他值均保持纯 JSON。 |
-| `SIGMA_PERSIST_EPERM_ALERT_THRESHOLD` | 同一会话连续 N 次持久化写失败（`EPERM`/`EBUSY`/`EACCES`）后触发一次性「把该目录加入杀软排除项」告警的阈值（默认 `5`）。仅 Windows。见下文「Windows：把会话目录加入杀软排除项」章节。 |
-| `SIGMA_PERSIST_EPERM_ALERT_REPEAT_MS` | persist EPERM 告警的重复窗口（毫秒）。`0`（默认）= 只告警一次后静默；`>0` = 失败持续期间最多每这么久重复告警一次。 |
-| `SIGMA_MAX_SESSIONS` | 内存中最多保留的会话数（默认 `256`；LRU 淘汰 —— 磁盘是事实源）。 |
-| `SIGMA_SESSIONS_DIR` | 会话持久化目录（默认 XDG data 目录）。 |
-| `SIGMA_SESSION_GC` | 过期会话文件清理（#1082）为**可选开启**：设 `1`/`true`/`on` 启用 —— 默认关闭，因为会话文件是用户数据（可导出、可续聊），不应有静默删除策略。启用后，扫描（启动 + 每小时）只在**两个条件同时满足**时删除一个文件：年龄超过 `SIGMA_SESSION_GC_MAX_AGE_DAYS`，并且"小"到无损 —— 该会话**从未被压缩过**（零折叠块）且最近一次请求体 ≤ 下述 token 上限，这样继续对话只损失一次冷重建（用客户端自己的历史重建），别无其他。安全边界：被压缩过的会话永不删除（其摘要无法无损重建）；内存中仍持有的会话会被跳过，除非该会话自上次落盘后一直空闲；不可读/损坏的文件原地保留；每次删除逐条写审计日志（路径、大小、年龄），另有一次非空扫描的汇总日志；只触碰会话目录；清空后的协议子目录一并删除。注意 resident 守卫是进程内的：共享 `SIGMA_SESSIONS_DIR` 但不落盘的另一实例（如 `SIGMA_PERSIST=0`）不会刷新文件 mtime，其仍活跃的会话文件可能老化被扫 —— 代价同样是有限的一次冷重建，且有年龄门兜底。CCR 内容存储（#1097）与会话共享生命周期（#1180）：`<hash>.content-store.json` 伴随文件随其会话文件一起删除；孤儿伴随文件（会话文件已不存在）超过年龄门后被清扫；不可读的伴随文件会连同其会话文件一起保留（绝不猜测）。 |
-| `SIGMA_SESSION_GC_MAX_AGE_DAYS` | 会话文件成为清理候选的最小年龄（天，默认 `7`）。必须远超任何合理续聊窗口：文件删除后同会话再续聊，消息编号会从 m00001 重新分配，而续聊 agent 的转录里可能还引用着旧编号（内核契约：编号永不复用）。 |
-| `SIGMA_SESSION_GC_MAX_TOKENS` | 清理资格的大小上限（token 数，默认 `1000000` = 1M，#1082 owner 拍板）。按**解码后**的上下文判断，绝不看文件字节数（加密/zstd 文件在盘上小得多）：记录了最近一次请求体 token 估算值（`rawInputTokens`，每轮记录）时以它为准；未记录的旧文件用 `stats.contextTokens`；伴随的内容存储占用（#1097：唯一内容经内核 CJK-aware `defaultCountTokens` 计数，与 `rawInputTokens` 同一估算器，#1180）叠加其上，防止小会话携带大存储钻过上限。仅适用于从未被压缩过的会话 —— 含折叠块的文件无论多大都保留，因为其摘要无法从重新发送中无损重建。 |
-| `SIGMA_SESSION_GC_INTERVAL_MS` | 后台清理扫描间隔（毫秒，默认 `3600000` = 1 小时）。启动时会先扫一次。 |
-| `SIGMA_ENCRYPTION_KEY` | 会话文件静态加密（#708），适用于部署在不可信节点的场景。密钥必须恰好 32 字节，hex（64 字符）或 base64；未设置 = 不加密的纯 JSON 文件（设 `SIGMA_PERSIST_ZSTD=1` 时为 `SIGMAZSTD1`——参见 `SIGMA_PERSIST_ZSTD`）。设置后：每个会话文件均以 `SIGMAENC1` 格式写入，即对 JSON 施加 AES-256-GCM 加密，JSON 仅在 `SIGMA_PERSIST_ZSTD=1` 时以 zstd 压缩（Node ≥ 22.15 使用 zstd，其余情况写入原始数据）——启用压缩还可将文件体积缩小约 5–10 倍。加密与压缩现为独立的配置项（#1080）。密钥只从该环境变量读取——永不落盘、永不进日志——请确保它不受同一文件系统上的其他进程触及。非法值会导致启动中止（快速失败，绝不静默明文运行）。用错误的密钥启动时，受影响的会话按损坏文件跳过（有日志，不崩溃）。丢失密钥将使已加密的会话永久不可读。对称加密为刻意设计（同一进程既加密又解密）。已有的未编码文件从不在启动时改写——在其下一次保存时自然加密（降级安全；参见 `SIGMA_PERSIST_ZSTD`）。威胁模型（#708，owner 确认）：防的是**离线/机械性**的文件获取——云厂商换盘、节点镜像漂移后的离线磁盘快照、磁盘镜像失窃、备份泄露、被云同步的状态目录——离线第三方拿不到密钥即无法读取内容。不防御对活节点有访问权的定向攻击者；那一档应把信任根移出 proxy（KMS / TEE / 机密虚拟机 + 强化权限体系），而不是在 proxy 本身想办法——到了那个程度暴露的远不止密钥，proxy 层不是该守的边界（`SIGMA_PERSIST=0` 可彻底关闭持久化）。用同一进程/环境中的第二把密钥对密钥做二次加密不增加任何安全性：所有离线失窃场景里攻击者缺的始终只有一个工件——你的非落盘秘密——无论它叫数据密钥还是包裹密钥；只有把包裹密钥放进不同信任域（KMS/TPM/TEE）才能提高门槛，而那属于上面的场景 2。 |
-| `SIGMA_PROXY` | launcher 会导出它；客户端侧 sigma 插件/扩展检测到后自禁用自身压缩（避免双重压缩）。 |
-| `SIGMA_PLUGIN` | 设 `0` 彻底关闭插件模式（恢复 wire 层工具注入）。 |
-| `SIGMA_LAUNCHER_MODEL_WINDOWS` | 内部使用：launcher 把客户端自身配置里的逐模型上下文窗口（pi `models.json`、omp `models.yml`、opencode `models.<id>.limit`、codex `model_context_window`）以 JSON 传给自己拉起的代理，让 nudge 分母对自托管模型也用真实窗口。只有 launcher 会设置，无需用户配置。 |
-| `SIGMA_LAUNCHER_PLUGIN` | 设 `0` 关闭 launcher 为 claude/codex 注入 sigma MCP 服务器（退回纯 wire 模式）；设 `1` 强制插件模式。默认注入——但 codex 上游为本地/私网地址时自动退回 wire 模式（sglang/vllm/ollama 不解析 codex 的 namespace 工具类型）。见[启动器参考](#启动器参考)。 |
-| `SIGMA_LAUNCHER_DIRECT` | 设 `1` 启用 launcher 直连 URL 路由（放弃 MITM/CA 信任）。见[启动器参考](#启动器参考)。 |
-| `SIGMA_NATIVE_ATTACH_EXTERNAL` | 附着门禁逃生舱（#1335）。原生 hook 只附着于报告了 armed 会话生命周期看门狗（`/__bili/health` 里 `watchdog.armed == true`）的代理——手工 `sigma start` 守护进程没有生命周期属主（拒绝 watcher 注册、不随会话退出、常是旧版本），所以默认每会话自拉起临时代理而不附着它。当你刻意运行常驻守护进程给原生 hook 共用时设 `1`/`true`：任何 code/lane 兼容的监听者重新可附着，无论看门狗状态如何（包括根本不报 `watchdog` 字段的 pre-#1330 构建）——此时守护进程的寿命与版本由你自己负责。配置文件里 `"native": { "attachExternal": true }` 等效；环境变量优先（`0`/`false` 即使文件开着也关门禁）。默认关闭。见 [README.zh-CN.md](README.zh-CN.md)「附着门禁(#1335)」。 |
-| `SIGMA_CLAUDE_UPSTREAM` | claude 直连模式：当 `ANTHROPIC_BASE_URL` 已指向某个 relay 时，用它指定你的 relay 端点（否则会被旁路）。 |
-| `SIGMA_CODEX_COMPACT` | codex 原生压缩处理。默认 `intercept`：安全门通过时（transform 成功 + 稳态用量 < 窗口 90% + 至少一个活跃压缩块）拦截 codex 的压缩请求，在本地伪造向 ACP 状态的交接——trigger 形态伪造 2 帧 SSE，endpoint 形态伪造 `{output}`——且不接触上游。伪造的 ACP 摘要经历史承载交接消息注入（缺席时 developer 消息兜底），保证 codex 截断历史后压缩内容仍可见。设为 `pass` 可退出，把 codex 的压缩请求转发给上游（原生压缩兜底）。任一安全门失败则原样透传。 |
-
-## 上游故障诊断（经代理转发的上游）
-
-每一次上游传输失败都会被归类到一个 `kind=`，该值同时出现在其日志行开头（以及客户端/状态看到的 `error:` 字符串）里，每一类都附带修复提示（`hint=...`）。分类体系（#1263）：
-
-| kind | 含义 | sigma 行为 |
-|------|---------|---------------|
-| `client-abort` | 下游客户端已断开 | 无（请求按定义已死） |
-| `upstream-timeout` | 空闲预算耗尽或连接超时 | **不重试** —— 绝不叠加等待预算 |
-| `proxy-reset` | 响应前经**代理**连接断开（首要嫌疑：代理空闲回收 / 载荷上限 / 节点轮换） | 透明重放，受 `SIGMA_REPLAY_RETRY_MAX` 限制（默认共 3 次尝试） |
-| `upstream-reset` | 同上，但为直连（嫌疑在上游或本地网络） | 同上（受 `SIGMA_REPLAY_RETRY_MAX` 限制） |
-| `connect-refused` | TCP 被拒（若配置了代理则是代理，否则是上游） | 同上（受 `SIGMA_REPLAY_RETRY_MAX` 限制） |
-| `dns` / `tls` / `unknown` | 解析 / 握手 / 未归类 | 不重试 |
-
-握手类韧性还与代理连接的 keep-alive 上限配套（`SIGMA_PROXY_KEEPALIVE_MAX_MS`，默认 55s），使 sigma 不再向即将回收连接的代理提供套接字。
-
-长会话出现周期性连接失败时的**四步排查**（出自 #1249）：
-1. 在 `sigma.log` 中搜 `kind=` —— `proxy-reset` 成簇指向外部代理；`upstream-timeout` 指向上游健康度。
-2. 把失败请求的时间戳与外部代理自己的访问日志对齐（同一主机时钟）——同一毫秒出现一条回收记录即可结案。
-3. 确认是哪一跳：同一行里的 `proxy=<url>` 与 `proxy=direct`；并把转发请求的请求体大小（`content-length`）与代理文档写明的载荷上限对比。
-4. 若确认是代理在回收连接，要么调高它的空闲超时，要么保留 sigma 的 55s 复用上限加一次重放的安全网来吸收。
+| `BILI_STREAM_ERROR_SHAPE` | 设为 `"completion"` 恢复 anthropic/openai 线上旧的失败形状（失败文本包在合成的成功完成里）；默认 `"protocol"` = 协议原生错误帧（#1455）。与 `compat.streamErrorShape` 同一开关，此环境变量优先。 |
+| `BILI_LOG_MASK_HOSTS` | 设为 `0` 关闭代理日志的 host 脱敏（#897）：非公开目标主机（私有 relay、内网域名）原样记录，而不是 `<private-host>`。默认开启（#255 —— 日志常被整段贴进公开 issue）；凭据头脱敏与之独立、始终开启。真实目标域名不依赖此开关也可查：`GET /__bili/stats` → `blindTunnels`、`GET /__bili/health`（均仅 loopback），以及 `acp_status` 输出。 |
+| `BILI_SUBAGENT_SPLIT` | 设为 `0` 关闭 Claude Code subagent 会话分流（#970）：默认情况下，anthropic 线路上同时携带 `x-claude-code-agent-id` + `x-claude-code-parent-agent-id` 头的请求（后台 subagent）会获得独立的 `<session>\|sub:<agent-id>` 会话 —— 独立的锁链与压缩状态 —— 不再排在主会话的锁后面。默认开启。配置文件中设 `"subagentSplit": false` 效果相同；环境变量优先。 |
+| `BILI_FORK_ADOPTION` | 设为 `1` 开启 fork 块继承（#629）：匿名（prefix-affinity）客户端在会话中途分叉历史（编辑重发 / 从更早轮次重新生成）时，新会话直接继承父会话中"源内容在分叉请求里完整存在"的压缩块 —— 而不是从零开始、把共享前缀重新折叠一遍。默认关闭。带自有 id 的 resume-fork 不受此开关管 —— 它们随 `BILI_RESUME_INHERITANCE` 一并继承压缩块（#1834）。配置文件中设 `"forkAdoption": true` 效果相同；环境变量优先。无论开关如何，匿名 fork 发生时日志都会记录可继承的块清单，便于先评估收益再开启。 |
+| `BILI_RESUME_INHERITANCE` | 设为 `0` 关闭 resume 继承（默认开启）（#1486）：当带自有会话 id 的客户端（如 Claude Code 的 `x-claude-code-session-id`）以**新**会话 id 重放完整历史来续接会话时（`cc --resume` 会 fork 出新 UUID），bili 通过字节级前缀匹配（≥8 条消息、append-only 跟踪）识别出它与该客户端已跟踪历史的父子关系，并在续接会话的首个请求上继承父会话的 ref 分配 —— 模型引用的旧代际 refs 因此命中**原始**消息、而不是错配到重新编号的新消息 —— 同时继承源内容完整存在的压缩块（随本继承一并生效，#1834：resume 丢块会导致被折叠原文重新回到线上、上游请求膨胀；旧的 `forkAdoption` 联动门现仅作用于匿名 fork，#629），并记录 `derivedFrom` 血缘。父会话不受影响；新消息在父会话 ref 空间之上继续编号。resume 必须**严格扩展**父历史 —— 同深度的字节级重放（不同 id）视为重复会话而非 resume。匿名会话不受影响（保留自己的 pfa-* 世界，#309）。配置文件中设 `"resumeInheritance": false` 效果相同；环境变量优先。 |
+| `BILI_STABLE_SYSTEM_ANCHOR` | 设为 `1` 开启稳定 system 锚定（#1085）—— **wire 层兜底（best-effort）**：根治在客户端（会话历史与指令变更的呈现方式由客户端决定），本开关只是阻止代理因头部变化而使整个已缓存前缀失效。**仅限 plain-proxy 模式**：plugin-mode agent（`x-bili-plugin`）自管上下文、永不参与锚定，避免对已自带 cache-friendly 更新注入的客户端（如 claude-code 的 system-reminder）做双重处理。开启后，bili 按会话记住客户端首次发送的头部 system/instructions 块并持续原样重发。**局部变更**（文件式编辑，与当前生效版本共享 ≥70% 行）追加末尾 `[System context update] …` user 注记，内含紧凑行级 diff（`-` 删除 / `+` 新增；每条注记顺序叠加在前一条之上）。**非局部变更**（结构性重排、tool 定义增删、带时间戳的 banner、超 400 行的头部）直接采用新文本 —— 一次有意的缓存失效好过追加会误导模型的噪声 diff。防抖保护：累积超过 8 条注记同样直接替换锚点为最新文本并清空日志。锚点与注记日志随会话持久化，不受压缩/compaction 影响（session metadata 而非 kernel state）。已知残留限制：客户端自放的 `cache_control` 断点在换头后仍可能错位。不参与锚定的请求：标题生成微请求（OpenAI/Google）、Responses compaction-trigger 请求、auto-mode classifier 请求。客户端自身已实现同类机制（稳定 prompt + 历史内更新）时零额外注入 —— 这类更新作为普通历史透传。默认关闭。配置文件中设 `"stableSystemAnchor": true` 效果相同；环境变量优先。 |
+| `BILI_NO_CACHE_CONTROL` | 设为 `1` 关闭 bili 在 Anthropic 通道上的 `cache_control` 断点标注(#1637,随 #1639 落地)。默认开启:Anthropic 系上游只缓存被显式打断点的内容(每请求最多 4 个,按 system + tools + 消息块合并计数),因此 bili 会标注 system 块加上至多 3 个累积消息断点——被标注的消息保持标注(前缀字节稳定),断点只随折叠消亡,最近 3 条稳定消息承载推进前沿。客户端自设的任何 `cache_control`(消息块、tools 条目)都会完全抑制 bili 的标注——客户端自管缓存优先。断点随会话持久化。本开关是逃生阀:用于拒绝该字段的上游或有自己断点策略的中继。仅限 plain-proxy Anthropic 通道;OpenAI/Responses 通道隐式缓存,从不标注。仅环境变量;无配置文件键。 |
+| `BILI_CHAIN_CONTENT` | 设为 `1` 开启 bili→bili 链感知的 ACP 产物 / `<bili-chain …/>` 检查点**正文内容**检测（#1086/#1421）：当入站请求的正文携带压缩产物（渲染标签 / 历史 `acp_status`+`search_context` 工具调用）或带摘要的检查点，但既无 `x-bili-hop` 头、本实例也无该会话的压缩状态时，bili 记录一次告警性观察和/或应用「首个处理器优先」透传。**默认关闭**（#1683 后续）：默认下只有 `x-bili-hop` 头驱动链识别，因为扫描请求正文可能把 CCR/文件引入的文本和模型回声标签误判为真实标记。仅在中间盒子剥掉 `x-bili-hop`、且你接受该误判风险的狭窄多 bili 中继场景下才启用。配置文件中设 `"chainContentDetection": true` 效果相同；环境变量优先。`x-bili-hop` 信号本身不受此开关影响。 |
+| `BILI_CHAIN_STAMP` | 设为 `1` 开启**模型可见**的 `<bili-chain …/>` 链完整性检查点载体的出站注入（#1683，默认关闭）：开启后，本实例实际处理的每个请求都携带一个带摘要的戳，使下游 bili 即使 `x-bili-hop` 头在传输中被剥离也能应用「首个处理器优先」（first-processor-wins）（#1421）。该载体落在终端模型同样会读取的位置（OpenAI/Responses 上是一条尾部 `user` 消息，Anthropic/Google 上是尾部文本 part），因此模型会把它当作幽灵用户输入并花 token 去评论它——这正是它默认关闭的原因。仅在多 bili 中继、且中间盒子剥掉 `x-bili-hop`、带摘要校验的 body-stamp 是防止双重处理的唯一手段这一狭窄场景下才启用。与 `BILI_CHAIN_CONTENT`（入站正文检测同样默认关闭）及 `x-bili-hop` 透传相互独立（后者无论如何都生效）。配置文件中设 `"chainEgressStamp": true` 效果相同；环境变量优先。 |
+| `BILI_CHAIN_MAX_FUTURE_SKEW_MS` | 校验链检查点 `issued-at` 时间戳时容忍的最大未来偏斜（毫秒）（#1395 step 2）：戳在比当前时间未来超过此值的检查点会被判为 `stale`（重放 / 时钟偏斜），即使其摘要校验通过。默认 `120000`（2 分钟）；非数字或非正值回退到默认值。Step 2 仅影子模式——这些旋钮只调判定日志，绝不影响转发。 |
+| `BILI_CHAIN_RECENT_WINDOW_MS` | 链检查点校验的近期窗口（毫秒）（#1395 step 2）：早于此窗口的检查点被判为 `stale`。默认 `600000`（10 分钟）；非数字或非正值回退到默认值。Step 2 仅影子模式——这些旋钮只调判定日志，绝不影响转发。 |
+| `BILI_CONFLICT_SCAN` | 设为 `0` 关闭第三方压缩插件检测（#1206）。默认开启：bili 会扫描客户端自身的插件/扩展注册表 —— opencode 全局 + 项目配置的 `plugin` 数组、pi 全局 + 项目 `.pi/settings.json` 的 `packages`、omp `config.yml` 的 `extensions`、claude 设置的 `enabledPlugins`/`plugins` 及其插件目录、kimi `plugins/installed.json`、hermes 插件目录、dsh profile 依赖 —— 查找与 bili 并存的另一个压缩器。两个层级：**已知冲突**（`opencode-acp`、遗留 `billion-context-pi`，确定性判定）和**关键词疑似**条目（名称匹配 compress / compact / acp / summar* / context*；bili 自身条目永远跳过，`context7` 这类非压缩工具不会误报）。发现结果出现在：客户端启动前的 launcher stderr、每个会话首个请求的一次性代理 warn 日志、以及会话冲突台账 —— `acp_status` 的 `COMPRESSION CONFLICTS` 段、`GET /__bili/stats` → `conflicts`、Web UI 横幅。运行时干扰证据（未宣告的历史改写 #1001、孤儿块废弃）记入同一台账。「扫描只读、尽力而为、5 分钟缓存，绝不阻塞或改动客户端配置。」 |
+| `BILI_UPSTREAM_PROXY` | 代理自身出站连接的上游代理 —— 在*全局*来源中优先级最高（高于 Web UI 手动代理与配置文件 `proxy`）。per-URL 的 `providers.<url>.proxy` 对其匹配的 provider URL 仍然优先。完整解析顺序、防环规则与示例见 [服务端设置 → `proxy`](#服务端设置)。 |
+| `BILI_INHERITED_HTTP_PROXY` / `BILI_INHERITED_HTTPS_PROXY` / `BILI_INHERITED_ALL_PROXY` / `BILI_INHERITED_NO_PROXY` | 非用户直接使用 —— launcher 起代理子进程时自动设置（#1012）。launcher 会从客户端和代理子进程两侧剥掉 shell 的代理变量（客户端必须把流量发给 bili；代理的模型出网也不能被 shell 代理劫持），但会把用户剥离前的代理转发到这些变量里，让代理的**辅助出网**（MITM 盲隧道 —— 客户端侧的 MCP/web 流量）仍能走用户的 VPN。它们只作用于盲隧道的 fallback 层：显式路由 / 全局 `proxy` / `BILI_UPSTREAM_PROXY` / 显式 `"upstreamProxyMode": "direct"` 仍然优先，指向 bili 自身端口的值会被丢弃。模型出网不受影响（未显式配置则保持直连）。 |
+| `BILI_UPSTREAM_TIMEOUT_MS` | 上游请求的空闲预算（毫秒）：首字节时间（TTFB）与响应体块之间的间隔（默认 `720000` = 12 分钟）。持续产出数据块的健康流永远不会被中途切断；静默的流才会。同一个值同时驱动底层 HTTP 客户端的传输层超时，因此这一个旋钮即可端到端约束本地大模型的超长 prefill（#551）。 |
+| `BILI_ATTACH_HEALTH_DEADLINE_MS` | dsh/opencode attach 校验中，attach 目标已挂但本进程模型通道**钉死**在其上（观察到指向它的 `/bili/…` 路由流量）时的健康等待上限（毫秒）：bili 等待目标恢复而不是 spawn 第二实例——spawn 会把会话劈成两半（模型流量保持钉死，bili 工具在另一实例上 404）。超时后大声报错，并在每次模型请求时持续重查直到目标恢复（默认 `15000`）。见 #1365。 |
+| `BILI_ATTACH_EVIDENCE_GRACE_MS` | dsh/opencode attach 校验探测到目标已挂时，等待路由通道证据出现的宽限窗口（毫秒），超时才回退到旧的 spawn 路径（覆盖「判定早于首个请求」的竞态：t≈0 时探测失败、t≈1s 时首个模型请求才落地）（默认 `5000`）。见 #1365。 |
+| `BILI_PERSIST` | 设 `0` 关闭会话持久化（仅内存，重启即丢）。 |
+| `BILI_PERSIST_DEBOUNCE_MS` | 持久化写盘的防抖窗口（毫秒，默认 `500`）。 |
+| `BILI_PERSIST_TAIL_TOKENS` | 持久化会话快照的 token 预算（#401）。盘上记录的是**折叠视图**（压缩范围以块摘要替代）并截断到该预算内的最新消息 —— 不再存全量原始历史。默认 `16384`；设 `0` 彻底不持久化消息（块摘要与压缩原件仍会持久化，`bili export` 退回块级渲染）。活会话内存不受影响 —— 活会话的 `bili export` 始终完整。 |
+| `BILI_PERSIST_ZSTD` | 设为 `1`/`true` 启用会话文件的 zstd 压缩（#1080，owner 决定：**默认关闭**——纯 JSON 可恢复性最强：可用 jq/grep 调试，且无降级尾部风险）。启用后，每个确实能压缩变小的会话文件均以 `BILIZSTD1` 格式写入——即在 JSON 主体之上附加一个小头部（魔数 + 格式版本 + 模式字节），在 Node ≥ 22.15 上以 zstd 压缩存储，在旧版运行时上则原样存储；读取端兼容两种主体格式（优先使用原生 zstd，否则回退至内置的 WASM 实现），因此文件在不同运行时和版本间均可正常读取。压不小的小会话与无密钥的原始主体以裸 JSON 落盘。与 `BILI_ENCRYPTION_KEY` 相互独立——两者同时生效时，压缩方式会记录在 `BILIENC1` 内部的模式字节中。已有的纯 JSON 文件**永不在启动时改写**（降级安全——批量重编码会让回退到旧版 bili 时把自己的写入当成“损坏文件”）；它们在其下一次保存时自然转换。注意：一旦会话已保存为 `BILIZSTD1`，旧版 bili（< 0.1.135）无法读取——该限制仅对显式启用的部署生效；未设置或其他值均保持纯 JSON。 |
+| `BILI_PERSIST_EPERM_ALERT_THRESHOLD` | 同一会话连续 N 次持久化写失败（`EPERM`/`EBUSY`/`EACCES`）后触发一次性「把该目录加入杀软排除项」告警的阈值（默认 `5`）。仅 Windows。见下文「Windows：把会话目录加入杀软排除项」章节。 |
+| `BILI_PERSIST_EPERM_ALERT_REPEAT_MS` | persist EPERM 告警的重复窗口（毫秒）。`0`（默认）= 只告警一次后静默；`>0` = 失败持续期间最多每这么久重复告警一次。 |
+| `BILI_MAX_SESSIONS` | 内存中最多保留的会话数（默认 `256`；LRU 淘汰 —— 磁盘是事实源）。 |
+| `BILI_SESSIONS_DIR` | 会话持久化目录（默认 XDG data 目录）。 |
+| `BILI_SESSION_GC` | 过期会话文件清理（#1082）为**可选开启**：设 `1`/`true`/`on` 启用 —— 默认关闭，因为会话文件是用户数据（可导出、可续聊），不应有静默删除策略。启用后，扫描（启动 + 每小时）只在**两个条件同时满足**时删除一个文件：年龄超过 `BILI_SESSION_GC_MAX_AGE_DAYS`，并且"小"到无损 —— 该会话**从未被压缩过**（零折叠块）且最近一次请求体 ≤ 下述 token 上限，这样继续对话只损失一次冷重建（用客户端自己的历史重建），别无其他。安全边界：被压缩过的会话永不删除（其摘要无法无损重建）；内存中仍持有的会话会被跳过，除非该会话自上次落盘后一直空闲；不可读/损坏的文件原地保留；每次删除逐条写审计日志（路径、大小、年龄），另有一次非空扫描的汇总日志；只触碰会话目录；清空后的协议子目录一并删除。注意 resident 守卫是进程内的：共享 `BILI_SESSIONS_DIR` 但不落盘的另一实例（如 `BILI_PERSIST=0`）不会刷新文件 mtime，其仍活跃的会话文件可能老化被扫 —— 代价同样是有限的一次冷重建，且有年龄门兜底。CCR 内容存储（#1097）与会话共享生命周期（#1180）：`<hash>.content-store.json` 伴随文件随其会话文件一起删除；孤儿伴随文件（会话文件已不存在）超过年龄门后被清扫；不可读的伴随文件会连同其会话文件一起保留（绝不猜测）。 |
+| `BILI_SESSION_GC_MAX_AGE_DAYS` | 会话文件成为清理候选的最小年龄（天，默认 `7`）。必须远超任何合理续聊窗口：文件删除后同会话再续聊，消息编号会从 m00001 重新分配，而续聊 agent 的转录里可能还引用着旧编号（内核契约：编号永不复用）。 |
+| `BILI_SESSION_GC_MAX_TOKENS` | 清理资格的大小上限（token 数，默认 `1000000` = 1M，#1082 owner 拍板）。按**解码后**的上下文判断，绝不看文件字节数（加密/zstd 文件在盘上小得多）：记录了最近一次请求体 token 估算值（`rawInputTokens`，每轮记录）时以它为准；未记录的旧文件用 `stats.contextTokens`；伴随的内容存储占用（#1097：唯一内容经内核 CJK-aware `defaultCountTokens` 计数，与 `rawInputTokens` 同一估算器，#1180）叠加其上，防止小会话携带大存储钻过上限。仅适用于从未被压缩过的会话 —— 含折叠块的文件无论多大都保留，因为其摘要无法从重新发送中无损重建。 |
+| `BILI_SESSION_GC_INTERVAL_MS` | 后台清理扫描间隔（毫秒，默认 `3600000` = 1 小时）。启动时会先扫一次。 |
+| `BILI_ENCRYPTION_KEY` | 会话文件静态加密（#708），适用于部署在不可信节点的场景。密钥必须恰好 32 字节，hex（64 字符）或 base64；未设置 = 不加密的纯 JSON 文件（设 `BILI_PERSIST_ZSTD=1` 时为 `BILIZSTD1`——参见 `BILI_PERSIST_ZSTD`）。设置后：每个会话文件均以 `BILIENC1` 格式写入，即对 JSON 施加 AES-256-GCM 加密，JSON 仅在 `BILI_PERSIST_ZSTD=1` 时以 zstd 压缩（Node ≥ 22.15 使用 zstd，其余情况写入原始数据）——启用压缩还可将文件体积缩小约 5–10 倍。加密与压缩现为独立的配置项（#1080）。密钥只从该环境变量读取——永不落盘、永不进日志——请确保它不受同一文件系统上的其他进程触及。非法值会导致启动中止（快速失败，绝不静默明文运行）。用错误的密钥启动时，受影响的会话按损坏文件跳过（有日志，不崩溃）。丢失密钥将使已加密的会话永久不可读。对称加密为刻意设计（同一进程既加密又解密）。已有的未编码文件从不在启动时改写——在其下一次保存时自然加密（降级安全；参见 `BILI_PERSIST_ZSTD`）。威胁模型（#708，owner 确认）：防的是**离线/机械性**的文件获取——云厂商换盘、节点镜像漂移后的离线磁盘快照、磁盘镜像失窃、备份泄露、被云同步的状态目录——离线第三方拿不到密钥即无法读取内容。不防御对活节点有访问权的定向攻击者；那一档应把信任根移出 proxy（KMS / TEE / 机密虚拟机 + 强化权限体系），而不是在 proxy 本身想办法——到了那个程度暴露的远不止密钥，proxy 层不是该守的边界（`BILI_PERSIST=0` 可彻底关闭持久化）。用同一进程/环境中的第二把密钥对密钥做二次加密不增加任何安全性：所有离线失窃场景里攻击者缺的始终只有一个工件——你的非落盘秘密——无论它叫数据密钥还是包裹密钥；只有把包裹密钥放进不同信任域（KMS/TPM/TEE）才能提高门槛，而那属于上面的场景 2。 |
+| `BILLION_CONTEXT_PROXY` | launcher 会导出它；客户端侧 bili 插件/扩展检测到后自禁用自身压缩（避免双重压缩）。 |
+| `BILLION_CONTEXT_PLUGIN` | 设 `0` 彻底关闭插件模式（恢复 wire 层工具注入）。 |
+| `BILI_LAUNCHER_MODEL_WINDOWS` | 内部使用：launcher 把客户端自身配置里的逐模型上下文窗口（pi `models.json`、omp `models.yml`、opencode `models.<id>.limit`、codex `model_context_window`）以 JSON 传给自己拉起的代理，让 nudge 分母对自托管模型也用真实窗口。只有 launcher 会设置，无需用户配置。 |
+| `BILI_LAUNCHER_PLUGIN` | 设 `0` 关闭 launcher 为 claude/codex 注入 bili MCP 服务器（退回纯 wire 模式）；设 `1` 强制插件模式。默认注入——但 codex 上游为本地/私网地址时自动退回 wire 模式（sglang/vllm/ollama 不解析 codex 的 namespace 工具类型）。见[启动器参考](#启动器参考)。 |
+| `BILI_LAUNCHER_DIRECT` | 设 `1` 启用 launcher 直连 URL 路由（放弃 MITM/CA 信任）。见[启动器参考](#启动器参考)。 |
+| `BILI_NATIVE_ATTACH_EXTERNAL` | 附着门禁逃生舱（#1335）。lane 型原生 hook 只附着于报告了 armed 会话生命周期看门狗（`/__bili/health` 里 `watchdog.armed == true`）的代理——未武装的 lane 型代理（崩溃会话的孤儿、或生命周期状态无法核验的实例）被大声拒绝而不是被静默搭乘。#1660：**手工 `bili start` 守护进程**（无 lane、无 launch token）按定义属于用户主权区——原生 hook 默认直接附着，刻意运行的常驻守护进程无需此变量即可被共用；其寿命与版本由你自己负责。设 `1`/`true` 可以连 lane 型未武装监听者也一并附着：任何 code/lane 兼容的监听者无论看门狗状态都可附着（包括根本不报 `watchdog` 字段的 pre-#1330 构建）。配置文件里 `"native": { "attachExternal": true }` 等效；环境变量优先（`0`/`false` 即使文件开着也关门禁——对用户区守护进程同样生效，强制各 lane 自拉新代理）。默认关闭（针对 lane 型实例）。完整机制(复用规则、监听者表、逃生舱)见 [TECHNICAL-NOTES.zh-CN.md](TECHNICAL-NOTES.zh-CN.md#代理复用与附着门禁122513351232)。 |
+| `BILI_ZCODE_ROUTE` | zcode 原生插件路由范围（#1622）：`all`（默认 —— 每个有可用 http(s) baseURL 的 provider 条目都吃压缩，pi/dsh 对齐）、`plans`（#1622 前的 bigmodel coding-plan 白名单）、`none`（整体退出，bootstrap 不碰 store）。兼容逃生舱 —— **没有**文件等效项；路由默认即开启。 |
+| `BILI_ZONE_PORT` | 自管端口区基准（#1660，默认 `18787`）：所有 lane 拉起的代理（claude/zcode 原生 hook、跑 0 号口的 launcher lane）先试该 lane 的粘性记录，否则这个基准口；端口碰撞由子进程 +1 阶梯解决（例外：占用者是同 lane 的旧版本实例——升级重启重叠时——子进程最多等 5 秒让它释放并复用同一端口，而不是漂移，#1723），落定的口记录在 `<state>/port-zone.json` 粘性表里，后续拉起自动跟随漂移。手工 `bili start` 保持自己的默认口（`8787`）——lane 永不碰用户主权区。 |
+| `BILI_ZCODE_PORT` | 为 zcode 原生通道钉死**确切端口**（#1660）：启动变为严格端口——占用者被大声拒绝而不是跳口——共享 store 里的包装也因此跨会话重启存活，无需交接。不设则通道骑自管区（`BILI_ZONE_PORT` 基准 + 粘性漂移跟随）。 |
+| `BILI_ZCODE_SIGNING_FIXED` | `1`/`true` = 假设你的 ZCode 构建已修复 ClientRequestSigningV4（#1621）：v3.14+ personal store 上 coding-plan 账号的逐条跳过关闭，恢复路由。临时逃生舱 —— **没有**文件等效项。 |
+| `BILI_CLAUDE_UPSTREAM` | claude 直连模式：当 `ANTHROPIC_BASE_URL` 已指向某个 relay 时，用它指定你的 relay 端点（否则会被旁路）。 |
+| `BILI_CLAUDE_NATIVE_PORT` | 为 claude 原生通道 hook 拉起的代理钉死**确切端口**（#964/#1660）：严格端口语义——口上的占用者被大声拒绝而不是跳口——烘进受管 `ANTHROPIC_BASE_URL`。不设则 hook 骑自管区（`BILI_ZONE_PORT` 基准 + 每 lane 粘性），且每次会话把受管 URL 重钉到存活 origin，端口漂移自愈（#1660）。 |
+| `BILI_CODEX_COMPACT` | codex 原生压缩处理。默认 `intercept`：安全门通过时（transform 成功 + 稳态用量 < 窗口 90% + 至少一个活跃压缩块）拦截 codex 的压缩请求，在本地伪造向 ACP 状态的交接——trigger 形态伪造 2 帧 SSE，endpoint 形态伪造 `{output}`——且不接触上游。伪造的 ACP 摘要经历史承载交接消息注入（缺席时 developer 消息兜底），保证 codex 截断历史后压缩内容仍可见。设为 `pass` 可退出，把 codex 的压缩请求转发给上游（原生压缩兜底）。任一安全门失败则原样透传。codex 客户端判定（本项生效范围，同时用于窗口 clamp 与会话身份指纹）：User-Agent 须以已注册前缀开头（`codex_cli_rs/`、`codex_exec/`、`codex desktop/`——大小写不敏感，因 Codex Desktop 等变体首字母大写，#1169），或含某个以**小写** `codex` 开头的空白分隔组件（未知变体如 `codex_sdk_ts/…`，#645——#1641 起从裸子串收窄为 token 级前缀，UA 中仅在括号内/路径段提及 "codex" 的非 codex 客户端不再被误判；兜底有意保持大小写敏感，排除 "Codex"-形中继，#1106）。 |
 
 ---
 
 ## CLI 参考
 
-完整命令面（`sigma --help` 打印的是精简版）。优先级处处一致：**CLI 参数 > 环境变量 > 配置文件 > 内置默认值**。
+完整命令面（`bili --help` 打印的是精简版）。优先级处处一致：**CLI 参数 > 环境变量 > 配置文件 > 内置默认值**。
 
 | 命令 | 作用 |
 |---|---|
-| `sigma [start] [options]` | 启动代理（默认读取 XDG 配置文件） |
-| `sigma pi [opts --] [args]` | 启动代理 + 拉起 **pi** 接入它 |
-| `sigma pi-test [opts --] [args]` | 类似 `sigma pi`，但追加 `--no-extensions`（干净测试 —— 压缩完全由代理负责） |
-| `sigma codex [opts --] [args]` | 代理 + **codex** |
-| `sigma claude [opts --] [args]` | 代理 + **claude**（Claude Code CLI） |
-| `sigma omp [opts --] [args]` | 代理 + **omp**（pi 内核）—— opencode zen 模型走默认 `opencode.ai` MITM 白名单（#1405） |
-| `sigma opencode [opts --] [args]` | 代理 + **opencode** —— 内置 zen 网关（`opencode.ai`）默认证书 MITM（#1405）；`~/.config/opencode/opencode.json` / `~/.omp/omp.json` 中 `providers[].baseURL` 声明的主机自动加入 MITM 白名单（#1411），`~/.aider.conf.yml` / `~/.config/opencode/.aider.conf.yml` 同受监听 |
-| `sigma hermes [opts --] [args]` | 代理 + **hermes-agent**（`/sigma/` 重写） |
-| `sigma dsh [opts --] [args]` | 代理 + **deepseek-harness**（`/sigma/` 重写；`--profile web "task"` 等参数原样透传） |
-| `sigma codebuddy [opts --] [args]` | 代理 + **codebuddy**（Tencent CodeBuddy Code CLI）—— `CODEBUDDY_BASE_URL` `/sigma/` 重写,OpenAI chat-completions wire;预算对齐走 `CODEBUDDY_AUTO_COMPACT_WINDOW`(#640) |
-| `sigma qoder [opts --] [args]` | 代理 + **qoder** —— 证书 MITM(`HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS`);模型端点硬编码 https(`/sigma/` 改写不可用,默认主机表加白名单)(#653) |
-| `sigma trae [opts --] [args]` | 代理 + **Trae CLI**（字节跳动,闭源 Go 二进制)—— 证书 MITM(`HTTPS_PROXY` + `SSL_CERT_FILE`);模型主机取 `TRAE_CLI_API_HOST` 或默认企业网关(#655) |
-| `sigma jcode [opts --] [args]` | 代理 + **jcode**（Rust 终端编码 agent)—— 环境变量式证书 MITM 启动(`HTTPS_PROXY` + `SSL_CERT_FILE`);托管模型主机 `api.z.ai` 默认加白,本地回环 provider 走 `NO_PROXY` 直连 |
-| `sigma kimi [opts --] [args]` | 代理 + **Kimi Code**(Moonshot CLI)—— 证书 MITM(`HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE`);provider/model 主机取自 `~/.kimi-code/config.toml`(遵循 `KIMI_CODE_HOME`),未声明时用托管 OAuth 端点;回环端点编目并附手动 `/sigma/` 前缀提示(#757) |
-| `sigma test pi` | 无污染的 pi 链路端到端冒烟测试 |
-| `sigma export [session] [--full] [--output FILE]` | 列出持久化会话 / 把一个会话导出为 Markdown 交接文档 —— 见[会话与迁移](#会话与迁移) |
-| `sigma acp-cache diff <dump-dir> [--json] [--log FILE] [--no-log] [--session SID]` | 从 `ACP_DUMP_BODY` dump 归因缓存失效原因 —— 对同会话相邻请求做前缀 diff(#1266) |
-| `sigma update` | 立即检查并安装新版本（绕过 3 分钟节流） |
-| `sigma plugin install <agent>` | 把原生工具插件 / MCP 桥装进宿主 —— 见[插件模式（原生工具）](#插件模式原生工具) |
-| `sigma plugin remove <agent>` | 卸载 |
-| `sigma plugin list` | 显示每个宿主的安装状态 |
-| `sigma mcp` | 独立运行 sigma MCP 服务器（stdio） |
-| `sigma plugin-register <id> [--origin URL] [--agent name]` | 预绑定会话 id 到插件模式（高级用法） |
-| `sigma --version` / `sigma --help` | 打印版本 / 帮助 |
+| `bili [start] [options]` | 启动代理（默认读取 XDG 配置文件） |
+| `bili pi [opts --] [args]` | 启动代理 + 拉起 **pi** 接入它 |
+| `bili pi-test [opts --] [args]` | 类似 `bili pi`，但追加 `--no-extensions`（干净测试 —— 压缩完全由代理负责） |
+| `bili codex [opts --] [args]` | 代理 + **codex** |
+| `bili claude [opts --] [args]` | 代理 + **claude**（Claude Code CLI） |
+| `bili omp [opts --] [args]` | 代理 + **omp**（pi 内核）—— opencode zen 模型走默认 `opencode.ai` MITM 白名单（#1405） |
+| `bili opencode [opts --] [args]` | 代理 + **opencode** —— 内置 zen 网关（`opencode.ai`）默认证书 MITM（#1405）；`~/.config/opencode/opencode.json` / `~/.omp/omp.json` 中 `providers[].baseURL` 声明的主机自动加入 MITM 白名单（#1411），`~/.aider.conf.yml` / `~/.config/opencode/.aider.conf.yml` 同受监听 |
+| `bili hermes [opts --] [args]` | 代理 + **hermes-agent**（`/bili/` 重写） |
+| `bili dsh [opts --] [args]` | 代理 + **deepseek-harness**（`/bili/` 重写；`--profile web "task"` 等参数原样透传） |
+| `bili codebuddy [opts --] [args]` | 代理 + **codebuddy**（Tencent CodeBuddy Code CLI）—— `CODEBUDDY_BASE_URL` `/bili/` 重写,OpenAI chat-completions wire;预算对齐走 `CODEBUDDY_AUTO_COMPACT_WINDOW`(#640) |
+| `bili qoder [opts --] [args]` | 代理 + **qoder** —— 证书 MITM(`HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS`);模型端点硬编码 https(`/bili/` 改写不可用,默认主机表加白名单)(#653) |
+| `bili trae [opts --] [args]` | 代理 + **Trae CLI**（字节跳动,闭源 Go 二进制)—— 证书 MITM(`HTTPS_PROXY` + `SSL_CERT_FILE`);模型主机取 `TRAE_CLI_API_HOST` 或默认企业网关(#655) |
+| `bili jcode [opts --] [args]` | 代理 + **jcode**（Rust 终端编码 agent)—— 环境变量式证书 MITM 启动(`HTTPS_PROXY` + `SSL_CERT_FILE`);托管模型主机 `api.z.ai` 默认加白,本地回环 provider 走 `NO_PROXY` 直连 |
+| `bili kimi [opts --] [args]` | 代理 + **Kimi Code**(Moonshot CLI)—— 证书 MITM(`HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE`);provider/model 主机取自 `~/.kimi-code/config.toml`(遵循 `KIMI_CODE_HOME`),未声明时用托管 OAuth 端点;回环端点编目并附手动 `/bili/` 前缀提示(#757) |
+| `bili test pi` | 无污染的 pi 链路端到端冒烟测试 |
+| `bili export [session] [--full] [--output FILE]` | 列出持久化会话 / 把一个会话导出为 Markdown 交接文档 —— 见[会话与迁移](#会话与迁移) |
+| `bili acp-cache diff <dump-dir> [--json] [--log FILE] [--no-log] [--session SID]` | 从 `ACP_DUMP_BODY` dump 归因缓存失效原因 —— 对同会话相邻请求做前缀 diff(#1266) |
+| `bili update` | 立即检查并安装新版本（绕过 3 分钟节流） |
+| `bili plugin install <agent>` | 把原生工具插件 / MCP 桥装进宿主 —— 见[插件模式（原生工具）](#插件模式原生工具) |
+| `bili plugin remove <agent>` | 卸载 |
+| `bili plugin list` | 显示每个宿主的安装状态 |
+| `bili mcp` | 独立运行 bili MCP 服务器（stdio） |
+| `bili plugin-register <id> [--origin URL] [--agent name]` | 预绑定会话 id 到插件模式（高级用法） |
+| `bili --version` / `bili --help` | 打印版本 / 帮助 |
 
-launcher 命令里 `--` 之后的参数原样透传给客户端（`sigma pi -- print "hi"`）。
+launcher 命令里 `--` 之后的参数原样透传给客户端（`bili pi -- print "hi"`）。
 
 ### 参数
 
@@ -781,19 +872,19 @@ launcher 命令里 `--` 之后的参数原样透传给客户端（`sigma pi -- p
 
 ## 客户端接入
 
-不用 launcher 时，把客户端指向代理有两种方式：**`/sigma/` 前缀**（API-key 客户端）和 **MITM 透明代理**（端点硬编码的登录客户端）。
+不用 launcher 时，把客户端指向代理有两种方式：**`/bili/` 前缀**（API-key 客户端）和 **MITM 透明代理**（端点硬编码的登录客户端）。
 
-### `/sigma/` 前缀（API-key 客户端）
+### `/bili/` 前缀（API-key 客户端）
 
-用 **API key** 配置（不是登录账号）的客户端允许你改上游 URL。只需在前面加上代理地址 + `/sigma/`，其他都不用改。API key 仍留在客户端配置里，代理原样透传。
+用 **API key** 配置（不是登录账号）的客户端允许你改上游 URL。只需在前面加上代理地址 + `/bili/`，其他都不用改。API key 仍留在客户端配置里，代理原样透传。
 
 **OpenCode** —— 编辑 `~/.config/opencode/opencode.json`，改 provider 的 `baseURL`：
 
 ```jsonc
 // 之前：
 "baseURL": "https://open.bigmodel.cn/api/coding/paas/v4"
-// 之后（前面加上代理地址 + /sigma/）：
-"baseURL": "http://localhost:8787/sigma/https://open.bigmodel.cn/api/coding/paas/v4"
+// 之后（前面加上代理地址 + /bili/）：
+"baseURL": "http://localhost:8787/bili/https://open.bigmodel.cn/api/coding/paas/v4"
 ```
 
 **Codex（API key 模式）** —— 编辑 `~/.codex/config.toml`，改 provider 的 `base_url`：
@@ -802,7 +893,7 @@ launcher 命令里 `--` 之后的参数原样透传给客户端（`sigma pi -- p
 # 之前：
 base_url = "https://api.openai.com/v1"
 # 之后：
-base_url = "http://localhost:8787/sigma/https://api.openai.com/v1"
+base_url = "http://localhost:8787/bili/https://api.openai.com/v1"
 ```
 
 **Codex（ChatGPT 登录）** —— 设顶层 `openai_base_url` 字段（保持 `model_provider = "openai"` 和 OAuth 登录不变）：
@@ -810,7 +901,7 @@ base_url = "http://localhost:8787/sigma/https://api.openai.com/v1"
 ```toml
 # ~/.codex/config.toml（顶层字段，不是 section）
 model_provider = "openai"
-openai_base_url = "http://localhost:8787/sigma/https://chatgpt.com/backend-api/codex"
+openai_base_url = "http://localhost:8787/bili/https://chatgpt.com/backend-api/codex"
 ```
 
 照常运行 `codex login`；OAuth token 随 `Authorization` 头传输，代理原样转发给上游。
@@ -821,32 +912,32 @@ openai_base_url = "http://localhost:8787/sigma/https://chatgpt.com/backend-api/c
 // 之前：
 "baseUrl": "https://api.anthropic.com"
 // 之后：
-"baseUrl": "http://localhost:8787/sigma/https://api.anthropic.com"
+"baseUrl": "http://localhost:8787/bili/https://api.anthropic.com"
 ```
 
-**Claude Code** —— 把 `ANTHROPIC_BASE_URL` 环境变量设成 `/sigma/` URL。（claude 的 undici fetch 忽略 `HTTPS_PROXY`，所以 `/sigma/` URL 形式是唯一的手动方式 —— 证书 MITM 拦不到它。）
+**Claude Code** —— 把 `ANTHROPIC_BASE_URL` 环境变量设成 `/bili/` URL。（claude 的 undici fetch 忽略 `HTTPS_PROXY`，所以 `/bili/` URL 形式是唯一的手动方式 —— 证书 MITM 拦不到它。）
 
 ```bash
-export ANTHROPIC_BASE_URL="http://localhost:8787/sigma/https://api.anthropic.com"
+export ANTHROPIC_BASE_URL="http://localhost:8787/bili/https://api.anthropic.com"
 ```
 
-> **自动压缩对齐（仅手动模式）。** `sigma claude` launcher 会自动把 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 设成 sigma 对你模型的有效窗口，让 claude 自己的自动压缩阈值与 sigma 的压缩预算对齐。手动 `/sigma/` 模式下需要你自己设 —— 否则 claude 可能在与 sigma 窗口不一致的阈值上跑它自己的本地自动压缩（一次“总结对话”轮次）。这通常无害（同一 session-id，sigma 会从截断中重新推导状态），但比必要的更吵。把它设成 sigma 对你模型的有效窗口：
+> **自动压缩对齐（仅手动模式）。** `bili claude` launcher 会自动把 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 设成 bili 对你模型的有效窗口，让 claude 自己的自动压缩阈值与 bili 的压缩预算对齐。手动 `/bili/` 模式下需要你自己设 —— 否则 claude 可能在与 bili 窗口不一致的阈值上跑它自己的本地自动压缩（一次“总结对话”轮次）。这通常无害（同一 session-id，bili 会从截断中重新推导状态），但比必要的更吵。把它设成 bili 对你模型的有效窗口：
 >
 > ```bash
-> export CLAUDE_CODE_AUTO_COMPACT_WINDOW=<sigma 有效窗口 token 数>
+> export CLAUDE_CODE_AUTO_COMPACT_WINDOW=<bili 有效窗口 token 数>
 > ```
 >
 > claude 会把这个值**向下**钳制到它自己感知的模型窗口（不会向上），所以设大了是安全的。也可以持久化到 claude 的 settings（`autoCompactWindow`）里。
 
-**其他 API-key 客户端（Cursor / Aider / Continue ……）** —— 只要配置了上游 URL，前面加 `http://localhost:8787/sigma/` 就行，其他都不用改。
+**其他 API-key 客户端（Cursor / Aider / Continue ……）** —— 只要配置了上游 URL，前面加 `http://localhost:8787/bili/` 就行，其他都不用改。
 
-`/sigma/` 前缀还是个**自检测信号**：sigma 的客户端扩展（sigma-pi / opencode-acp）能在自己的 baseUrl 里认出它并自禁用，避免双层压缩。
+`/bili/` 前缀还是个**自检测信号**：billion-context 的客户端扩展（billion-context-pi / opencode-acp）能在自己的 baseUrl 里认出它并自禁用，避免双层压缩。
 
 ### MITM 透明代理（登录/订阅客户端）
 
 用**账号登录**的客户端（ChatGPT Plus/Pro、Claude、ZCode coding plan ……）走 OAuth 认证，且通常**硬编码端点** —— 改不了 baseURL 就没法用前缀方式，这类客户端要用 MITM 模式。
 
-原理：这类客户端只提供 **HTTP 代理**设置，所以它发送 `CONNECT <host>:443`；sigma 在本地终结 TLS（用本地生成的根 CA），把压缩注入明文，再重新加密转发。OAuth token 随客户端的 `Authorization` 头传输、原样转发 —— 订阅折扣得以保留。
+原理：这类客户端只提供 **HTTP 代理**设置，所以它发送 `CONNECT <host>:443`；billion-context 在本地终结 TLS（用本地生成的根 CA），把压缩注入明文，再重新加密转发。OAuth token 随客户端的 `Authorization` 头传输、原样转发 —— 订阅折扣得以保留。
 
 支持的 MITM 客户端：
 
@@ -856,63 +947,63 @@ export ANTHROPIC_BASE_URL="http://localhost:8787/sigma/https://api.anthropic.com
 | **Claude Code** | Claude 订阅（OAuth） | `api.anthropic.com` | ❓ 未测试（可能不可用 —— 待验证） |
 | **CodeBuddy**（VS Code IDE） | IDE 账号登录 | `copilot.tencent.com`（经 `http.proxy` 到达） | ✅ 用户验证（#897） |
 
-> **Codex 例外：** Codex 暴露顶层 `openai_base_url` 配置字段，所以 ChatGPT 登录版**可以**用 `/sigma/` 前缀（见上文）。Codex 不需要 MITM。
+> **Codex 例外：** Codex 暴露顶层 `openai_base_url` 配置字段，所以 ChatGPT 登录版**可以**用 `/bili/` 前缀（见上文）。Codex 不需要 MITM。
 
-> **ZCode 原生模式（#1145）：** ZCode 是这张表里唯一同时拥有**原生插件模式**的客户端 —— `sigma plugin install zcode` 经 provider store（`~/.zcode/v2/config.json`，v3.14+ 为 `provider_config.json`）路由模型流量，完全不需要 GUI 代理/CA 设置。原生模式不碰 MITM 面：若两者并用，请保留 GUI 代理设置（以及 `"mitm://zcode.z.ai": { "passthrough": true }` 路由，#661）供登录流量使用。完整机制：README「ZCode」小节。
+> **ZCode 原生模式（#1145）：** ZCode 是这张表里唯一同时拥有**原生插件模式**的客户端 —— `bili plugin install zcode` 经 provider store（`~/.zcode/v2/config.json`，v3.14+ 为 `provider_config.json`；v3.14+ 构建上 ZCode 的客户端签名对 coding-plan 账号拒绝 http 回环 origin，这些账号带原因保持直连，其余 provider 照常路由 —— 这些账号上的压缩请用 GUI 证书 MITM 配置，#1621）路由模型流量，其余情况下完全不需要 GUI 代理/CA 设置。原生模式不碰 MITM 面：若两者并用，请保留 GUI 代理设置（以及 `"mitm://zcode.z.ai": { "passthrough": true }` 路由，#661）供登录流量使用。完整机制：[CLIENTS.zh-CN.md](CLIENTS.zh-CN.md)（ZCode）。
 
-MITM 只对一份**白名单**中的模型域名生效（`open.bigmodel.cn`、`api.anthropic.com`、`api.openai.com`、`chatgpt.com`），外加发现机制按 lane 自动播种的自带网关默认域名（如 `opencode.ai` —— opencode `auth login` 的内置 zen 网关，#1405）。其余 HTTPS 主机全部盲转发 —— sigma 绝不解密非模型流量。
+MITM 只对一份**白名单**中的模型域名生效（`open.bigmodel.cn`、`api.anthropic.com`、`api.openai.com`、`chatgpt.com`），外加发现机制按 lane 自动播种的自带网关默认域名（如 `opencode.ai` —— opencode `auth login` 的内置 zen 网关，#1405）。其余 HTTPS 主机全部盲转发 —— billion-context 绝不解密非模型流量。
 
-> **只有 `http.proxy` 设置的客户端（CONNECT-only）：** 许多 IDE 系客户端（CodeBuddy、Cursor、Windsurf……）没有模型 base-URL 设置 —— 它们把全部流量经 HTTP 代理以 `CONNECT` 方式发出。这类客户端只有在其模型域名被加进上面的白名单后才会被解密；否则其隧道是**盲**的：不报错，但也**不会压缩**，因为 sigma 根本看不到明文。该误配置现在会被显式暴露（#897）：每个目标域名的首个盲隧道会在日志打一条一次性 `BLIND TUNNEL WARNING` 并附修复步骤；`GET /__bili/health` 与 `/__bili/stats` 输出 `blindTunnels`（计数 + 精确目标域名，仅 loopback）；存在此类隧道时 `acp_status` 会多一节 `UNDECRYPTED TRAFFIC (instance-level)`。修复：把该客户端的模型域名加进 `"mitm".domains`（或 `SIGMA_MITM_DOMAINS`），重启，并按下文信任根 CA。注意代理日志默认对非公开目标域名脱敏（`<private-host>`，#255）—— 设 `SIGMA_LOG_MASK_HOSTS=0` 可在本地日志看到真实域名。
+> **只有 `http.proxy` 设置的客户端（CONNECT-only）：** 许多 IDE 系客户端（CodeBuddy、Cursor、Windsurf……）没有模型 base-URL 设置 —— 它们把全部流量经 HTTP 代理以 `CONNECT` 方式发出。这类客户端只有在其模型域名被加进上面的白名单后才会被解密；否则其隧道是**盲**的：不报错，但也**不会压缩**，因为 billion-context 根本看不到明文。该误配置现在会被显式暴露（#897）：每个目标域名的首个盲隧道会在日志打一条一次性 `BLIND TUNNEL WARNING` 并附修复步骤；`GET /__bili/health` 与 `/__bili/stats` 输出 `blindTunnels`（计数 + 精确目标域名，仅 loopback）；存在此类隧道时 `acp_status` 会多一节 `UNDECRYPTED TRAFFIC (instance-level)`。修复：把该客户端的模型域名加进 `"mitm".domains`（或 `BILI_MITM_DOMAINS`），重启，并按下文信任根 CA。注意代理日志默认对非公开目标域名脱敏（`<private-host>`，#255）—— 设 `BILI_LOG_MASK_HOSTS=0` 可在本地日志看到真实域名。
 
 一次性设置（在客户端里信任根 CA）：
 
 1. 启动一次代理以生成根 CA：
 
    ```bash
-   sigma start
-   ls ~/.local/share/sigma/ca/root-ca.pem   # 现在存在了
+   bili start
+   ls ~/.local/share/billion-context/ca/root-ca.pem   # 现在存在了
    ```
 
 2. 在客户端的 **设置 → 网络 / 代理** 里设：
    - **HTTP 代理**： `http://127.0.0.1:8787`
-   - **代理 CA 证书路径**： 本机 sigma 实际生成的 CA 文件 —— Linux/macOS 为 `~/.local/share/sigma/ca/root-ca.pem`，Windows 为 `%USERPROFILE%\.local\share\sigma\ca\root-ca.pem`。Web UI「接入」页的 ZCode 卡片直接显示本机实际路径并提供复制按钮，照抄即可。
+   - **代理 CA 证书路径**： 本机 bili 实际生成的 CA 文件 —— Linux/macOS 为 `~/.local/share/billion-context/ca/root-ca.pem`，Windows 为 `%USERPROFILE%\.local\share\billion-context\ca\root-ca.pem`。Web UI「接入」页的 ZCode 卡片直接显示本机实际路径并提供复制按钮，照抄即可。
    - （可选）**No-proxy 列表**： `localhost,127.0.0.1`
    - （ZCode 具体位置：**Settings → Network**。Claude Code 则设 `HTTPS_PROXY` 环境变量、`NODE_EXTRA_CA_CERTS` 指向 CA 路径。）
 
-   > **Windows 注意：** ZCode 在 Windows 上**不会展开 `~`**，填 `~/...` 形式的路径会找不到文件（与当前工作目录无关，每个目录都识别不了）。必须填完整绝对路径，例如 `C:\Users\<用户名>\.local\share\sigma\ca\root-ca.pem`（#342）。
+   > **Windows 注意：** ZCode 在 Windows 上**不会展开 `~`**，填 `~/...` 形式的路径会找不到文件（与当前工作目录无关，每个目录都识别不了）。必须填完整绝对路径，例如 `C:\Users\<用户名>\.local\share\billion-context\ca\root-ca.pem`（#342）。
 
-3. 重启客户端。它的模型流量从此流经 sigma 并注入压缩。发一条消息，在代理日志（`~/.local/state/sigma/sigma.log`）里找 `mitm <host>:443 tunnel established`。
+3. 重启客户端。它的模型流量从此流经 billion-context 并注入压缩。发一条消息，在代理日志（`~/.local/state/billion-context/bili.log`）里找 `mitm <host>:443 tunnel established`。
 
 > 根 CA 在本地生成、只存在于本机 —— **不是**系统级安装。只有你配置的那个客户端（通过它的 CA 路径设置）信任它，其他应用不受影响。删掉 CA 文件并重启代理会重新生成。
 
-要给 MITM 登录客户端配**专属上游代理**（防火墙/GFW）而不影响同一域名上的 API-key 客户端，用 `mitm://` scheme 键 —— 见 README「上游代理」一节。
+要给 MITM 登录客户端配**专属上游代理**（防火墙/GFW）而不影响同一域名上的 API-key 客户端，用 `mitm://` scheme 键 —— 见 [MITM vs `/bili/` key schemes](#mitm-vs-bili-key-schemes)。
 
 ---
 
 ## 启动器参考
 
-`sigma <client>` 在一个独立端口拉起代理（**每次启动都是全新实例** —— 不会复用已在运行的 `sigma start`，#216），然后把客户端指向它。**不改动任何配置文件**：启动器只**读取**（绝不编辑）客户端自己的配置来发现它访问哪些上游主机；这些主机自动加入 MITM 白名单。客户端退出时，启动器拉起的代理随之停止。
+`bili <client>` 在一个独立端口拉起代理（**每次启动都是全新实例** —— 不会复用已在运行的 `bili start`，#216），然后把客户端指向它。**不改动任何配置文件**：启动器只**读取**（绝不编辑）客户端自己的配置来发现它访问哪些上游主机；这些主机自动加入 MITM 白名单。客户端退出时，启动器拉起的代理随之停止。
 
 两种上游方案全自动覆盖，无需配置：
 
-- **HTTPS 上游 → 证书 MITM。** 通过 `HTTPS_PROXY` 把客户端指向代理，并让它信任代理的 MITM 根 CA（`~/.local/share/sigma/ca/root-ca.pem`，惰性生成）。压缩注入在被拦截的 TLS 流上。
-- **HTTP / localhost 上游 → `/sigma/` baseURL 重写**（明文没法 MITM）。启动器通过客户端自己的机制重写 base URL，走的是配置的隔离临时副本 —— 真实配置文件一个字节都不碰（见下文）。
+- **HTTPS 上游 → 证书 MITM。** 通过 `HTTPS_PROXY` 把客户端指向代理，并让它信任代理的 MITM 根 CA（`~/.local/share/billion-context/ca/root-ca.pem`，惰性生成）。压缩注入在被拦截的 TLS 流上。
+- **HTTP / localhost 上游 → `/bili/` baseURL 重写**（明文没法 MITM）。启动器通过客户端自己的机制重写 base URL，走的是配置的隔离临时副本 —— 真实配置文件一个字节都不碰（见下文）。
 
 各客户端如何被指向代理（自动设置在子进程环境里）：
 
 | 客户端 | 重定向方式 | CA 信任 |
 |---|---|---|
-| pi | `HTTPS_PROXY` + `SIGMA_PROVIDER_REWRITES` env 清单（扩展 `registerProvider`） | `NODE_EXTRA_CA_CERTS` |
-| omp | `HTTPS_PROXY` + `SIGMA_PROVIDER_REWRITES` env 清单（扩展 `registerProvider`） | `NODE_EXTRA_CA_CERTS` |
+| pi | `HTTPS_PROXY` + `BILI_PROVIDER_REWRITES` env 清单（扩展 `registerProvider`） | `NODE_EXTRA_CA_CERTS` |
+| omp | `HTTPS_PROXY` + `BILI_PROVIDER_REWRITES` env 清单（扩展 `registerProvider`） | `NODE_EXTRA_CA_CERTS` |
 | codex | `HTTPS_PROXY` + `-c key=value` 覆盖 | `SSL_CERT_FILE` → `combined-ca.pem` |
-| claude | `ANTHROPIC_BASE_URL` = `/sigma/` URL | 无需 |
+| claude | `ANTHROPIC_BASE_URL` = `/bili/` URL | 无需 |
 | opencode | `HTTPS_PROXY` + 隔离 `OPENCODE_CONFIG` | `NODE_EXTRA_CA_CERTS` |
 | hermes | `HTTPS_PROXY`（明文 http 走 absolute-form 正向代理请求） | `SSL_CERT_FILE` → `combined-ca.pem`（另设旧版 `HERMES_CA_BUNDLE` → `root-ca.pem`） |
 | dsh | `HTTPS_PROXY`（明文 http 另加 `HTTP_PROXY`）+ `DEEPSEEK_BASE_URL`；**仅回环**隔离 `DSH_HOME` | `SSL_CERT_FILE` → `combined-ca.pem` |
 
-`NODE_EXTRA_CA_CERTS` 是**追加**到内置信任库，所以只指向 MITM 根证书（`root-ca.pem`）即可。`SSL_CERT_FILE` 会**替换**默认 CA bundle，所以 codex/dsh/hermes 指向 `combined-ca.pem` —— 包含 MITM 根证书**加上**系统/Node 公共根 —— 保证子进程环境里 pip/git/curl 类 TLS（盲转发、真证书）不受影响（#152；hermes 自 #1375 起，因为当前 hermes 只经 `SSL_CERT_FILE` 解析环境信任）。
+`NODE_EXTRA_CA_CERTS` 是**追加**到内置信任库，所以只指向 MITM 根证书（`root-ca.pem`）即可。`SSL_CERT_FILE` 会**替换**默认 CA bundle，所以 codex/dsh/hermes 指向 `combined-ca.pem` —— 包含 MITM 根证书**加上**操作系统信任库与 Node 公共根。合并 OS 信任库很关键：部分被启动的客户端把这个文件当作**整个**信任池（codex 的 rustls HTTP 栈是替换而非追加，#1807），它们的直连（不经代理）连接只能靠这个文件校验，因此文件必须是 OS 自身信任集合的超集（Windows 经 PowerShell 读证书库、macOS 经 `security(1)` 读钥匙串；Linux 本就直读文件系统 bundle；最多每 24 小时重建一次）。最初引入该 bundle 是为了让子进程环境里 pip/git/curl 类 TLS（盲转发、真证书）不受影响（#152；hermes 自 #1375 起，因为当前 hermes 只经 `SSL_CERT_FILE` 解析环境信任；OS 信任库合并自 #1807 起）。
 
-Claude Code 的 undici fetch 忽略 `HTTPS_PROXY`，所以证书 MITM 拦不到它。claude 的所有上游 —— 包括预先配置的 `ANTHROPIC_BASE_URL` relay —— 一律改走 `/sigma/` URL 形式的 `ANTHROPIC_BASE_URL`；无需任何 CA 信任。
+Claude Code 的 undici fetch 忽略 `HTTPS_PROXY`，所以证书 MITM 拦不到它。claude 的所有上游 —— 包括预先配置的 `ANTHROPIC_BASE_URL` relay —— 一律改走 `/bili/` URL 形式的 `ANTHROPIC_BASE_URL`；无需任何 CA 信任。
 
 上游从哪里发现（只读）：
 
@@ -924,45 +1015,46 @@ Claude Code 的 undici fetch 忽略 `HTTPS_PROXY`，所以证书 MITM 拦不到�
 | Claude Code | `ANTHROPIC_BASE_URL` 环境变量，否则硬编码 `api.anthropic.com` |
 | OpenCode | `~/.config/opencode/opencode.json` —— 各 provider 的 `baseURL` |
 | hermes | `~/.hermes/config.yaml` —— 各 provider 的端点行 |
-| dsh | `~/.dsh/settings.yaml` —— 每个 `baseURL`/`baseUrl`/`base_url` 值，按目的地分流（回环 → `/sigma/` 重写；非回环 https → MITM 白名单；非回环 http → `HTTP_PROXY`）；内置 `deepseek-official` 路由另经 `$DEEPSEEK_BASE_URL` 接管 |
+| dsh | `~/.dsh/settings.yaml` —— 每个 `baseURL`/`baseUrl`/`base_url` 值，按目的地分流（回环 → `/bili/` 重写；非回环 https → MITM 白名单；非回环 http → `HTTP_PROXY`）；内置 `deepseek-official` 路由另经 `$DEEPSEEK_BASE_URL` 接管 |
 
 ### 生成文件（写了什么 —— 最后手段，#535）
 
 启动器优先零文件注入（env > CLI 参数/扩展 API > 生成文件；见 [TECHNICAL-NOTES.zh-CN.md —— 注入优先级](TECHNICAL-NOTES.zh-CN.md)）。确实绕不开文件时写的都是**副本** —— 真实配置绝不编辑：
 
-- **pi / omp** —— 不写任何文件（#535）：provider baseUrl 走 `SIGMA_PROVIDER_REWRITES` env 清单，由 sigma 扩展加载时消费（`registerProvider`）；自动原生压缩改由扩展内取消（`session_before_compact`，omp 按 `auto_compaction_start` 预告区分自动/手动，#851）——但仅在代理确实承载该会话有正证据时才取消（插件已为该会话 id 盖章 `x-sigma-plugin-conversation`、omp 身份注册成功、或 `/__bili/plugin/status?conversationId=` 确认）；非 http(s) 的 provider baseUrl（如 pi-claude-bridge 的字面量 `"claude-bridge"`）永不取消，其自带的压缩接管继续生效（#1382）——手动 `/compact` 无论如何都保持用户所有。真实 `~/.pi` / `~/.omp` 主目录原样不动。
-- **opencode** —— 临时 `opencode.json`（由 `OPENCODE_CONFIG` 指向，客户端退出时删除），明文 `baseURL` 重写为 `/sigma/` 形式，**并追加了薄插件**（`/acp` + `/acp-cache` 命令）。OpenCode 1.x 下 `opencode-acp` 条目会从副本中移除（主机不得以激活状态加载它），改由薄插件把同一个包作为库导入、仅对 legacy 会话生效；首个被移除的 spec 经 `SIGMA_OPENCODE_ACP_SPEC` 传递，保证 bridge 导入的正是主机本会加载的那份拷贝（#920）。
+- **pi / omp** —— 不写任何文件（#535）：provider baseUrl 走 `BILI_PROVIDER_REWRITES` env 清单，由 bili 扩展加载时消费（`registerProvider`）；自动原生压缩改由扩展内取消（`session_before_compact`，omp 按 `auto_compaction_start` 预告区分自动/手动，#851）——但仅在代理确实承载该会话有正证据时才取消（插件已为该会话 id 盖章 `x-bili-plugin-conversation`、omp 身份注册成功、或 `/__bili/plugin/status?conversationId=` 确认）；非 http(s) 的 provider baseUrl（如 pi-claude-bridge 的字面量 `"claude-bridge"`）默认永不取消，其自带的压缩接管继续生效（#1382）；可通过 `providers` 表里该 provider 的条目显式放行 —— 键 = provider id（非 URL 键对路由惰性无效），字段 `"compactionOptIn": true` —— 或 `BILI_NON_HTTP_PROVIDERS`（env，逗号分隔）—— 但放行只是扩大候选集，被放行的 provider 仍需上述同样的正证据才会被取消（#1392）——手动 `/compact` 无论如何都保持用户所有。真实 `~/.pi` / `~/.omp` 主目录原样不动。
+- **opencode** —— 临时 `opencode.json`（由 `OPENCODE_CONFIG` 指向，客户端退出时删除），明文 `baseURL` 重写为 `/bili/` 形式，**并追加了薄插件**（`/acp` + `/acp-cache` 命令）。OpenCode 1.x 下 `opencode-acp` 条目会从副本中移除（主机不得以激活状态加载它），改由薄插件把同一个包作为库导入、仅对 legacy 会话生效；首个被移除的 spec 经 `BILI_OPENCODE_ACP_SPEC` 传递，保证 bridge 导入的正是主机本会加载的那份拷贝（#920）。
 - **hermes** —— 不写任何文件（#535）：其 httpx 栈走 `HTTPS_PROXY`（+ `SSL_CERT_FILE` → `combined-ca.pem`；旧版 `HERMES_CA_BUNDLE` 保留设置，#1375）—— https 经 CONNECT 证书 MITM，明文 http 经 absolute-form 正向代理请求。若没配置任何 provider，启动器打印警告，hermes 将**不经代理**运行（无压缩）。
-- **dsh** —— 按目的地分流（#535）：dsh 的 fetch 栈尊重代理 env，但对回环目标无条件绕过，所以**非回环**上游走 `HTTPS_PROXY`（证书 MITM）/ `HTTP_PROXY`（absolute-form 正向代理请求），`SSL_CERT_FILE` → `combined-ca.pem`；仅**回环**上游保留持久 overlay `DSH_HOME`（`~/.dsh-sigma`），重写后的 `settings.yaml` 让它们走 `/sigma/`。`profiles/`、凭据、会话符号链接共享；真实 `~/.dsh` 绝不触碰。内置 `deepseek-official` 路由另行经 `$DEEPSEEK_BASE_URL` 接管（dsh 解析顺序为 settings `llm-deepseek.baseURL` ?? 环境变量 ?? 默认值，用户配置优先，环境变量作零配置兜底）—— 即便没有任何自定义 provider，内置 deepseek 路由也照样走代理。
+- **dsh** —— 按目的地分流（#535）：dsh 的 fetch 栈尊重代理 env，但对回环目标无条件绕过，所以**非回环**上游走 `HTTPS_PROXY`（证书 MITM）/ `HTTP_PROXY`（absolute-form 正向代理请求），`SSL_CERT_FILE` → `combined-ca.pem`；仅**回环**上游保留持久 overlay `DSH_HOME`（`~/.dsh-bili`），重写后的 `settings.yaml` 让它们走 `/bili/`。`profiles/`、凭据、会话符号链接共享；真实 `~/.dsh` 绝不触碰。home 顶层的 SQLite 数据库是唯一不共享的例外：每次启动在 overlay 内私有拷贝，退出时作为整体合并回去（文件链接的主库会让两条路径在同一 inode 上长出互不协调的 WAL —— #1917）。内置 `deepseek-official` 路由另行经 `$DEEPSEEK_BASE_URL` 接管（dsh 解析顺序为 settings `llm-deepseek.baseURL` ?? 环境变量 ?? 默认值，用户配置优先，环境变量作零配置兜底）—— 即便没有任何自定义 provider，内置 deepseek 路由也照样走代理。
+- **codex** —— 持久 overlay `CODEX_HOME`（`~/.codex-bili`，或 `<CODEX_HOME>-bili`），其余条目（凭据、会话、模型设置）保持指向真实主目录的共享链接。例外是 home 顶层的 SQLite 数据库（`*.db` / `*.sqlite` / `*.sqlite3` —— codex 的日志/状态库都在这里）：每次启动在 overlay 内私有拷贝，退出时作为**一个整体**合并回真实主目录（较新的主库代际胜出，败者完整保留为 `<name>.bili-conflict`）。把这些库文件链接到两个 home 之间会让两条路径在同一 inode 上长出互不协调的 WAL —— 已提交写入丢失或数据库损坏（#1917）。两个生成文件：(a) MCP 注入开启时，合并后的 `config.toml` —— 真实内容加上每次启动的 `[mcp_servers.bili]` 块（内联 `-c` 值在 Windows cmd.exe 引号处理下无法存活，#681）；(b) #1802 起，生成的 `.env`（权限 0600），把**本次启动**的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` / `SSL_CERT_FILE` / `BILLION_CONTEXT_PROXY` 重新钉死：codex 自己的 `load_dotenv()` 会在启动**之后**用 `$CODEX_HOME/.env` 覆盖启动器注入的环境变量，否则用户 `.env` 里指向 socks5h 之类的代理会悄悄把 codex 重新路由出 bili（且 codex 自定义 CA 的 rustls HTTP 栈根本不支持 SOCKS）。你 `.env` 里的其他变量逐行原样保留；既有的共享 `.env` 链接会迁移为自有文件；真实主目录的 `.env` 及其他所有文件绝不触碰。direct-URL 模式（`BILI_LAUNCHER_DIRECT=1`）不生成 `.env`（没有需要保护的注入代理），且未开 MCP 时连 overlay 都不建。
 
 ### 启动器里的原生工具
 
 - **pi** —— 未安装插件时，启动器借用 pi 的 `-e <file>` 参数为本次运行加载 `dist/agent/pi.js`（不写任何东西）：开箱即原生工具 + `/acp`、`/acp-cache` 与 `/acp-rule` 命令（`/acp-cache` 默认总账摘要 —— 总计、判定、异常行；追加 `full`（或 `--full`）看全量明细，等价于 `acp_cache` 工具传 `detail: "full"`）。已安装则符号链接的 `settings.json` 已加载它 —— 不再加 `-e`。
-- **omp** —— 发行版不自带插件；启动器在配置里没有可加载的 sigma 条目时自动注入 `-e dist/agent/omp.js`（与 pi 相同的零配置搭车）。两个 omp 专属机制让插件在那里完全原生：omp 17.x 会把未声明 `loadMode` 的扩展工具挂到 `xd://` 设备 URL 下（模型主回合看不到），插件因此用 `loadMode: "essential"` 注册 —— 模型直接拿到四个 ACP 原生工具；omp 分叉不发 `before_provider_headers`，插件改走启动器身份注册（`POST /__bili/plugin/register`，以 omp 会话 id = `prompt_cache_key`/`x-session-id` 为键）绑定会话 —— 绑定后的会话进入插件模式（抑制 wire 注入）并带有原生 `/acp`、`/acp-cache` 与 `/acp-rule` 命令。
+- **omp** —— 发行版不自带插件；启动器在配置里没有可加载的 bili 条目时自动注入 `-e dist/agent/omp.js`（与 pi 相同的零配置搭车）。两个 omp 专属机制让插件在那里完全原生：omp 17.x 会把未声明 `loadMode` 的扩展工具挂到 `xd://` 设备 URL 下（模型主回合看不到），插件因此用 `loadMode: "essential"` 注册 —— 模型直接拿到四个 ACP 原生工具；omp 分叉不发 `before_provider_headers`，插件改走启动器身份注册（`POST /__bili/plugin/register`，以 omp 会话 id = `prompt_cache_key`/`x-session-id` 为键）绑定会话 —— 绑定后的会话进入插件模式（抑制 wire 注入）并带有原生 `/acp`、`/acp-cache` 与 `/acp-rule` 命令。
 - **opencode** —— 临时配置自动追加薄插件。
-- **claude / codex** —— 默认开启：启动器注入单个 `sigma` MCP 服务器（claude 用 `--mcp-config`，codex 用 `-c mcp_servers.sigma.*` —— 都是临时生效，不写宿主配置），开箱即原生工具（已在 claude 2.1.227 / codex 0.147.0 验证）。`SIGMA_LAUNCHER_PLUGIN=0` 退回纯 wire 模式 —— 适用于早于已验证版本、未针对注入参数测试的宿主。
-- **codex + 自建上游自动回退** —— codex 0.147 把 MCP 工具以 `namespace` 工具类型发给模型；自建推理服务（sglang/vllm/ollama/llama.cpp）不解析该类型，工具会静默失明。当 codex 上游主机是环回/私网地址（`127.0.0.1`、RFC1918、ULA、`.local` 等）且未设置 `SIGMA_LAUNCHER_PLUGIN` 时，sigma 自动改用 wire 模式（扁平工具，所有服务都认识）并在 stderr 说明。`SIGMA_LAUNCHER_PLUGIN=1` 可强制插件模式。
+- **claude / codex** —— 默认开启：启动器注入单个 `bili` MCP 服务器（claude 用临时 `--mcp-config` 文件；codex 的定义写在 overlay 生成的 `config.toml` 里，见[生成文件](#生成文件写了什么----最后手段--535) —— 两种情况都不写真实宿主配置），开箱即原生工具（已在 claude 2.1.227 / codex 0.147.0 验证）。`BILI_LAUNCHER_PLUGIN=0` 退回纯 wire 模式 —— 适用于早于已验证版本、未针对注入参数测试的宿主。
+- **codex + 自建上游自动回退** —— codex 0.147 把 MCP 工具以 `namespace` 工具类型发给模型；自建推理服务（sglang/vllm/ollama/llama.cpp）不解析该类型，工具会静默失明。当 codex 上游主机是环回/私网地址（`127.0.0.1`、RFC1918、ULA、`.local` 等）且未设置 `BILI_LAUNCHER_PLUGIN` 时，bili 自动改用 wire 模式（扁平工具，所有服务都认识）并在 stderr 说明。`BILI_LAUNCHER_PLUGIN=1` 可强制插件模式。
 - **hermes** —— 无插件 API；永远 wire 模式。
-- **dsh** —— 启动器始终在 dsh 的 argv 里拼接 `--patch <file>`（写入 `~/.dsh-sigma/.sigma-acp.patch.yml`），把 `dist/agent/dsh-acp.js` 插进 profile 的加载树：原生 `/acp` 与 `/acp-cache` 命令，与 dsh 自带 `/compact` 同一形态（`/acp-cache` 显示默认总账摘要 —— dsh 的命令 API 不传参数，因此没有 `full`）。在任何组合了 commands 服务的 profile（web/tui 交互表面）都可用；`headless` 一次性驱动器把任务直接发给模型、不解析命令（原生 `/compact` 在那里同样不可用）。子命令形态已处理：`dsh web` 的 flag 插在 `web` 之后，`dsh plugin`/`--dump-default-config` 不注入。
+- **dsh** —— 启动器始终在 dsh 的 argv 里拼接 `--patch <file>`（写入 `~/.dsh-bili/.bili-acp.patch.yml`），把 `dist/agent/dsh-acp.js` 插进 profile 的加载树：原生 `/acp` 与 `/acp-cache` 命令，与 dsh 自带 `/compact` 同一形态（`/acp-cache` 显示默认总账摘要 —— dsh 的命令 API 不传参数，因此没有 `full`）。在任何组合了 commands 服务的 profile（web/tui 交互表面）都可用；`headless` 一次性驱动器把任务直接发给模型、不解析命令（原生 `/compact` 在那里同样不可用）。子命令形态已处理：`dsh web` 的 flag 插在 `web` 之后，`dsh plugin`/`--dump-default-config` 不注入。
 
 启动器模式矩阵：
 
 | 模式 | 工具形态 | 设置 |
 |---|---|---|
-| 启动器 + MCP（claude/codex 默认） | 原生 MCP 工具 | 无 —— `sigma claude` / `sigma codex` 即可 |
-| 启动器 wire 模式（claude/codex，`SIGMA_LAUNCHER_PLUGIN=0`） | 代理注入的 wire 工具 | 一个环境变量 |
+| 启动器 + MCP（claude/codex 默认） | 原生 MCP 工具 | 无 —— `bili claude` / `bili codex` 即可 |
+| 启动器 wire 模式（claude/codex，`BILI_LAUNCHER_PLUGIN=0`） | 代理注入的 wire 工具 | 一个环境变量 |
 | 启动器 `-e` / 自动插件（pi、omp、opencode） | 原生插件工具 | 无 |
-| 手动插件（`sigma plugin install`） | 客户端侧插件 | 执行 install |
-| 手动 baseURL（`/sigma/` 前缀） | 代理注入的 wire 工具 | 改客户端配置 |
+| 手动插件（`bili plugin install`） | 客户端侧插件 | 执行 install |
+| 手动 baseURL（`/bili/` 前缀） | 代理注入的 wire 工具 | 改客户端配置 |
 
 ### 直连 URL 模式（可选）
 
-`SIGMA_LAUNCHER_DIRECT=1` 彻底放弃 MITM/CA 信任 —— claude 的 `ANTHROPIC_BASE_URL` / codex 的 provider `base_url` 直接指向 `/sigma/` 前缀。警告：
+`BILI_LAUNCHER_DIRECT=1` 彻底放弃 MITM/CA 信任 —— claude 的 `ANTHROPIC_BASE_URL` / codex 的 provider `base_url` 直接指向 `/bili/` 前缀。警告：
 
-- **codex 直连模式**：LLM 流量**不**经过代理，压缩不生效 —— 只有 sigma MCP 工具调用经过。要完整压缩请用默认 MITM 模式（不设 `SIGMA_LAUNCHER_DIRECT`）。
-- **claude 直连模式**：`ANTHROPIC_BASE_URL` 被覆盖指向代理；预先配置的 relay 被旁路，除非设 `SIGMA_CLAUDE_UPSTREAM=<relay>`。OAuth 订阅流量需要默认 MITM 模式。
+- **codex 直连模式**：LLM 流量**不**经过代理，压缩不生效 —— 只有 bili MCP 工具调用经过。要完整压缩请用默认 MITM 模式（不设 `BILI_LAUNCHER_DIRECT`）。
+- **claude 直连模式**：`ANTHROPIC_BASE_URL` 被覆盖指向代理；预先配置的 relay 被旁路，除非设 `BILI_CLAUDE_UPSTREAM=<relay>`。OAuth 订阅流量需要默认 MITM 模式。
 
-`--mitm-domain <domain>`（可重复）在自动发现之外追加 MITM 白名单域名 —— 适用于客户端在运行时才获取、不写进配置文件的主机。默认端口被占用时启动器自动换空闲端口；`--passthrough` / `--debug` / `--no-auto-update` 与普通 `sigma` 用法相同。
+`--mitm-domain <domain>`（可重复）在自动发现之外追加 MITM 白名单域名 —— 适用于客户端在运行时才获取、不写进配置文件的主机。默认端口被占用时启动器自动换空闲端口；`--passthrough` / `--debug` / `--no-auto-update` 与普通 `bili` 用法相同。
 
 ---
 
@@ -970,38 +1062,38 @@ Claude Code 的 undici fetch 忽略 `HTTPS_PROXY`，所以证书 MITM 拦不到�
 
 想要原生插件体验，可以在客户端里装一个配合代理的插件：插件把四个 ACP 工具（`compress` / `decompress` / `search_context` / `acp_status`）原生注册进客户端、由客户端自己的工具循环驱动，而代理仍然是压缩引擎（状态、历史折叠、压缩哲学 prompt、nudge 全归代理）。工具 schema 由代理统一下发（`GET /__bili/plugin/manifest`），插件与代理永远不会版本漂移。协议规范见 [PLUGIN.md](PLUGIN.md)。
 
-带插件的会话通过请求头自动识别 —— 该会话的 wire 层工具注入自动关闭（不会双重压缩，工具体验原生）。两种代理模式都支持：`/sigma/` 前缀 baseURL **和** MITM 透明模式。插件还可以上报客户端自己的模型上下文窗口（`x-sigma-plugin-context-window`），并通过 `GET /__bili/plugin/status` 读取实时上下文水位。
+带插件的会话通过请求头自动识别 —— 该会话的 wire 层工具注入自动关闭（不会双重压缩，工具体验原生）。两种代理模式都支持：`/bili/` 前缀 baseURL **和** MITM 透明模式。插件还可以上报客户端自己的模型上下文窗口（`x-bili-plugin-context-window`），并通过 `GET /__bili/plugin/status` 读取实时上下文水位。
 
 ### install / remove / list
 
 ```bash
-sigma plugin install pi      # 把本 sigma 安装加入 pi 的 settings.json（packages）
-sigma plugin install omp     # omp 同理（config.yml extensions）
-sigma plugin install claude  # 注册 sigma MCP 服务器（claude mcp add，user 作用域）+ 写入
+bili plugin install pi      # 把本 billion-context 安装加入 pi 的 settings.json（packages）
+bili plugin install omp     # omp 同理（config.yml extensions）
+bili plugin install claude  # 注册 bili MCP 服务器（claude mcp add，user 作用域）+ 写入
                                    # <configdir>/commands/acp-cache.md（模型中介的 /acp-cache）
-sigma plugin install codex   # 向 ~/.codex/config.toml 追加 [mcp_servers.sigma]
-sigma plugin install opencode  # 向 ~/.config/opencode/opencode.json 加 mcp.sigma
-sigma plugin list            # 所有受支持宿主的安装状态
-sigma plugin remove pi       # 撤销（原文件一次性备份为 *.sigma-bak）
+bili plugin install codex   # 向 ~/.codex/config.toml 追加 [mcp_servers.bili]
+bili plugin install opencode  # 向 ~/.config/opencode/opencode.json 加 mcp.bili
+bili plugin list            # 所有受支持宿主的安装状态
+bili plugin remove pi       # 撤销（原文件一次性备份为 *.bili-bak）
 ```
 
-`install pi` 还会替换**遗留的** sigma 条目（旧的 `npm:sigma-pi` 引用、过期的 `npm:sigma@x.y.z`、残留的 dev 目录路径），确保只有恰好一个 sigma 插件在生效。
+`install pi` 还会替换**遗留的** billion-context 条目（旧的 `npm:billion-context-pi` 引用、过期的 `npm:billion-context@x.y.z`、残留的 dev 目录路径），确保只有恰好一个 bili 插件在生效。
 
-安装的插件是**薄**插件（约 5 KB，零运行时依赖）：它检测代理（从 `/sigma/` baseURL 或 `SIGMA_PROXY`）、从代理拉取工具 schema、注册原生工具、转发执行 —— 代理始终是唯一的压缩引擎，所以插件与代理永远版本一致。没有插件 API 的宿主（claude、codex、opencode）改装 MCP 桥（`dist/mcp.js`）—— 底层协议相同，但 MCP 没有斜杠命令（没有 `/acp`；claude 额外获得模型中介的 `/acp-cache` markdown 命令，写入 `<configdir>/commands/acp-cache.md`，其提示词驱动 `acp_cache` MCP 工具 —— 模型把报告原样贴回）。
+安装的插件是**薄**插件（约 5 KB，零运行时依赖）：它检测代理（从 `/bili/` baseURL 或 `BILLION_CONTEXT_PROXY`）、从代理拉取工具 schema、注册原生工具、转发执行 —— 代理始终是唯一的压缩引擎，所以插件与代理永远版本一致。没有插件 API 的宿主（claude、codex、opencode）改装 MCP 桥（`dist/mcp.js`）—— 底层协议相同，但 MCP 没有斜杠命令（没有 `/acp`；claude 额外获得模型中介的 `/acp-cache` markdown 命令，写入 `<configdir>/commands/acp-cache.md`，其提示词驱动 `acp_cache` MCP 工具 —— 模型把报告原样贴回）。
 
-总开关：`SIGMA_PLUGIN=0` 彻底关闭插件模式（恢复 wire 层注入）。
+总开关：`BILLION_CONTEXT_PLUGIN=0` 彻底关闭插件模式（恢复 wire 层注入）。
 
-**到底什么时候需要 `plugin install`？** 用启动器的基本都不需要（见[启动器参考](#启动器参考) —— pi/omp 自动 `-e`、opencode 自动注入、claude/codex 自动注入 MCP、dsh 经 `--patch` 自动获得原生 `/acp` 与 `/acp-cache` 命令、hermes 只能 wire）。它适用于手动配置客户端（`/sigma/` 前缀或 MITM）又想要原生面板的场景：pi/omp/opencode 装后获得原生工具 + `/acp` 与 `/acp-cache`（pi/omp 另加 `/acp-rule`）；claude/codex 获得原生 MCP 工具（无 `/acp`；claude 获得模型中介的 `/acp-cache`）；dsh 的 `/acp` 与 `/acp-cache` 由启动器 `--patch` 注入（手动配置的 dsh 可自行添加同一 patch）；hermes 装不了（只能 wire）。不装任何插件一切照常工作 —— 压缩走 wire 注入的工具，让模型调 `acp_status` 即可查看实时用量。
+**到底什么时候需要 `plugin install`？** 用启动器的基本都不需要（见[启动器参考](#启动器参考) —— pi/omp 自动 `-e`、opencode 自动注入、claude/codex 自动注入 MCP、dsh 经 `--patch` 自动获得原生 `/acp` 与 `/acp-cache` 命令、hermes 只能 wire）。它适用于手动配置客户端（`/bili/` 前缀或 MITM）又想要原生面板的场景：pi/omp/opencode 装后获得原生工具 + `/acp` 与 `/acp-cache`（pi/omp 另加 `/acp-rule`）；claude/codex 获得原生 MCP 工具（无 `/acp`；claude 获得模型中介的 `/acp-cache`）；dsh 的 `/acp` 与 `/acp-cache` 由启动器 `--patch` 注入（手动配置的 dsh 可自行添加同一 patch）；hermes 装不了（只能 wire）。不装任何插件一切照常工作 —— 压缩走 wire 注入的工具，让模型调 `acp_status` 即可查看实时用量。
 
 ### 检测其他压缩插件（#1206）
 
-两个压缩器作用于同一会话会双压缩、破坏消息引用，所以 sigma 会主动查找与自己并存的另一个压缩器：
+两个压缩器作用于同一会话会双压缩、破坏消息引用，所以 bili 会主动查找与自己并存的另一个压缩器：
 
-- **扫描**（只读、尽力而为、5 分钟缓存）：opencode 全局 + 项目配置的 `plugin` 数组；pi 全局 + 项目 `.pi/settings.json` 的 `packages`；omp `config.yml` 的 `extensions`；claude 设置的 `enabledPlugins`/`plugins` 键 + `~/.claude/plugins/` 目录；kimi `plugins/installed.json`；hermes `~/.hermes/plugins/` 目录；dsh profile 的 `package.json` 依赖。两个层级：**已知冲突**（`opencode-acp`、遗留 `sigma-pi`，确定性判定）和**关键词疑似**条目（名称匹配 compress / compact / acp / summar* / context*；sigma 自身条目永远跳过，`context7` 这类非压缩工具不会误报）。
-- **发现结果的出口**：客户端启动前的 launcher stderr；每个会话首个请求的一次性代理 warn 日志（client 由 `x-sigma-plugin` 头或 wire 头识别）；会话冲突台账 —— `acp_status` 的 `COMPRESSION CONFLICTS` 段、`GET /__bili/stats` → `conflicts`、Web UI 横幅。
+- **扫描**（只读、尽力而为、5 分钟缓存）：opencode 全局 + 项目配置的 `plugin` 数组；pi 全局 + 项目 `.pi/settings.json` 的 `packages`；omp `config.yml` 的 `extensions`；claude 设置的 `enabledPlugins`/`plugins` 键 + `~/.claude/plugins/` 目录；kimi `plugins/installed.json`；hermes `~/.hermes/plugins/` 目录；dsh profile 的 `package.json` 依赖。两个层级：**已知冲突**（`opencode-acp`、遗留 `billion-context-pi`，确定性判定）和**关键词疑似**条目（名称匹配 compress / compact / acp / summar* / context*；bili 自身条目永远跳过，`context7` 这类非压缩工具不会误报）。
+- **发现结果的出口**：客户端启动前的 launcher stderr；每个会话首个请求的一次性代理 warn 日志（client 由 `x-bili-plugin` 头或 wire 头识别）；会话冲突台账 —— `acp_status` 的 `COMPRESSION CONFLICTS` 段、`GET /__bili/stats` → `conflicts`、Web UI 横幅。
 - **运行时证据**：未宣告的历史改写（#1001）与孤儿块废弃（被摘要的内容从客户端历史中被删掉）记入同一台账，让「疑似并存」与「实际观测到的干扰」互相印证。
 - opencode launcher/native 模式下已存在的 `opencode-acp` 按设计只记 info（#920 有意吸收它处理 legacy 会话）；其他场景一律告警。
-- 关闭方式：`SIGMA_CONFLICT_SCAN=0`。
+- 关闭方式：`BILI_CONFLICT_SCAN=0`。
 
 ---
 
@@ -1014,19 +1106,15 @@ sigma plugin remove pi       # 撤销（原文件一次性备份为 *.sigma-bak�
 - 把客户端指回真实上游（或停掉代理）后，客户端每轮重放**完整本地历史**。长压缩会话之后这很容易超出模型上下文窗口（`context_window_exceeded`）。
 - 没有办法把压缩块「解包」回客户端本地历史 —— 客户端从未见过压缩形态。
 
-### 启动时的存储生命周期（#401）
-
-代理启动时只做**一次**目录遍历+解析来初始化会话存储（加载与一次性的 #286 身份迁移跑在同一份解析结果上）。会话永久保留 —— 设计目标是让一年的对话永不丢失 —— 因此没有保留期或体积预算的裁剪。#286 迁移在首次扫描后写入 `.sigma-migration-286.done` 标记，后续启动不会重复扫描或重复打日志。
-
 ### 从代理迁移出去
 
 导出会话，粘贴到新会话里作为交接：
 
 ```bash
-sigma export                      # 列出持久化会话（id、标签、块数）
-sigma export <id|label>           # 打印 Markdown 交接文档（块摘要）
-sigma export <id> --full          # 附上每个块的原始消息
-sigma export <id> --full --output handoff.md
+bili export                      # 列出持久化会话（id、标签、块数）
+bili export <id|label>           # 打印 Markdown 交接文档（块摘要）
+bili export <id> --full          # 附上每个块的原始消息
+bili export <id> --full --output handoff.md
 ```
 
 然后在客户端里开一个新会话（直连上游），把交接文档粘贴为开场上下文。
@@ -1035,17 +1123,17 @@ sigma export <id> --full --output handoff.md
 
 Codex 子代理（如 `guardian_subagent` 审批 reviewer）复用主会话的 `session_id`，在线路上看起来是同一个会话。若不处理，子代理请求会继承主会话的压缩状态 —— 子代理轮次的上下文可能被折叠（丢失它必须逐字读取的用户授权），两个角色的用量估算也会互相污染。
 
-sigma 通过 `instructions` 字段识别：子代理请求带自己的角色 prompt。会话**首次**看到的 instructions 锚定主命名空间（即使主 prompt 后来漂移也稳定）；任何其他 instructions 值映射到独立的 `|sub:` 命名空间，拥有自己的空白压缩状态。子代理请求是自包含重放，所以新命名空间无损 —— Web UI 的会话列表会把两个命名空间显示为共享同一客户端标签的独立会话。
+billion-context 通过 `instructions` 字段识别：子代理请求带自己的角色 prompt。会话**首次**看到的 instructions 锚定主命名空间（即使主 prompt 后来漂移也稳定）；任何其他 instructions 值映射到独立的 `|sub:` 命名空间，拥有自己的空白压缩状态。子代理请求是自包含重放，所以新命名空间无损 —— Web UI 的会话列表会把两个命名空间显示为共享同一客户端标签的独立会话。
 
 ### Windows：把会话目录加入杀软排除项（#362）
 
-sigma 把每个会话的压缩状态持久化为会话目录（默认 `%USERPROFILE%\.local\share\sigma\`）下「一会话一 JSON 文件」，长会话每一轮都会重写该文件。在 Windows 上，实时杀毒（Windows Defender）、搜索索引器或同步工具（OneDrive）可能在写入中途锁住该目录。当锁跨多次写入持续时，rename 会以 `EPERM` 失败，在锁解除前该会话的每次持久化都会失败。
+billion-context 把每个会话的压缩状态持久化为会话目录（默认 `%USERPROFILE%\.local\share\billion-context\`）下「一会话一 JSON 文件」，长会话每一轮都会重写该文件。在 Windows 上，实时杀毒（Windows Defender）、搜索索引器或同步工具（OneDrive）可能在写入中途锁住该目录。当锁跨多次写入持续时，rename 会以 `EPERM` 失败，在锁解除前该会话的每次持久化都会失败。
 
-当同一会话连续 N 次写失败（默认 `5`，可用 `SIGMA_PERSIST_EPERM_ALERT_THRESHOLD` 调整）时，代理会打一条**一次性、可操作**的告警，明确指出要排除的目录。它不会重复刷屏（设 `SIGMA_PERSIST_EPERM_ALERT_REPEAT_MS > 0` 可在失败持续期间最多每 M 分钟重复一次）。
+当同一会话连续 N 次写失败（默认 `5`，可用 `BILI_PERSIST_EPERM_ALERT_THRESHOLD` 调整）时，代理会打一条**一次性、可操作**的告警，明确指出要排除的目录。它不会重复刷屏（设 `BILI_PERSIST_EPERM_ALERT_REPEAT_MS > 0` 可在失败持续期间最多每 M 分钟重复一次）。
 
 要从根上止住失败，把会话目录加入杀软排除项，并确保它不在任何同步文件夹内：
 
-1. **Windows Defender 排除项：** 设置 → 隐私和安全性 → Windows 安全中心 → 病毒和威胁防护 → 管理设置 → **排除项** → **添加排除** → *文件夹* → 选择 `%USERPROFILE%\.local\share\sigma\`。
-2. **不要同步该目录。** 确认 OneDrive（或 Dropbox / Google Drive 等）没有同步 `%USERPROFILE%\.local\share\sigma\`。若它位于同步文件夹下，用 `SIGMA_SESSIONS_DIR` 把它迁到非同步路径。
+1. **Windows Defender 排除项：** 设置 → 隐私和安全性 → Windows 安全中心 → 病毒和威胁防护 → 管理设置 → **排除项** → **添加排除** → *文件夹* → 选择 `%USERPROFILE%\.local\share\billion-context\`。
+2. **不要同步该目录。** 确认 OneDrive（或 Dropbox / Google Drive 等）没有同步 `%USERPROFILE%\.local\share\billion-context\`。若它位于同步文件夹下，用 `BILI_SESSIONS_DIR` 把它迁到非同步路径。
 
 高频 persist 写入否则会在每一轮反复触发实时扫描 —— 这正是产生 `EPERM` 写失败的原因。目录加入排除项后，告警即止。

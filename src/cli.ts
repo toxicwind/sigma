@@ -27,6 +27,8 @@ import { configFile as defaultConfigFile } from "./paths.js";
 import { log as loggerLog } from "./logger.js";
 import { createAutoRestartHandler } from "./restart.js";
 import { checkForUpdate, startAutoUpdate } from "./update.js";
+import { startAdvisoryWatcher, getAdvisoryState, advisoryDeferring, advisoryBlocksVersion } from "./advisory.js";
+import { startReleaseNotesWatcher } from "./update-notes.js";
 import { resolveProxy } from "./upstream-proxy.js";
 import { runMcpStdio } from "./mcp.js";
 import { PLUGIN_AGENTS, isPluginAgent, pluginInstall, pluginRemove, pluginStatusAll, pluginUpdate, type PluginAgent } from "./plugin-install.js";
@@ -508,15 +510,17 @@ export async function main(): Promise<void> {
         }
         let updaterResolveProxy: ((url: string) => string | undefined) | undefined;
         let updateTag: string | undefined;
+        let advisoryUrl: string | undefined;
         try {
             const o = loadOptions();
             updaterResolveProxy = (url) => resolveProxy(o.routes, o.proxy, url, o.proxyFallback);
             updateTag = o.updateTag;
+            advisoryUrl = o.advisoryUrl;
         } catch {
             // config unloadable — registry egress goes direct
         }
         try {
-            const report = await runDoctor({ packageName: PACKAGE_NAME, runningVersion: VERSION, resolveProxy: updaterResolveProxy, updateTag });
+            const report = await runDoctor({ packageName: PACKAGE_NAME, runningVersion: VERSION, resolveProxy: updaterResolveProxy, updateTag, advisoryUrl });
             process.stdout.write(doctorJson ? JSON.stringify(report, null, 2) + "\n" : renderDoctorReport(report));
         } catch (error) {
             console.error(`sigma doctor: ${error instanceof Error ? error.message : String(error)}`);
@@ -585,6 +589,14 @@ export async function main(): Promise<void> {
             autoUpdate: true,
             resolveProxy: (url) => resolveProxy(opts.routes, opts.proxy, url, opts.proxyFallback),
             updateTag: opts.updateTag,
+            // F2 (review): an advisory whose target cannot be resolved on the
+            // registry must not stall the normal self-update loop forever —
+            // advisoryDeferring() goes false while lastError says "cannot resolve".
+            advisoryActive: advisoryDeferring,
+            // #1588-A: even when no advisory is active against this machine,
+            // never install a candidate that falls inside a freshly parsed
+            // affected range (rollback-form advisories cover latest too).
+            advisoryBlocksVersion,
             onStaleInstall: createAutoRestartHandler({
                 enabled: opts.autoRestartOnUpdate,
                 packageName: PACKAGE_NAME,
@@ -596,6 +608,39 @@ export async function main(): Promise<void> {
                 },
                 log: loggerLog,
             }),
+        });
+    }
+    // #1481: the advisory watcher runs independently of autoUpdate — its whole
+    // point is to reach installs whose auto-update is off.
+    if (opts.advisoryCheck) {
+        startAdvisoryWatcher({
+            packageName: PACKAGE_NAME,
+            currentVersion: VERSION,
+            advisoryUrl: opts.advisoryUrl,
+            resolveProxy: (url) => resolveProxy(opts.routes, opts.proxy, url, opts.proxyFallback),
+            onStaleInstall: createAutoRestartHandler({
+                enabled: opts.autoRestartOnUpdate,
+                packageName: PACKAGE_NAME,
+                server,
+                host: opts.host,
+                portProvider: () => {
+                    const addr = server.address();
+                    return addr && typeof addr === "object" ? addr.port : opts.port;
+                },
+                log: loggerLog,
+            }),
+        });
+    }
+    // #1870: tiered release-notes visibility — fetch + cache only (never
+    // installs, never restarts). Runs independently of autoUpdate for the
+    // same reason as the advisory watcher: installs with auto-update off
+    // still deserve to learn a recommended update exists.
+    if (opts.releaseNotesCheck) {
+        startReleaseNotesWatcher({
+            packageName: PACKAGE_NAME,
+            currentVersion: VERSION,
+            releaseNotesUrl: opts.releaseNotesUrl,
+            resolveProxy: (url) => resolveProxy(opts.routes, opts.proxy, url, opts.proxyFallback),
         });
     }
 }

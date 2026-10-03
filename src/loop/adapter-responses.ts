@@ -1,10 +1,10 @@
 import type { CoreMessage } from "acp-kernel";
 import { injectResponsesDeveloperMessage, type ResponseInputItem, type ResponsesProjection } from "acp-kernel/wire";
-import { coreToResponsesWithToolImages as coreToResponses, patchResponsesInputWithToolImages as patchResponsesInput } from "../responses-tool-output.js";
+import { coreToResponsesWithToolImages as coreToResponses, patchResponsesInputWithToolImages as patchResponsesInput, mergeAdjacentConfigurationUpdates } from "../responses-tool-output.js";
 import { buildVisibilityMarker } from "./core.js";
 import { hoistTrappedToolItems } from "../tool-pair-order.js";
 import { hashId } from "../util.js";
-import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter, stripResponsesText, containsMarkerLineText, containsRenderTagText, ACP_NAME_ALT } from "./tag-echo-filter.js";
+import { composeStreamFilters, createBiliArtifactFilter, createMarkerLineFilter, createTagEchoFilter, stripResponsesText, containsBiliInternalText, containsMarkerLineText, containsRenderTagText, ACP_NAME_ALT } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
 import { extractResponsesTextTriggers, PROXY_TOOL_NAMES } from "../compress-tool.js";
@@ -302,7 +302,7 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
             } else {
                 inputItems = coreToResponses(coreMessages, customToolCallIds);
             }
-            inputItems = hoistTrappedToolItems(inputItems);
+            inputItems = mergeAdjacentConfigurationUpdates(hoistTrappedToolItems(inputItems));
             const devParts = projection && projection.systemParts.length > 0
                 ? [...projection.systemParts, systemPrompt]
                 : [systemPrompt];
@@ -318,18 +318,38 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
 
         async *parseStream(upstream, round) {
             const pending = new Map<string, FunctionCallBuffer>();
+            // #1501 option C: nameless function_call items fall into raw replay
+            // below — their bytes reach the client untouched (#1039). Track them
+            // so the round-end settle can emit one diag warn (#1484 class); the
+            // observed rate settles the drop-vs-keep policy without surgery.
+            const namelessFc = new Map<string, { callId: string; argsLen: number; frags: number }>();
+            const settleNamelessDiag = function* (): Generator<ParsedStreamEvent> {
+                if (namelessFc.size === 0) return;
+                const parts = [...namelessFc.entries()].map(([itemId, fc]) => `item=${itemId || "-"}${fc.callId ? ` id=${fc.callId}` : ""} argsLen=${fc.argsLen} frags=${fc.frags}`);
+                yield { kind: "diag", level: "warn", message: `[acp-responses] round ${round}: ${parts.length} nameless function_call(s) forwarded verbatim: ${parts.join(" | ")} (#1501 observe-only)` } as ParsedStreamEvent;
+                namelessFc.clear();
+            };
             const remapped = new Map<string, MappedItem>();
             // #206: render-tag echo filter — deltas stream through the filter;
             // full-text events (.done / output_item.done / completed response)
-            // are stripped wholesale via stripResponsesText.
-            const tagFilter = composeStreamFilters(
-                createTagEchoFilter((snippet) => {
-                    loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
-                }),
-                createMarkerLineFilter((snippet) => {
-                    loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+            // are stripped wholesale via stripResponsesText. #1881: reasoning
+            // summaries stream through their own per-summary filters — the old
+            // generic raw passthrough leaked model-emitted tags on this wire.
+            const makeFilter = () => composeStreamFilters(
+                composeStreamFilters(
+                    createTagEchoFilter((snippet) => {
+                        loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                    createMarkerLineFilter((snippet) => {
+                        loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                ),
+                createBiliArtifactFilter((snippet) => {
+                    loggerLog("warn", `[bili-artifact] stripped model-emitted internal artifact: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
                 }),
             );
+            const tagFilter = makeFilter();
+            const reasoningFilters = new Map<string, { filter: ReturnType<typeof makeFilter>; ref: { itemId: string; outputIndex: number; summaryIndex: number } }>();
             let lastTextRef: { itemId: string; outputIndex: number } | null = null;
             const flushFilter = function* (): Generator<ParsedStreamEvent> {
                 const tail = tagFilter.flush();
@@ -339,12 +359,31 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                         : undefined;
                     yield { kind: "text", delta: tail, ...(raw ? { raw } : {}) } as ParsedStreamEvent;
                 }
+                for (const entry of reasoningFilters.values()) {
+                    const rtail = entry.filter.flush();
+                    if (rtail.length > 0) {
+                        yield {
+                            kind: "meta",
+                            chunk: rebuildResponsesEvent("response.reasoning_summary_text.delta", {
+                                type: "response.reasoning_summary_text.delta",
+                                item_id: entry.ref.itemId,
+                                output_index: entry.ref.outputIndex,
+                                summary_index: entry.ref.summaryIndex,
+                                delta: rtail,
+                            }),
+                            firstRoundOnly: true,
+                        } as ParsedStreamEvent;
+                    }
+                }
             };
             let sawReasoning = false;
             let toolCallsEmitted = 0;
             let degenerateWarned = false;
             const maybeWarnDegenerate = (reason: string | undefined) => {
                 if (degenerateWarned) return;
+                // #1881: the gate reads the TEXT channel only — reasoning
+                // presence reaches it via sawReasoning, and counting reasoning
+                // chars as visible output would silence a tag-echo-only turn.
                 const msg = degenerateTurnWarning({ reason, terminalReason: "completed", toolCalls: toolCallsEmitted, text: tagFilter.stats(), sawThinking: sawReasoning, wire: "responses" });
                 if (msg) {
                     degenerateWarned = true;
@@ -395,6 +434,9 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                                 arguments: "",
                             });
                         } else {
+                            if (fcName.length === 0) {
+                                namelessFc.set(typeof item.id === "string" ? item.id : "", { callId: typeof item.call_id === "string" ? item.call_id : "", argsLen: 0, frags: 1 });
+                            }
                             yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
                         }
                     } else if (item?.type === "custom_tool_call") {
@@ -405,7 +447,12 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                         if (origId) remapped.set(origId, mapped);
                         yield { kind: "meta", chunk: rewriteItemEvent(type, obj, mapped), firstRoundOnly: false } as ParsedStreamEvent;
                     } else if (item?.type !== "message" || !suppressTextLifecycle) {
-                        yield { kind: "meta", chunk: rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
+                        // #1881: reasoning items carry whole-text summaries in
+                        // this fallthrough — strip on detection like the message
+                        // branches above (stripResponsesText never touches tool
+                        // argument fields).
+                        const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr) || containsBiliInternalText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
+                        yield { kind: "meta", chunk, firstRoundOnly: true } as ParsedStreamEvent;
                     }
                 } else if (
                     type === "response.content_part.added" ||
@@ -416,7 +463,7 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                     if (mapped) {
                         yield { kind: "meta", chunk: rewriteRefEvent(type, stripResponsesText(obj), mapped), firstRoundOnly: false } as ParsedStreamEvent;
                     } else if (!suppressTextLifecycle) {
-                        const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
+                        const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr) || containsBiliInternalText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
                         yield { kind: "meta", chunk, firstRoundOnly: true } as ParsedStreamEvent;
                     }
                 } else if (type === "response.output_text.delta") {
@@ -443,13 +490,24 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                     const delta = typeof obj.delta === "string" ? obj.delta : "";
                     const fc = pending.get(itemId);
                     if (fc) fc.arguments += delta;
-                    else yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
+                    else {
+                        const nf = namelessFc.get(itemId);
+                        if (nf) { nf.argsLen += delta.length; nf.frags++; }
+                        yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
+                    }
                 } else if (type === "response.function_call_arguments.done") {
                     const itemId = typeof obj.item_id === "string" ? obj.item_id : "";
                     const args = typeof obj.arguments === "string" ? obj.arguments : "";
                     const fc = pending.get(itemId);
                     if (fc && args) fc.arguments = args;
-                    else yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
+                    else {
+                        const nf = namelessFc.get(itemId);
+                        if (nf && args) { nf.argsLen = args.length; nf.frags++; }
+                        yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
+                    }
+                } else if (type === "response.custom_tool_call_input.delta" || type === "response.custom_tool_call_input.done") {
+                    // #1864: forward every round like the function_call_arguments siblings (the catch-all drops them in re-request rounds).
+                    yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
                 } else if (type === "response.output_item.done") {
                     const item = obj.item as Record<string, unknown> | undefined;
                     if (item?.type === "function_call") {
@@ -467,6 +525,13 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                                 arguments: fc.arguments,
                             } as ParsedStreamEvent;
                         } else {
+                            if (typeof item.name !== "string" || item.name.length === 0) {
+                                const nf = namelessFc.get(itemId) ?? { callId: "", argsLen: 0, frags: 0 };
+                                nf.callId = typeof item.call_id === "string" ? item.call_id : nf.callId;
+                                if (typeof item.arguments === "string") nf.argsLen = item.arguments.length;
+                                nf.frags++;
+                                namelessFc.set(itemId, nf);
+                            }
                             yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
                             toolCallsEmitted++;
                             yield {
@@ -479,6 +544,20 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                         }
                     } else if (item?.type === "custom_tool_call") {
                         yield { kind: "meta", chunk: rawBuf, firstRoundOnly: false } as ParsedStreamEvent;
+                        // #1862: a completed custom tool call IS executable output — count it
+                        // like function_call so the degenerate-retry gate (calls.length === 0)
+                        // does not treat a reasoning+custom-tool turn as an empty turn and
+                        // re-issue the request (duplicating the action). Passthrough: the wire
+                        // bytes already reached the client verbatim above, so the loop must not
+                        // re-emit it via emitToolCall. `input` is the custom-tool argument field.
+                        toolCallsEmitted++;
+                        yield {
+                            kind: "tool_call",
+                            name: typeof item.name === "string" ? item.name : "",
+                            callId: typeof item.call_id === "string" ? item.call_id : "",
+                            arguments: typeof item.input === "string" ? item.input : "",
+                            passthrough: true,
+                        } as ParsedStreamEvent;
                     } else if (item?.type === "message") {
                         const origId = typeof item.id === "string" ? item.id : "";
                         const mapped = remapped.get(origId);
@@ -486,14 +565,20 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                             remapped.delete(origId);
                             yield { kind: "meta", chunk: rewriteItemEvent(type, stripResponsesText(obj), mapped), firstRoundOnly: false } as ParsedStreamEvent;
                         } else if (!suppressTextLifecycle) {
-                            const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
+                            const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr) || containsBiliInternalText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
                             yield { kind: "meta", chunk, firstRoundOnly: true } as ParsedStreamEvent;
                         }
                     } else if (item?.type !== "message" || !suppressTextLifecycle) {
-                        yield { kind: "meta", chunk: rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
+                        // #1881: reasoning items carry whole-text summaries in
+                        // this fallthrough — strip on detection like the message
+                        // branches above (stripResponsesText never touches tool
+                        // argument fields).
+                        const chunk = (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr) || containsBiliInternalText(eventStr)) ? rebuildResponsesEvent(type, stripResponsesText(obj)) : rawBuf;
+                        yield { kind: "meta", chunk, firstRoundOnly: true } as ParsedStreamEvent;
                     }
                 } else if (type === "response.completed") {
                     yield* flushFilter();
+                    yield* settleNamelessDiag();
                     responseObj = stripResponsesText((obj.response as Record<string, unknown>) ?? null);
                     terminalKind = "completed";
                     terminalRaw = null;
@@ -511,19 +596,52 @@ export function createResponsesAdapter(textProtocol?: boolean, projection?: Resp
                     yield { kind: "done", finishReason: "completed", thinking: sawReasoning } as ParsedStreamEvent;
                 } else if (type === "response.incomplete") {
                     yield* flushFilter();
+                    yield* settleNamelessDiag();
                     terminalKind = "incomplete";
                     terminalRaw = rawBuf;
                     yield { kind: "done", finishReason: "incomplete" } as ParsedStreamEvent;
                 } else if (type === "response.failed" || type === "response.error") {
                     yield* flushFilter();
+                    yield* settleNamelessDiag();
                     terminalKind = "failed";
                     terminalRaw = rawBuf;
                     yield { kind: "done", finishReason: "failed" } as ParsedStreamEvent;
+                } else if (type.startsWith("response.reasoning")) {
+                    // #1881: reasoning prose (summaries) streams through its own
+                    // per-summary filter instead of the raw passthrough this
+                    // used to fall into. firstRoundOnly keeps multi-round
+                    // forwarding semantics unchanged — only the bytes are cleaned.
+                    const rsDelta = typeof obj.delta === "string" ? obj.delta : "";
+                    if (rsDelta.length > 0) {
+                        const key = `${typeof obj.item_id === "string" ? obj.item_id : ""}:${typeof obj.summary_index === "number" ? obj.summary_index : 0}`;
+                        let entry = reasoningFilters.get(key);
+                        if (!entry) {
+                            entry = {
+                                filter: makeFilter(),
+                                ref: {
+                                    itemId: typeof obj.item_id === "string" ? obj.item_id : "",
+                                    outputIndex: typeof obj.output_index === "number" ? obj.output_index : 0,
+                                    summaryIndex: typeof obj.summary_index === "number" ? obj.summary_index : 0,
+                                },
+                            };
+                            reasoningFilters.set(key, entry);
+                        }
+                        const clean = entry.filter.push(rsDelta);
+                        if (clean.length > 0) {
+                            const chunk = clean === rsDelta ? rawBuf : rebuildResponsesEvent(type, { ...obj, delta: clean });
+                            yield { kind: "meta", chunk, firstRoundOnly: true } as ParsedStreamEvent;
+                        }
+                    } else if (containsRenderTagText(eventStr) || containsMarkerLineText(eventStr) || containsBiliInternalText(eventStr)) {
+                        yield { kind: "meta", chunk: rebuildResponsesEvent(type, stripResponsesText(obj)), firstRoundOnly: true } as ParsedStreamEvent;
+                    } else {
+                        yield { kind: "meta", chunk: rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
+                    }
                 } else {
                     yield { kind: "meta", chunk: rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
                 }
             }
             if (!terminalKind) {
+                yield* settleNamelessDiag();
                 yield { kind: "done", finishReason: "failed", truncated: true } as ParsedStreamEvent;
             }
         },

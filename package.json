@@ -1,13 +1,15 @@
 {
   "name": "sigma",
-  "version": "0.1.160",
-  "description": "A context-compression plugin — small context windows (a 100K context is enough), 5x fewer tokens, month-long single sessions (billions of tokens), and compression quality — for all agents: pi, OpenCode, Codex, Claude Code, and more. sigma is all you need.",
+  "version": "0.1.180",
+  "description": "A context-compression plugin \u2014 small context windows (a 100K context is enough), 5x fewer tokens, month-long single sessions (billions of tokens), and compression quality \u2014 for all agents: pi, OpenCode, Codex, Claude Code, and more. billion-context is all you need.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
-    ".": "./dist/index.js",
+    ".": "./dist/agent/dsh-native.js",
     "./server": "./dist/agent/opencode-native.js",
-    "./dsh": "./dist/agent/dsh-native.js"
+    "./dsh": "./dist/agent/dsh-native.js",
+    "./dsh/package.json": "./package.json",
+    "./client": "./dist/agent/dsh-native-client.js"
   },
   "bin": {
     "sigma": "./dist/index.js",
@@ -21,7 +23,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "start": "node dist/index.js",
     "test:e2e": "node --import tsx --test tests/e2e/e2e-codex.test.ts",
-    "test:e2e:fake": "node --import tsx --test tests/e2e/e2e-codex-fake.test.ts"
+    "test:e2e:fake": "node --import tsx --test tests/e2e/e2e-codex-fake.test.ts",
+    "test:e2e:image": "node --import tsx --test tests/e2e/e2e-image-billing.test.ts"
   },
   "keywords": [
     "context",
@@ -42,11 +45,11 @@
   "author": "ranxianglei",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ranxianglei/sigma.git"
+    "url": "git+https://github.com/ranxianglei/billion-context.git"
   },
-  "homepage": "https://github.com/ranxianglei/sigma#readme",
+  "homepage": "https://github.com/ranxianglei/billion-context#readme",
   "bugs": {
-    "url": "https://github.com/ranxianglei/sigma/issues"
+    "url": "https://github.com/ranxianglei/billion-context/issues"
   },
   "dependencies": {
     "zod": "4.1.8"
@@ -54,10 +57,12 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/node-forge": "^1.3.14",
-    "acp-kernel": "0.0.95",
+    "@types/semver": "^7.7.1",
+    "acp-kernel": "0.0.100",
     "fzstd": "0.1.1",
     "jsonc-parser": "^3.3.1",
     "node-forge": "^1.4.0",
+    "semver": "7.8.5",
     "tar": "^7.5.22",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",
@@ -76,7 +81,7 @@
     "hermes-plugin"
   ],
   "pi": {
-    "image": "https://raw.githubusercontent.com/ranxianglei/sigma/master/docs/logo.png",
+    "image": "https://raw.githubusercontent.com/ranxianglei/billion-context/master/docs/logo.png",
     "extensions": [
       "./dist/agent/pi-native.js"
     ]
@@ -88,6 +93,9 @@
   "dsh": {
     "bundle": {
       "patch": "./dsh.bundle.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "optionalDependencies": {

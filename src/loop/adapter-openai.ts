@@ -1,7 +1,7 @@
 import type { CoreMessage } from "acp-kernel";
 import { coreToOpenai, injectOpenaiSystem } from "acp-kernel/wire";
 import { buildVisibilityMarker } from "./core.js";
-import { composeStreamFilters, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
+import { composeStreamFilters, createBiliArtifactFilter, createMarkerLineFilter, createTagEchoFilter } from "./tag-echo-filter.js";
 import { degenerateTurnWarning } from "../degenerate-turn.js";
 import { log as loggerLog } from "../logger.js";
 import { hardenOpenaiAssistantContent, systemToUser } from "../util.js";
@@ -51,11 +51,31 @@ function filterRealToolFragments(
     return filtered;
 }
 
+// #1881: settle drops proxy-only frames without forwarding their sibling prose.
+// Rebuild such a frame without tool_calls so that prose still reaches the
+// client. The stored copy already carries cleaned values; null when nothing
+// visible is left after filtering (those fields were deleted at push time).
+function withheldProseFrame(parsed: Record<string, unknown>): Buffer | null {
+    const choices = parsed.choices as Array<Record<string, unknown>> | undefined;
+    const choice = choices?.[0];
+    const delta = choice?.delta as Record<string, unknown> | undefined;
+    if (!choice || !delta) return null;
+    const ct = typeof delta.content === "string" ? delta.content : "";
+    const rc = typeof delta.reasoning_content === "string" ? delta.reasoning_content : "";
+    if (ct.length === 0 && rc.length === 0) return null;
+    const cleanDelta = { ...delta };
+    delete cleanDelta.tool_calls;
+    return Buffer.from("data: " + JSON.stringify({ ...parsed, choices: [{ ...choice, delta: cleanDelta }, ...(choices ?? []).slice(1)] }) + "\n\n", "utf8");
+}
+
 interface ToolCallBuffer {
     index: number;
     id: string;
     name: string;
     arguments: string;
+    frags: number;
+    /** Set on first fragment: did THAT fragment carry the (first part of) the name? */
+    nameInFirst?: boolean;
 }
 
 async function* iterSseChunks(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
@@ -87,16 +107,26 @@ async function* iterSseChunks(stream: ReadableStream<Uint8Array>): AsyncGenerato
     }
 }
 
-function rewriteContentChunk(parsed: Record<string, unknown>, content: string): Buffer {
+// Rebuild one SSE frame's choices[0].delta with cleaned field values (#1881):
+// a filtered frame must reach the client with the CLEANED bytes — forwarding
+// the original raw frame leaks the echo the filter just removed. Fields that
+// filtered down to empty are dropped from the delta rather than sent as "".
+function applyDeltaFields(parsed: Record<string, unknown>, fields: Record<string, string>): Record<string, unknown> {
     const clone = { ...parsed } as { choices?: Array<Record<string, unknown>> };
     if (clone.choices && clone.choices.length > 0) {
         const choice = { ...(clone.choices[0] as Record<string, unknown>) };
         const delta = { ...(choice.delta as Record<string, unknown>) };
-        delta.content = content;
+        for (const [k, v] of Object.entries(fields)) {
+            if (v === "") delete delta[k];
+            else delta[k] = v;
+        }
         choice.delta = delta;
         clone.choices = [choice, ...clone.choices.slice(1)];
     }
-    return Buffer.from(`data: ${JSON.stringify(clone)}\n\n`, "utf8");
+    return clone;
+}
+function rewriteDeltaFields(parsed: Record<string, unknown>, fields: Record<string, string>): Buffer {
+    return Buffer.from(`data: ${JSON.stringify(applyDeltaFields(parsed, fields))}\n\n`, "utf8");
 }
 
 // A chunk forwarded verbatim must never carry finish_reason: the ACP loop may run
@@ -210,30 +240,49 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
             return { ...body, messages: withNotes };
         },
 
-        async *parseStream(upstream, _round) {
+        async *parseStream(upstream, round) {
             const pending = new Map<number, ToolCallBuffer>();
-            // #206: strip model-imitated render tags from content deltas; the
+            // #206: strip model-imitated render tags from PROSE deltas; the
             // filter may hold back a short tail, flushed at finish/[DONE].
-            const tagFilter = composeStreamFilters(
-                createTagEchoFilter((snippet) => {
-                    loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
-                }),
-                createMarkerLineFilter((snippet) => {
-                    loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+            // #1881: one instance PER TEXT FIELD — content and
+            // reasoning_content interleave across one stream's deltas, so a
+            // shared instance would hold a tag-shaped tail against the wrong
+            // field's bytes (residue leak or content loss). Tool-call
+            // arguments never enter any filter (#1039 invariant).
+            const makeFieldFilter = () => composeStreamFilters(
+                composeStreamFilters(
+                    createTagEchoFilter((snippet) => {
+                        loggerLog("warn", `[tag-echo] stripped model-emitted render tag: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                    createMarkerLineFilter((snippet) => {
+                        loggerLog("warn", `[marker-echo] stripped model-emitted ACP confirmation marker: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
+                    }),
+                ),
+                createBiliArtifactFilter((snippet) => {
+                    loggerLog("warn", `[bili-artifact] stripped model-emitted internal artifact: ${snippet.slice(0, 80).replace(/\n/g, " ")}`);
                 }),
             );
+            // Both instances exist up front: the degenerate gate below reads
+            // the CONTENT filter's stats only (visible prose), and a reasoning-
+            // only turn must still report an empty text channel, not a missing
+            // one. Thinking/reasoning presence reaches the gate via sawReasoning.
+            const contentFilter = makeFieldFilter();
+            const reasoningFilter = makeFieldFilter();
             const flushFilter = function* (): Generator<ParsedStreamEvent> {
-                const tail = tagFilter.flush();
-                if (tail.length > 0) {
-                    yield { kind: "text", delta: tail, raw: buildContent(tail) } as ParsedStreamEvent;
-                }
+                const ct = contentFilter.flush();
+                if (ct.length > 0) yield { kind: "text", delta: ct, raw: buildContent(ct) } as ParsedStreamEvent;
+                const rt = reasoningFilter.flush();
+                if (rt.length > 0) yield { kind: "reasoning", delta: rt, raw: buildReasoning(rt) } as ParsedStreamEvent;
             };
             let sawReasoning = false;
             let toolCallsEmitted = 0;
             let degenerateWarned = false;
             const maybeWarnDegenerate = (reason: string | undefined) => {
                 if (degenerateWarned) return;
-                const msg = degenerateTurnWarning({ reason, terminalReason: "stop", toolCalls: toolCallsEmitted, text: tagFilter.stats(), sawThinking: sawReasoning, wire: "openai" });
+                // #1881: the gate reads the CONTENT channel only — reasoning
+                // presence is reported via sawReasoning, and counting thinking
+                // chars as visible output would silence a tag-echo-only turn.
+                const msg = degenerateTurnWarning({ reason, terminalReason: "stop", toolCalls: toolCallsEmitted, text: contentFilter.stats(), sawThinking: sawReasoning, wire: "openai" });
                 if (msg) {
                     degenerateWarned = true;
                     loggerLog("warn", msg);
@@ -263,12 +312,13 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
                     const args = typeof rawArgs === "string" ? rawArgs : (rawArgs !== null && typeof rawArgs === "object" ? JSON.stringify(rawArgs) : "");
                     let buf = pending.get(idx);
                     if (!buf) {
-                        buf = { index: idx, id, name, arguments: args };
+                        buf = { index: idx, id, name, arguments: args, frags: 1, nameInFirst: name.length > 0 };
                         pending.set(idx, buf);
                     } else {
                         if (id) buf.id = id;
                         buf.name += name;
                         buf.arguments += args;
+                        buf.frags += 1;
                     }
                 }
             };
@@ -294,6 +344,7 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
             // passthrough-flagged structured events so the loop counts them;
             // proxy calls → structured events (server-side execution).
             const settleToolCalls = function* (): Generator<ParsedStreamEvent> {
+                if (pending.size === 0) return;
                 const realIndexes = new Set<number>();
                 for (const [idx, tc] of pending) {
                     // absorb joins PROXY_TOOL_SET dynamically: its name is configurable per session,
@@ -301,8 +352,33 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
                     if (tc.name.length > 0 && !PROXY_TOOL_SET.has(tc.name) && tc.name !== absorbName) realIndexes.add(idx);
                 }
                 sawRealToolCall = realIndexes.size > 0;
+                // #1484: per-call frame summary at the transform boundary so an
+                // upstream-vs-proxy bisection is possible when a client reports a
+                // malformed tool frame. Warn when any settled call has no accumulated
+                // name — exactly the shape clients reject at assembly.
+                {
+                    const parts: string[] = [];
+                    let anyNameless = false;
+                    for (const idx of [...pending.keys()].sort((a, b) => a - b)) {
+                        const tc = pending.get(idx)!;
+                        if (tc.name.length === 0) anyNameless = true;
+                        const disp = realIndexes.has(idx) ? "replayed" : tc.name.length === 0 ? "nameless" : "proxy";
+                        parts.push(`idx=${idx} name=${tc.name.length > 0 ? JSON.stringify(tc.name) : "<none>"}${tc.id ? ` id=${tc.id}` : ""} argsLen=${tc.arguments.length} frags=${tc.frags}${tc.nameInFirst === false ? " name-split" : ""} → ${disp}`);
+                    }
+                    yield {
+                        kind: "diag",
+                        level: anyNameless ? "warn" : "info",
+                        message: `[acp-openai] round ${round} tool-frame settle (${parts.length}): ${parts.join(" | ")}`,
+                    } as ParsedStreamEvent;
+                }
                 if (!sawRealToolCall) {
                     yield* flushPendingAsStructured();
+                    // #1881: nothing is replayed here, so deliver each frame's
+                    // withheld sibling prose instead of losing it on round 1.
+                    for (const { parsed } of rawToolChunks) {
+                        const prose = withheldProseFrame(parsed);
+                        if (prose) yield { kind: "meta", chunk: prose } as ParsedStreamEvent;
+                    }
                     return;
                 }
                 for (const [idx, tc] of pending) {
@@ -323,6 +399,10 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
                         yield { kind: "meta", chunk: Buffer.from("data: " + json + "\n\n", "utf8") } as ParsedStreamEvent;
                     } else if (filtered !== null) {
                         yield { kind: "meta", chunk: Buffer.from("data: " + JSON.stringify(filtered) + "\n\n", "utf8") } as ParsedStreamEvent;
+                    } else {
+                        // #1881: proxy-only frame dropped — deliver its withheld sibling prose inline (wire order).
+                        const prose = withheldProseFrame(parsed);
+                        if (prose) yield { kind: "meta", chunk: prose } as ParsedStreamEvent;
                     }
                 }
                 for (const [idx, tc] of pending) {
@@ -447,31 +527,79 @@ export function createOpenaiAdapter(requestBody: Record<string, unknown>, client
 
                 if (!delta) continue;
 
-                if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
+                // #1881: filter BOTH prose fields up front so one frame is
+                // forwarded exactly once with its cleaned bytes. The old order
+                // forwarded the raw frame on the reasoning event before content
+                // was filtered — a dual-field frame leaked unfiltered content
+                // to the client while the filtered text event suppressed its
+                // raw to avoid double-sending.
+                const rcIn = typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0 ? delta.reasoning_content : null;
+                const ctIn = typeof delta.content === "string" && delta.content.length > 0 ? delta.content : null;
+                let rcOut = rcIn;
+                let ctOut = ctIn;
+                if (rcIn !== null) {
                     sawReasoning = true;
-                    yield { kind: "reasoning", delta: delta.reasoning_content, raw: finishReason ? stripFinishReasonChunk(rawBuf) : rawBuf } as ParsedStreamEvent;
+                    rcOut = reasoningFilter.push(rcIn);
                 }
+                if (ctIn !== null) {
+                    ctOut = contentFilter.push(ctIn);
+                }
+                const rcChanged = rcIn !== null && rcOut !== rcIn;
+                const ctChanged = ctIn !== null && ctOut !== ctIn;
 
                 if (frameToolCalls) {
-                    rawToolChunks.push({ json: jsonStr, parsed });
-                    if (typeof delta.content === "string" && delta.content.length > 0) {
-                        const clean = tagFilter.push(delta.content);
-                        if (clean.length > 0) {
-                            yield { kind: "text", delta: clean } as ParsedStreamEvent;
-                        }
+                    // The settle-time raw replay is this frame's client-visible
+                    // bytes: when a filtered field diverged, buffer a rebuilt
+                    // copy carrying the cleaned values instead of the original
+                    // echo (#1881). Structured events stay internal here.
+                    let json = jsonStr;
+                    let obj = parsed;
+                    if (rcChanged || ctChanged) {
+                        const fields: Record<string, string> = {};
+                        if (ctIn !== null) fields["content"] = ctOut ?? "";
+                        if (rcIn !== null) fields["reasoning_content"] = rcOut ?? "";
+                        obj = applyDeltaFields(parsed, fields);
+                        json = JSON.stringify(obj);
+                    }
+                    rawToolChunks.push({ json, parsed: obj });
+                    if (rcOut !== null && rcOut.length > 0) {
+                        yield { kind: "reasoning", delta: rcOut } as ParsedStreamEvent;
+                    }
+                    if (ctOut !== null && ctOut.length > 0) {
+                        yield { kind: "text", delta: ctOut } as ParsedStreamEvent;
                     }
                     continue;
                 }
 
-                const hasReasoning = typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0;
-                if (typeof delta.content === "string" && delta.content.length > 0) {
-                        const clean = tagFilter.push(delta.content);
-                        if (clean.length > 0) {
-                            const raw = clean === delta.content ? rawBuf : rewriteContentChunk(parsed, clean);
-                            yield { kind: "text", delta: clean, ...(hasReasoning ? {} : { raw: finishReason ? stripFinishReasonChunk(raw) : raw }) } as ParsedStreamEvent;
-                        }
-                } else if (!hasReasoning && (delta.role || (Object.keys(delta).length === 0 && !finishReason))) {
-                    yield { kind: "meta", chunk: finishReason ? stripFinishReasonChunk(rawBuf) : rawBuf, firstRoundOnly: true } as ParsedStreamEvent;
+                const fin = (b: Buffer): Buffer => (finishReason ? stripFinishReasonChunk(b) : b);
+                if (rcIn !== null && ctIn !== null) {
+                    const raw = rcChanged || ctChanged
+                        ? rewriteDeltaFields(parsed, { content: ctOut ?? "", reasoning_content: rcOut ?? "" })
+                        : rawBuf;
+                    const fwd = fin(raw);
+                    const hasText = ctOut !== null && ctOut.length > 0;
+                    const hasReason = rcOut !== null && rcOut.length > 0;
+                    // Both structured events feed the loop's internal state;
+                    // the client-visible frame rides on exactly ONE of them —
+                    // the reasoning event when present (pinned allocation,
+                    // tests/openai-reasoning-content.test.ts #8), else the text
+                    // event. Never both (no double-forwarding).
+                    if (hasReason && hasText) {
+                        yield { kind: "reasoning", delta: rcOut!, raw: fwd } as ParsedStreamEvent;
+                        yield { kind: "text", delta: ctOut! } as ParsedStreamEvent;
+                    } else if (hasReason) {
+                        yield { kind: "reasoning", delta: rcOut!, raw: fwd } as ParsedStreamEvent;
+                    } else if (hasText) {
+                        yield { kind: "text", delta: ctOut!, raw: fwd } as ParsedStreamEvent;
+                    }
+                } else if (rcIn !== null) {
+                    const raw = rcChanged ? rewriteDeltaFields(parsed, { reasoning_content: rcOut ?? "" }) : rawBuf;
+                    yield { kind: "reasoning", delta: rcOut ?? "", raw: fin(raw) } as ParsedStreamEvent;
+                } else if (ctIn !== null) {
+                    const raw = ctChanged ? rewriteDeltaFields(parsed, { content: ctOut ?? "" }) : rawBuf;
+                    yield { kind: "text", delta: ctOut ?? "", raw: fin(raw) } as ParsedStreamEvent;
+                } else if (delta.role || (Object.keys(delta).length === 0 && !finishReason)) {
+                    yield { kind: "meta", chunk: fin(rawBuf), firstRoundOnly: true } as ParsedStreamEvent;
                 }
             }
         },

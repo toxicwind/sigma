@@ -1,4 +1,5 @@
-import { collectBlockContent, defaultCountTokens, formatRanges, storeCoveredOriginals, viableRanges, type CompressionCore, type Config, type CoreMessage, type CompressionState, type NudgeDecision } from "acp-kernel";
+import { createHash, randomBytes } from "node:crypto";
+import { collectBlockContent, countMessageTokens, defaultCountTokens, formatRanges, storeCoveredOriginals, viableRanges, type CompressionCore, type Config, type CoreMessage, type CompressionState, type NudgeDecision, type CompressParseDiagnostics } from "acp-kernel";
 import { handleAcpStatus } from "./acp-status.js";
 import { handleAcpCache, recordCacheFoldsFromBlocks } from "./cache-ledger.js";
 import { type Session, cacheBlockContent, markDirty } from "./session.js";
@@ -7,8 +8,10 @@ import { effectiveAbsorbConfig, executeAbsorb, isProxyToolFor } from "./absorb.j
 import { executeSearchContextTarget, resolveDecompress } from "./decompress-shared.js";
 import { adoptContentStore, contentStoreOf, ccrEnabled, drainPendingRetrievals, executeRetrieve, retrieveToolName } from "./store.js";
 import { IMAGE_FULL_TOOL_NAME, executeImageFull, imageCompressionEnabled } from "./image-compress.js";
-import { containsMarkerLineText, containsRenderTagText, stripAcpTags } from "./loop/tag-echo-filter.js";
+import { containsBiliInternalText, containsMarkerLineText, containsRenderTagText, stripAcpTags } from "./loop/tag-echo-filter.js";
 import { maxShrinkPerCompress } from "./fetch-util.js";
+import { attachSubagentSessions, subagentSessionNote, subagentSessionsOf, syncSubagentSessions } from "./subagent-sessions.js";
+import { safePrefix, safeSuffix, scrubLoneSurrogates } from "./text-safe.js";
 
 export type RewriteCtx = {
     core: CompressionCore;
@@ -192,9 +195,52 @@ function currentRefsSnapshot(ctx: RewriteCtx): string {
 // char length plus head/tail excerpts (newlines flattened to spaces) so the
 // model can verify its summary was stored intact without decompressing.
 export function summaryFingerprintLine(blockId: string, summary: string): string {
-    const head = summary.slice(0, 30).replace(/\r?\n/g, " ");
-    const tail = summary.slice(-100).replace(/\r?\n/g, " ");
+    // #1615: code-unit cuts can split a surrogate pair and the lone half
+    // breaks upstream JSON parsing of the whole body — clamp + scrub (#816
+    // family, third site; never slice model-visible text by hand again).
+    const head = scrubLoneSurrogates(safePrefix(summary, 30).replace(/\r?\n/g, " "));
+    const tail = scrubLoneSurrogates(safeSuffix(summary, 100).replace(/\r?\n/g, " "));
     return ` · ${blockId} summary ${summary.length}ch · head "${head}" … tail "${tail}"`;
+}
+
+// #1718: log-safe variant of the fingerprint line. Summaries are
+// conversation-derived text (local paths, task state, decisions, commands), so
+// bili.log must carry only the length — never the head/tail excerpts. The
+// model-facing receipt keeps the full fingerprint (#1294 integrity check);
+// the two consumers diverge by design.
+export function summaryFingerprintLogLine(blockId: string, summary: string): string {
+    return ` · ${blockId} summary ${summary.length}ch`;
+}
+
+// #1718: m.id is a DETERMINISTIC content hash (deriveMessageId: sha256 over
+// role|contentType|toolCallId|toolName|text, see MESSAGE-IDENTITY.md) — logging
+// it raw lets identical messages be correlated across sessions/runs/machines
+// and enables offline guessing against low-entropy content. Salt with a
+// per-process random value: joins within one run still work, cross-run
+// correlation dies, and guessing is impossible without the salt (which never
+// leaves the process).
+const MSG_ID_LOG_SALT = randomBytes(8).toString("hex");
+export function saltedMsgIdForLog(id: string, salt: string = MSG_ID_LOG_SALT): string {
+    return "x_" + createHash("sha256").update(`${salt}:${id}`).digest("hex").slice(0, 10);
+}
+
+// #1494: entries dropped at PARSE time vanish from `ranges`, so the success
+// line ("Compressed <detail>") and the 0-blocks failure both list only the
+// survivors — a 3-entry call that silently loses one reads as a clean 2-block
+// success (the exact report in the issue; the kernel diagnostics carry the
+// per-entry reasons but nothing surfaced them when ≥1 range survived).
+function droppedEntriesNote(diagnostics: CompressParseDiagnostics): string {
+    // #1495: a gateway-stringified content array can arrive CUT — the lenient
+    // parser salvages only the complete leading entries (kind="truncated") and
+    // the unterminated tail is lost without counting as invalidItems.
+    if (diagnostics.kind === "truncated" && diagnostics.invalidItems <= 0) {
+        return `[The compress arguments arrived TRUNCATED — only the complete leading entries could be salvaged; any requested range not listed above was LOST, not compressed. Check acp_status for what is still compressible and re-issue the missing range(s).]`;
+    }
+    if (diagnostics.invalidItems <= 0) return "";
+    const reasons = (diagnostics.invalidReasons ?? []).slice(0, 3).map((r) => (r.length > 160 ? safePrefix(r, 160) + "..." : r));
+    const why = reasons.length > 0 ? reasons.join(" | ") : `${diagnostics.invalidItems} entr(ies) failed validation (parse kind=${diagnostics.kind})`;
+    const n = diagnostics.invalidItems;
+    return `[${n} of the submitted entr${n === 1 ? "y" : "ies"} ${n === 1 ? "was" : "were"} REJECTED and NOT compressed: ${why}. Re-issue the rejected range${n === 1 ? "" : "s"} in a new compress call.]`;
 }
 
 // #1387 (pi-side #420/#521 alignment): post-compress continuation contract.
@@ -240,6 +286,27 @@ function postCompressTail(ctx: RewriteCtx, cleanSuccess: boolean): string {
     return `\n\n${NO_RANGES_REMAIN_TEXT}`;
 }
 
+// #1495: the kernel's lenient parser salvages complete entries from damaged
+// arguments (truncated gateway-stringified arrays, corrupted elements) and
+// reports what it dropped via diagnostics — which this path only read on TOTAL
+// failure. On partial success the receipt was a clean "[Compressed … → N
+// block(s)]" for ranges that were requested but never folded. Every non-total
+// receipt now names what was dropped so partial application stays visible and
+// re-issuable. Apply-layer per-range errors (unknown refs, …) get the same
+// treatment: previously also invisible when some other range in the batch
+// succeeded.
+function applyErrorNote(r: { errors: string[] }): string {
+    if (r.errors.length === 0) return "";
+    const errs = r.errors.slice(0, 3).map((e) => e.length > 200 ? `${safePrefix(e, 200)}…` : e).join(" | ");
+    return ` Errors: ${errs}`;
+}
+
+// #1911: coverage at or above which one fold counts as a degenerate reset —
+// the entire live context rewritten into the new block(s), prefix cache
+// restarting from scratch. Hardcoded by design (config-surface discipline);
+// hosts that want to penalize this shape grep the warn marker below.
+const DEGENERATE_FOLD_COVERAGE = 0.8;
+
 export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: RewriteCtx): string {
     const { ranges, diagnostics } = parsed;
     if (ranges.length === 0) {
@@ -252,7 +319,7 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
         // header with no entries — stored in client history and re-sent forever,
         // and useless for self-correction. Inline the reasons instead (full
         // list stays logged above).
-        const reasons = rawReasons.slice(0, 3).map((r) => (r.length > 160 ? r.slice(0, 160) + "..." : r));
+        const reasons = rawReasons.slice(0, 3).map((r) => (r.length > 160 ? safePrefix(r, 160) + "..." : r));
         const why = reasons.length > 0 ? ` Rejected entries: ${reasons.join(" | ")}.` : "";
         // #1366: a call with NO content at all ({} / "" args — an "empty companion"
         // compress() emitted alongside the real one) must never be told to
@@ -264,15 +331,31 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
             rawReasons.length === 0 &&
             (diagnostics.kind === "empty-input" ||
                 (diagnostics.kind === "missing-content" && !(diagnostics.keys ?? []).includes("ranges")));
+        // #1502: a raw-string argument the lenient parser could not salvage
+        // (malformed-json/truncated; diag.length is set only for string inputs)
+        // used to arrive here pre-degraded to {} and inherit the empty-call
+        // verdict above. Name the real cause — syntax corruption, not emptiness —
+        // safe label: length only, no payload echo (#1454 pattern).
+        const argLen = diagnostics.length;
+        const argCorruption =
+            !isEmptyCall &&
+            argLen !== undefined &&
+            (diagnostics.kind === "malformed-json" || diagnostics.kind === "truncated");
         const guard = recordCompressFailure(
             ctx.session,
             `parse:${diagnostics.kind}:${diagnostics.invalidItems}:${rawReasons.slice(0, 3).join("|")}`,
             isEmptyCall
                 ? "An empty call fails identically on every retry — drop it instead of re-issuing."
-                : "Fix the argument shape against the format below instead of re-issuing the same malformed call.",
+                : argCorruption
+                    ? "Do not retry the same corrupt byte string — re-issue the call as one well-formed JSON object."
+                    : "Fix the argument shape against the format below instead of re-issuing the same malformed call.",
         );
         if (isEmptyCall) {
             return `[Compression FAILED: the call carried no content at all (kind=${diagnostics.kind}) — an empty compress() compresses nothing and can never succeed. Do NOT re-issue an empty call; if you meant to compress, put the non-empty 'content' array (elements {startId, endId, summary}) in that SAME single call.${guard}]`;
+        }
+        if (argCorruption) {
+            const truncNote = diagnostics.kind === "truncated" ? " (looks truncated)" : "";
+            return `[Compression FAILED: the call's arguments (${argLen} chars) were not parseable JSON${truncNote} — the intended content was lost and nothing was compressed. Re-issue the compress call as well-formed JSON: a single object with a non-empty 'content' array of {startId, endId, summary} elements.${guard}]`;
         }
         return `[Compression FAILED: no valid ranges parsed (kind=${diagnostics.kind}, dropped=${diagnostics.invalidItems}).${why} compress requires a non-empty 'content' array where each element is EITHER an object {startId, endId, summary} OR one line-form string whose first line is 'mNNNNN–mNNNNN optional topic' with the summary markdown on the following lines (a separate summary-only element right after a bare header line is also accepted). startId/endId are mNNNNN message refs from the conversation (call acp_status to see current refs).${compressibleSpanHint(ctx.session.state)} Re-issue the compress call with a valid content array.${guard}]`;
     }
@@ -286,7 +369,7 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
     ctx.log(`[acp-proxy: compress requested ${ranges.length} range(s): ${ranges.map((r) => `${r.startRef}–${r.endRef}`).join(", ")}]`);
     ctx.log(`[acp-proxy: ctx has ${ctx.messages.length} message(s), state has ${Object.keys(ctx.session.state.messageRefs?.byRef ?? {}).length} ref(s) mapped]`);
     if (ctx.messages.length > 0) {
-        const ids = ctx.messages.slice(0, 10).map((m) => `${m.id}(${(m.text ?? "").length}c)`).join(", ");
+        const ids = ctx.messages.slice(0, 10).map((m) => `${saltedMsgIdForLog(m.id)}(${(m.text ?? "").length}c)`).join(", ");
         ctx.log(`[acp-proxy: first msg ids: ${ids}]`);
     }
     try {
@@ -362,16 +445,28 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
             const noViableAnywhere = minChars > 0 && totalChars < minChars
                 ? ` This conversation holds only ${totalChars} char(s) — below the ${minChars}-char minimum, so NO range can succeed yet; do not retry compress or call acp_status/search_context about it — continue answering the user's task.`
                 : "";
-            return `[Compression FAILED: ${errs}${revNote}${currentRefsSnapshot(ctx)}${recordCompressFailure(ctx.session, normalizedSpecKey(ranges))}${spanHint}${noViableAnywhere}]`;
+            const dropped = droppedEntriesNote(diagnostics);
+            return `[Compression FAILED: ${errs}${revNote}${currentRefsSnapshot(ctx)}${recordCompressFailure(ctx.session, normalizedSpecKey(ranges))}${spanHint}${noViableAnywhere}${dropped ? " " + dropped : ""}${applyErrorNote(r)}]`;
         }
         clearCompressFailures(ctx.session);
 
         // #189 observability: record the rewrite magnitude + fold point so a
         // downstream transient rejection (GLM 3007) can be correlated with it.
-        // preContext is read BEFORE the credit netting below (lastInputTokens
-        // still holds the pre-compress context at this point).
-        const preContext = ctx.session.stats.lastInputTokens;
-        const shrinkRatio = preContext > 0 ? r.tokensCompressed / preContext : 0;
+        // #1911: the denominator must live in the SAME space as the numerator.
+        // r.tokensCompressed is a fresh kernel count over THIS request's view;
+        // stats.lastInputTokens is a session scalar from the previous request's
+        // usage report — stale-netted by unconsumed compress credits, clobbered
+        // by concurrent streams sharing the session id, or absent after an
+        // aborted turn. Mixing the two produced impossible "shrink 287%" lines
+        // and postCtx≈0 artifacts that also froze the nudge baseline (#728
+        // shape) and poisoned the cache ledger (#1839). Count the current view
+        // with the kernel's own per-message counter instead — a same-space
+        // denominator makes the ratio structurally ≤1, so #1839's
+        // "trustworthy baseline" gate is subsumed and no longer needed.
+        const viewMessages = ctx.compressMessages ?? ctx.messages;
+        let viewTokens = 0;
+        for (const m of viewMessages) viewTokens += countMessageTokens(m);
+        const shrinkRatio = viewTokens > 0 ? Math.min(1, r.tokensCompressed / viewTokens) : 0;
         const foldPoint = [...ranges].sort((a, b) => refNum(a.startRef) - refNum(b.startRef))[0]?.startRef ?? "unknown";
         ctx.session.lastCompress = { at: Date.now(), shrinkRatio, foldPoint, blocks: r.blocksCreated, tokensCompressed: r.tokensCompressed };
         ctx.session.stats.pendingFoldUsage = true;
@@ -381,25 +476,68 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
         // [acp-usage] line reports the real cached, separating physics from
         // upstream eviction.
         const anchorTok = res.state.blocks.reduce((n, b) => n + (b.active ? Math.ceil(b.summary.length / 4) : 0), 0);
-        const postCtx = Math.max(0, preContext - r.tokensCompressed);
+        const activeBlockCount = res.state.blocks.filter((b) => b.active).length;
+        const postCtx = Math.max(0, viewTokens - r.tokensCompressed);
         const ceiling = postCtx > 0 ? Math.floor((100 * anchorTok) / postCtx) : 0;
-        ctx.log(`[acp-compress-obs] shrink ${Math.round(shrinkRatio * 100)}% (~${r.tokensCompressed}/${preContext} tok) foldPoint=${foldPoint} blocks=${r.blocksCreated} anchor≈${anchorTok} tok (${res.state.blocks.filter((b) => b.active).length} active blocks, sys excluded) postCtx≈${postCtx} → next-request cache ceiling ≥${ceiling}%`);
+        ctx.log(`[acp-compress-obs] shrink ${Math.round(shrinkRatio * 100)}% (~${r.tokensCompressed}/${viewTokens} tok) foldPoint=${foldPoint} blocks=${r.blocksCreated} anchor≈${anchorTok} tok (${activeBlockCount} active blocks, sys excluded) postCtx≈${postCtx} → next-request cache ceiling ≥${ceiling}%`);
+        // #1911: a fold covering most of the live context is a degenerate reset —
+        // legitimate as a marathon-session strategy, but it rewrites the whole
+        // prefix and leaves only the anchor summaries. Hosts need a
+        // machine-greppable marker to audit/penalize it (the obs line alone is
+        // indistinguishable from a normal fold's).
+        if (shrinkRatio >= DEGENERATE_FOLD_COVERAGE) {
+            ctx.log(`[warn: degenerate-fold] [acp-compress-obs] covers ${Math.round(shrinkRatio * 100)}% of the live context (~${r.tokensCompressed}/${viewTokens} tok) leaving ${activeBlockCount} active block(s), anchor≈${anchorTok} tok — the whole prefix rewrites and the prefix cache restarts from scratch on the next request`);
+        }
         // #800: feed the cache ledger — the next request's usage report will
         // attribute its re-pay cliff to these folds via decomposeSample.
         recordCacheFoldsFromBlocks(
             ctx.session,
             res.state.blocks.filter((b) => !beforeIds.has(b.blockId)),
-            { V: preContext, Vp: postCtx },
+            { V: viewTokens, Vp: postCtx },
         );
 
         const warn = r.warnings.length > 0 ? ` ${r.warnings.join("; ")}` : "";
-        let msg = `[Compressed ${detail} → ${r.blocksCreated} block(s), ~${r.tokensCompressed} tokens saved.${warn}]`;
+        // #1495: apply-layer per-range errors (unknown refs, …) were invisible
+        // whenever some other range in the batch succeeded — surface them on
+        // the success line too, not only on total failure.
+        let msg = `[Compressed ${detail} → ${r.blocksCreated} block(s), ~${r.tokensCompressed} tokens saved.${warn}${applyErrorNote(r)}]`;
+        // #1718: log copy mirrors the receipt but swaps each fingerprint line
+        // for its length-only form — summary excerpts must not reach bili.log.
+        let logMsg = msg;
+        // #1494: a partial fold must not read as a clean success — surface the
+        // parse-dropped entries (and log them server-side) so the model
+        // re-issues the rejected range instead of believing it folded.
+        // #1495: droppedEntriesNote also covers kind="truncated" salvage loss.
+        const dropped = droppedEntriesNote(diagnostics);
+        if (dropped !== "") {
+            ctx.log(`[acp-proxy: compress PARTIAL — kind=${diagnostics.kind} ${diagnostics.invalidItems} entr(ies) rejected at parse: ${(diagnostics.invalidReasons ?? []).join(" | ")}]`);
+            msg += `\n${dropped}`;
+            logMsg += `\n${dropped}`;
+        }
         // #1294 P1: append a fingerprint line per created/updated block —
         // kernel refolds update an existing block's summary in place (same id),
         // so "updated" means any pre-existing block whose summary changed.
-        for (const b of res.state.blocks) {
+        // #1702: opencode sub-agent session ids are captured mechanically at
+        // this same fold commit into a metadata sidecar (structured field
+        // extraction from the dispatch pairs — summary text never carries the
+        // duty), and the receipt names them so the id stays model-visible.
+        const changedBlocks = res.state.blocks.filter((b) => {
             const prev = beforeSummaries.get(b.blockId);
-            if (prev === undefined || prev !== b.summary) msg += `\n${summaryFingerprintLine(b.blockId, b.summary)}`;
+            return prev === undefined || prev !== b.summary;
+        });
+        syncSubagentSessions(ctx.session, changedBlocks, ctx.compressMessages ?? ctx.messages);
+        const subagentMap = subagentSessionsOf(ctx.session);
+        for (const b of changedBlocks) {
+            msg += `\n${summaryFingerprintLine(b.blockId, b.summary)}`;
+            logMsg += `\n${summaryFingerprintLogLine(b.blockId, b.summary)}`;
+            const ids = subagentMap[b.blockId];
+            if (ids !== undefined && ids.length > 0) {
+                // block id + opaque ses_ identifier only — no summary text, so the
+                // note is safe in the log copy as well (#1718 scope is excerpts).
+                const note = `\n${subagentSessionNote(b.blockId, ids)}`;
+                msg += note;
+                logMsg += note;
+            }
         }
         // #189 staged compression (gated): a rewrite above the configured max
         // shrink is the shape that trips provider risk-control; steer the model
@@ -407,7 +545,9 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
         // survives for prefix caching and each round's transition stays gentle.
         const maxShrink = maxShrinkPerCompress();
         if (maxShrink !== undefined && shrinkRatio > maxShrink) {
-            msg += ` [Staged-compress: this rewrite shrank context ${Math.round(shrinkRatio * 100)}%, above your ${Math.round(maxShrink * 100)}% per-compress target — the shape that trips provider risk-control (3007). Next time compress a SMALLER, TAIL-biased range (the most recent large content) and keep the stable prefix intact.]`;
+            const staged = ` [Staged-compress: this rewrite shrank context ${Math.round(shrinkRatio * 100)}%, above your ${Math.round(maxShrink * 100)}% per-compress target — the shape that trips provider risk-control (3007). Next time compress a SMALLER, TAIL-biased range (the most recent large content) and keep the stable prefix intact.]`;
+            msg += staged;
+            logMsg += staged;
         }
         // The fold materializes only at the NEXT request's processTurn; the
         // post-compress re-request re-sends the unfolded history (prefix-cache
@@ -416,11 +556,19 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
         // so the next nudge decision sees post-compress reality instead of
         // re-firing on the stale pre-compress number (#252 double-inject).
         ctx.session.stats.compressCreditTokens = (ctx.session.stats.compressCreditTokens ?? 0) + r.tokensCompressed;
+        // #1911: deliberately NO estimate fallback here. Writing viewTokens − S
+        // into lastInputTokens would leave an estimate-grade value in a
+        // usage-grade field (source stays "usage") and arm kernel context-space
+        // truncation differently from master — mid-history rewrites that break
+        // the #1592 render contract (proven by A/B on fold-round2-shape).
+        // Zero-baseline sessions are handled by the existing #728 machinery.
         ctx.session.stats.lastInputTokens = Math.max(0, ctx.session.stats.lastInputTokens - r.tokensCompressed);
         // #1387: post-compress snapshot / stop signal ride on the netted
         // (post-compress) token count, matching what the next turn sees.
-        msg += postCompressTail(ctx, r.errors.length === 0);
-        ctx.log(`[acp-proxy: ${msg}]`);
+        const tail = postCompressTail(ctx, r.errors.length === 0);
+        msg += tail;
+        logMsg += tail;
+        ctx.log(`[acp-proxy: ${logMsg}]`);
         return msg;
     } catch (err) {
         ctx.log(`[acp-proxy: compress failed: ${String(err)}]`);
@@ -450,8 +598,8 @@ export function rewriteJsonResponse(body: unknown, ctx: RewriteCtx): unknown {
     if (converted && !sawRealToolUse) b.stop_reason = "end_turn";
     for (const blk of newContent) {
         const t = (blk as { type?: string; text?: string }).text;
-        if (typeof t === "string" && (containsRenderTagText(t) || containsMarkerLineText(t))) {
-            ctx.log(`[warn: tag echo] non-stream model output contains ACP echo (render tags/markers), stripped: ${t.slice(0, 120).replace(/\n/g, " ")}`);
+        if (typeof t === "string" && (containsRenderTagText(t) || containsMarkerLineText(t) || containsBiliInternalText(t))) {
+            ctx.log(`[warn: tag echo] non-stream model output contains ACP echo (render tags/markers/internal artifacts), stripped: ${t.slice(0, 120).replace(/\n/g, " ")}`);
             (blk as { text?: string }).text = stripAcpTags(t);
         }
     }

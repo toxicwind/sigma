@@ -16,6 +16,7 @@ import { fetchWithTimeout, isTransientUpstreamError, replayMaxAttempts, replayBa
 import { proxyDispatcher } from "./upstream-proxy.js";
 import { lastCompressSuffix, type Session } from "./session.js";
 import { peekRegistryOutputLimit } from "./registry.js";
+import { safePrefix } from "./text-safe.js";
 
 // #247: proactive pre-forward compression. When the session's real context
 // (previous turn's upstream input_tokens) exceeds the current model's window
@@ -61,12 +62,20 @@ const MAX_SUMMARY_OUTPUT_TOKENS = 32768;
 // #574: bound on upstream summarization calls per invocation — the multi-range
 // walk can otherwise spend a call per viable range in a block-dense history.
 export const MAX_SUMMARY_CALLS_PER_PREFLIGHT = 16;
-// Wall-clock counterpart to MAX_SUMMARY_CALLS_PER_PREFLIGHT. The call budget
-// bounds work only when the upstream answers quickly: one measured run spent
-// 330735ms across 3 ranges (~44 tokens/sec) and threw the result away when the
-// client disconnected mid-flight. Overridable per-deployment with
-// compress.maxPreflightMs; 0 or negative disables the ceiling.
-export const DEFAULT_MAX_PREFLIGHT_MS = 30_000;
+// #1767: bounded same-span retries for TRANSIENT empty summaries — HTTP 200
+// with no text (finish_reason=content_filter, truncated streams, empty bodies).
+// Distinct from the #726 halving cascade, which assumes the empty answer is
+// size-driven: a single-message span cannot be halved, so without these
+// retries the span's only draw against a flaky summarizer kills the whole
+// preflight (one content_filter blip bricked an entire turn; the identical
+// payload summarized fine ~90s later on the user's manual retry). Retries
+// count against MAX_SUMMARY_CALLS_PER_PREFLIGHT like any other call.
+const TRANSIENT_EMPTY_SUMMARY_RETRIES = 2;
+// Per-protection-regime cap on wasted transient retries so a SYSTEMIC
+// (persistent) empty-summary failure degrades to today's behavior after a
+// few extra calls instead of burning the full budget on doomed draws.
+// Reset alongside summaryCalls when soft protection is relaxed (#575-merge).
+const TRANSIENT_EMPTY_RETRY_BUDGET = 4;
 
 // #869 review: coverage bound of the two depth budgets above. One round folds
 // ONE range and each fold removes at most CHUNK_FRACTION x window tokens (the
@@ -103,8 +112,8 @@ export interface PreflightDeps {
     proxyUrl?: string;
     signal?: AbortSignal;
     log: (level: string, msg: string) => void;
-    /** Constant floor on the forwarded-payload size for this request (image bytes, #488). Folding only ever removes images, so adding this to every text estimate keeps the fit decision sound for multimodal payloads. */
-    imageFloor?: number;
+    /** #1843: the image reserve for this request — the billed cost of the images riding the payload verbatim (#488). Folding never removes them, so every TEXT-channel decision compares the text estimate against `limit − reserve` instead of adding the reserve to each total; an image-estimate error can no longer move a fold decision. Kernel-facing quantities keep the total view (reserve added back), which is the conservative direction. */
+    imageReserve?: number;
     /** Constant wire overhead for this request (system prompt + tool definitions, #470). Folding never removes it, so every fit decision must add it — otherwise the loop stops with "text fits" while the billed input still overflows. */
     wireOverhead?: number;
     /** #553: the caller knows this session's input size is unmeasured AND its
@@ -134,7 +143,7 @@ export interface PreflightFailure {
 // unusable branch carries a diagnosis of what the body actually contained so
 // it is logged and surfaced in the fail-fast message instead of the generic
 // "summary too short".
-type SummaryOutcome = { summary: string } | { unusable: string };
+type SummaryOutcome = { summary: string } | { unusable: string; transient?: boolean };
 
 export interface PreflightResult {
     /** Token count the loop started from and ended at, measured the SAME way
@@ -251,7 +260,7 @@ function spanUnitsOf(messages: CoreMessage[], startIdx: number, endIdx: number, 
 // Message-level splitChunks cannot shrink a span dominated by one huge
 // message (e.g. a megabyte tool result); split its rendered content into
 // token-budgeted slices so every summarization call stays inside the window.
-function splitSummaryContent(content: string, budget: number, countTokens: (text: string) => number): string[] {
+export function splitSummaryContent(content: string, budget: number, countTokens: (text: string) => number): string[] {
     const chunks: string[] = [];
     let offset = 0;
     while (offset < content.length) {
@@ -261,6 +270,13 @@ function splitSummaryContent(content: string, budget: number, countTokens: (text
             const mid = Math.ceil((low + high) / 2);
             if (countTokens(content.slice(offset, mid)) <= budget) low = mid;
             else high = mid - 1;
+        }
+        // #1615 family: a budget boundary landing between the two halves of an
+        // astral char would strand a lone surrogate at this chunk's end (and the
+        // next chunk's start) — strict upstreams reject such summarization bodies.
+        if (low - offset > 1 && low < content.length) {
+            const c = content.charCodeAt(low - 1);
+            if (c >= 0xd800 && c <= 0xdbff) low -= 1;
         }
         chunks.push(content.slice(offset, low));
         offset = low;
@@ -605,6 +621,18 @@ function extractStreamError(o: Record<string, unknown>): string | null {
     return null;
 }
 
+// #1767: classify a diagnosis from diagnoseEmptySummary. Only explicit SIZE
+// signals mean "the span is too big" (halving is the recovery — #726); every
+// other empty shape (content_filter, empty body, truncated stream, in-stream
+// error) is a blip of the summarizer or its gateway and is worth one bounded
+// re-draw of the SAME span. A single-message span cannot be halved, so
+// without this split a flaky summarizer kills the whole preflight. The
+// diagnosis strings are test-pinned, so matching them keeps the classifier in
+// lockstep with what the operator sees.
+export function emptySummaryIsSizeDriven(diagnosis: string): boolean {
+    return /context_length_exceeded|too long|finish_reason=length\b|stop_reason=max_tokens\b/i.test(diagnosis);
+}
+
 export function diagnoseEmptySummary(text: string, json?: unknown): string {
     if (json && typeof json === "object") {
         const err = extractStreamError(json as Record<string, unknown>);
@@ -814,7 +842,7 @@ async function requestSummary(deps: PreflightDeps, system: string, content: stri
     if (summary.length < MIN_SUMMARY_CHARS) {
         const diagnosis = diagnoseEmptySummary(text, json);
         deps.log("warn", `[preflight] summary too short (${summary.length} chars): ${diagnosis}`);
-        return { unusable: diagnosis };
+        return { unusable: diagnosis, transient: !emptySummaryIsSizeDriven(diagnosis) };
     }
     return { summary };
 }
@@ -844,8 +872,18 @@ function noEmergencyTruncate(config: Config): Config {
 
 export async function preflightCompress(deps: PreflightDeps, messages: CoreMessage[]): Promise<PreflightResult> {
     const limit = deps.config.modelContextLimit;
-    let target = Math.min(limit, deps.compressionTarget ?? limit);
-    const result: PreflightResult = { compressedRanges: 0, savedTokens: 0, startTokens: 0, endTokens: 0, payloadEstimate: estimateCoreMessages(messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0), rangesRemaining: 0, fitsWindow: true };
+    // #1843 dual-channel accounting: fold decisions run on the TEXT channel —
+    // text estimate vs `target − imageReserve`. Algebraically the same firing
+    // set as the old total-view check (max(B, T+R) >= C  <=>  max(max(0,B−R), T)
+    // >= max(0,C−R)), but an image-estimate error can no longer start or stop
+    // folding. Images ride the payload verbatim through every round, so the
+    // reserve is constant for this invocation. Kernel-facing quantities below
+    // keep the total view (reserve added back): conservative direction, and the
+    // kernel's own truncation/absorb behavior stays byte-identical.
+    const imageReserve = deps.imageReserve ?? 0;
+    const wireOverhead = deps.wireOverhead ?? 0;
+    let textTarget = Math.max(0, Math.min(limit, deps.compressionTarget ?? limit) - imageReserve);
+    const result: PreflightResult = { compressedRanges: 0, savedTokens: 0, payloadEstimate: estimateCoreMessages(messages) + imageReserve + wireOverhead, rangesRemaining: 0, fitsWindow: true };
     if (limit <= 0) return result;
     const budget = Math.max(MIN_CHUNK_TOKENS, Math.floor(limit * CHUNK_FRACTION));
     // applyCompression rejects ranges below config.compress.minCompressRange
@@ -866,6 +904,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
     const baselineKnown = deps.unknownBaseline !== true;
     const countText = baselineKnown ? defaultCountTokens : (text: string): number => text.length;
     let currentTokens = baselineKnown ? deps.session.stats.lastInputTokens : estimateCoreMessagesUpper(messages);
+    let decisionTokens = 0;
     let finalUpper = baselineKnown ? 0 : estimateCoreMessagesUpper(messages);
     let startTokens = -1;
     let failure: PreflightFailure | undefined;
@@ -886,11 +925,12 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
     // can legitimately diverge; recording where+why makes the divergence diffable.
     const skipReasons: string[] = [];
     const noteSkip = (reason: string): void => {
-        if (skipReasons.length < 8 && !skipReasons.includes(reason)) skipReasons.push(reason.slice(0, 200));
+        if (skipReasons.length < 8 && !skipReasons.includes(reason)) skipReasons.push(safePrefix(reason, 200));
     };
     let subMinNoted = false;
     let summaryCalls = 0;
     let budgetHit = false;
+    let transientRetryBudget = TRANSIENT_EMPTY_RETRY_BUDGET;
     let rangesTried = 0;
     let rangesRemaining = 0;
     for (let round = 0; round < MAX_PREFLIGHT_ROUNDS; round++) {
@@ -918,19 +958,37 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         // Floor on the session's measured input baseline: the upstream's
         // input_tokens also covers the system prompt + tool definitions, which
         // are not in turn.messages, so the direct estimate can undershoot.
-        currentTokens = Math.max(deps.session.stats.lastInputTokens, estimateCoreMessages(turn.messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0));
+        // #1839: an overflow-armed baseline floors too — it is upstream
+        // REJECTION evidence at that size, and without it the kernel sees only
+        // the undershooting local estimate and refuses to fold what the
+        // rejection proved necessary (#1195 refold / #987 next-turn fold).
+        // #1492: an ESTIMATE-sourced failure arm may floor only while the
+        // payload is unmeasured (empty input → transform failed, outbound IS
+        // raw); a stale one from an earlier unfolded turn would pin
+        // currentTokens at millions and burn rounds folding ranges the window
+        // never needed.
+        const baselineFloor = messages.length > 0
+            ? ((deps.session.stats.lastInputTokensSource === "usage" || deps.session.stats.lastInputTokensSource === "overflow-arm") ? deps.session.stats.lastInputTokens : 0)
+            : deps.session.stats.lastInputTokens;
+        const roundText = estimateCoreMessages(turn.messages) + wireOverhead;
+        currentTokens = Math.max(baselineFloor, roundText + imageReserve);
+        // #1843: the TEXT-channel judgment quantity — the usage-grade baseline
+        // bills images too, so project it onto the text channel by subtracting
+        // the reserve (floored at zero).
+        decisionTokens = Math.max(Math.max(0, baselineFloor - imageReserve), roundText);
         if (!baselineKnown) {
             // #558-merge: the upper-bound regime also carries the image/wire
             // floors — they are real billed costs the fold can never remove
             // (#470/#488 postdate this PR's fork point).
-            finalUpper = estimateCoreMessagesUpper(turn.messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0);
+            finalUpper = estimateCoreMessagesUpper(turn.messages) + imageReserve + wireOverhead;
             currentTokens = Math.max(currentTokens, finalUpper);
+            decisionTokens = Math.max(decisionTokens, estimateCoreMessagesUpper(turn.messages) + wireOverhead);
         }
         // The caller's forward/fail-fast gate uses the payload's own estimate
         // (the floor can be stale — see PreflightResult.payloadEstimate).
-        result.payloadEstimate = estimateCoreMessages(turn.messages) + (deps.imageFloor ?? 0) + (deps.wireOverhead ?? 0);
-        if (startTokens < 0) { startTokens = currentTokens; result.startTokens = currentTokens; }
-        if (currentTokens < target) break;
+        result.payloadEstimate = roundText + imageReserve;
+        if (startTokens < 0) startTokens = currentTokens;
+        if (decisionTokens < textTarget) break;
         // #847: drop sub-minimum ranges at list level too — every chunk of a
         // sub-min range fails the apply-side gate, so walking them only burns
         // rounds and misreports "N viable ranges tried"; with them gone the
@@ -956,13 +1014,14 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
             if (!relaxed && (baselineKnown ? result.payloadEstimate : finalUpper) >= limit) {
                 activeConfig = relaxedConfig(deps.config);
                 relaxed = true;
-                target = limit;
+                textTarget = Math.max(0, limit - imageReserve);
                 // #575-merge: the summarization budget counts per protection
                 // regime — reset it on relax, else bad summaries burned under
                 // normal protection can starve the relaxed walk entirely and
                 // reintroduce the #330 unrecoverable stall.
                 summaryCalls = 0;
                 budgetHit = false;
+                transientRetryBudget = TRANSIENT_EMPTY_RETRY_BUDGET;
                 deps.log("warn", "[preflight] no compressible ranges outside the protected recent zone; relaxing soft protection (preserveRecentMessages/Tokens -> 0) and retrying");
                 continue;
             }
@@ -974,7 +1033,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         const ordered = [...ranges].sort((a, b) => refNum(a.startRef) - refNum(b.startRef));
         let appliedThisRound = 0;
         for (const range of ordered) {
-            if (currentTokens < target) break;
+            if (decisionTokens < textTarget) break;
             if (deps.signal?.aborted) {
                 failure = ABORTED_FAILURE;
                 break;
@@ -1008,7 +1067,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
             // exactly those cases. Bounded by the per-regime call budget below.
             const spans: Array<[number, number]> = splitChunks(messages, startIdx, endIdx, budget, baselineKnown ? 0 : minChars, countText).slice().reverse();
             while (spans.length > 0) {
-                if (currentTokens < target) break;
+                if (decisionTokens < textTarget) break;
                 if (deps.signal?.aborted) {
                     failure = ABORTED_FAILURE;
                     break;
@@ -1044,7 +1103,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                     // #1372: the kernel verdict used to be discarded here — this is where
                     // "no range could be compressed" died silently (minCompressRange gate,
                     // unknown/consumed refs, fully protected span, dummy summary length).
-                    const verdict = [...preview.result.errors, ...preview.result.warnings].join("; ").slice(0, 300)
+                    const verdict = safePrefix([...preview.result.errors, ...preview.result.warnings].join("; "), 300)
                         || "the kernel created no block and reported no error";
                     deps.log("warn", `[preflight] preview rejected range ${skipKey}: ${verdict}`);
                     noteSkip(`${skipKey}: preview rejected — ${verdict}`);
@@ -1117,7 +1176,23 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                             break;
                         }
                         summaryCalls += 1;
-                        const part = await summarizeRange(deps, chunk, startRef, endRef, perPartChars);
+                        let part = await summarizeRange(deps, chunk, startRef, endRef);
+                        let transientTries = 0;
+                        while (
+                            "unusable" in part && part.transient &&
+                            transientTries < TRANSIENT_EMPTY_SUMMARY_RETRIES &&
+                            transientRetryBudget > 0 &&
+                            summaryCalls < MAX_SUMMARY_CALLS_PER_PREFLIGHT &&
+                            !deps.signal?.aborted
+                        ) {
+                            transientTries += 1;
+                            transientRetryBudget -= 1;
+                            const delayMs = replayBackoffMs(transientTries);
+                            deps.log("warn", `[preflight] transient empty summary on ${startRef}:${endRef} (${part.unusable.slice(0, 160)}); retrying same span in ${delayMs}ms (${transientTries}/${TRANSIENT_EMPTY_SUMMARY_RETRIES})`);
+                            await sleep(delayMs, deps.signal);
+                            summaryCalls += 1;
+                            part = await summarizeRange(deps, chunk, startRef, endRef);
+                        }
                         if ("unusable" in part) {
                             outcome = part;
                             break;
@@ -1200,7 +1275,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                 const applied = applyRanges(parseCompressInput({ content: [{ startId: startRef, endId: endRef, summary, topic: "preflight overflow compress" }] }), ctx);
                 if (applied.startsWith("[Compression FAILED")) {
                     deps.log("warn", `[preflight] ${applied}`);
-                    noteSkip(`${skipKey}: apply failed — ${applied.replace(/^\[Compression FAILED[:\s]*/, "").slice(0, 200)}`);
+                    noteSkip(`${skipKey}: apply failed — ${safePrefix(applied.replace(/^\[Compression FAILED[:\s]*/, ""), 200)}`);
                     skipSet.add(skipKey);
                     break;
                 }
@@ -1225,6 +1300,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
                 relaxed = true;
                 summaryCalls = 0;
                 budgetHit = false;
+                transientRetryBudget = TRANSIENT_EMPTY_RETRY_BUDGET;
                 deps.log("warn", "[preflight] no usable ranges outside the protected recent zone; relaxing soft protection (preserveRecentMessages/Tokens -> 0) and retrying");
                 continue;
             }
@@ -1238,7 +1314,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         // #1372: carry the actual per-range skip reasons too — the old hardcoded
         // parenthetical claimed causes that often had not happened (e.g. "below
         // minCompressRange" for a range that died before any summary call).
-        const unusableNote = lastUnusableDetail ? ` Last unusable summary: ${lastUnusableDetail.slice(0, 300)}.` : "";
+        const unusableNote = lastUnusableDetail ? ` Last unusable summary: ${safePrefix(lastUnusableDetail, 300)}.` : "";
         const skipNote = skipReasons.length > 0 ? ` Skipped: ${skipReasons.slice(0, 3).join(" | ")}.` : "";
         if (budgetHit) {
             failure = { kind: "exhausted", detail: `the preflight summarization budget (${MAX_SUMMARY_CALLS_PER_PREFLIGHT} calls per protection regime) was exhausted before the payload fit the window${unusableNote}${skipNote}` };
@@ -1262,7 +1338,7 @@ export async function preflightCompress(deps: PreflightDeps, messages: CoreMessa
         // (text + overhead only). A bytes-mode floor (b64/4) overestimates
         // pixel-billing upstreams ~100× and would poison the upward window
         // self-heal and close the #496 escape hatch permanently.
-        const textBaseline = result.payloadEstimate - (deps.imageFloor ?? 0);
+        const textBaseline = result.payloadEstimate - imageReserve;
         if (textBaseline > deps.session.stats.lastInputTokens) {
             deps.session.stats.lastInputTokens = textBaseline;
             deps.session.stats.lastInputTokensSource = "estimate";

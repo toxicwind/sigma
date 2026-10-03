@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { isOursSessionStartEntry, portableHookCommand } from "../src/plugin-install.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 // The SessionStart hook is the one place sigma hands a client a SHELL STRING
 // rather than an argv array, so the client's shell re-parses our path. The unit
@@ -43,9 +44,11 @@ test("portableHookCommand: an argument with whitespace is quoted (safe in bash, 
 });
 
 test("portableHookCommand: a command path with whitespace falls back to the & call operator", () => {
-    // No spelling covers a spaced command path in all three shells. `&` is what
-    // PowerShell needs, and PowerShell is what runs Claude Code's hooks on
-    // Windows (see the probe test below).
+    // No spelling covers a spaced command path in all three shells, and the
+    // client's shell varies by Claude Code version (cmd on 2.1.284, #1902;
+    // PowerShell probe-verified on 2.1.282, #1376) — so no SHIPPED hook emits
+    // this form anymore: claude and kimi both pass a bare `node` head. The
+    // branch stays pinned for hypothetical spaced-head callers.
     assert.equal(
         portableHookCommand("C:\\Program Files\\nodejs\\node.exe", [JS]),
         '& "C:/Program Files/nodejs/node.exe" C:/Users/u/AppData/Local/Temp/sigma/claude-native-bootstrap.js',
@@ -133,6 +136,12 @@ test("the emitted command really runs: bare token + spaced argument, through eve
         assert.ok(!command.includes("\\"), command);
         const ran: string[] = [];
         for (const shell of platformShells()) {
+            // `& "spaced head"` is the PowerShell call-operator form. cmd never
+            // sees it in production (hooks resolve a bare `node`; see the design
+            // note in plugin-install.ts) and cannot parse `&` — so don't demand
+            // cmd compatibility for it. The dedicated PowerShell test below
+            // covers that form where it is actually used.
+            if (shell.name === "cmd" && command.startsWith("& ")) continue;
             const r = runInShell(shell, command);
             if (r.missing) continue;
             assert.equal(r.status, 0, `${shell.name} exited ${r.status} for: ${command}\n${r.out}`);
@@ -141,7 +150,7 @@ test("the emitted command really runs: bare token + spaced argument, through eve
         }
         assert.ok(ran.length > 0, "no shell available to verify against");
     } finally {
-        fs.rmSync(root, { recursive: true, force: true });
+        rmrf(root);
     }
 });
 
@@ -162,6 +171,6 @@ test("the & fallback really runs under PowerShell", { skip: process.platform !==
         assert.equal(r.status, 0, `${r.status} for: ${command}\n${r.out}`);
         assert.match(r.out, /HOOKOK/, `${command}\n${r.out}`);
     } finally {
-        fs.rmSync(root, { recursive: true, force: true });
+        rmrf(root);
     }
 });

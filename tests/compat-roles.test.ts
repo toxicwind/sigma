@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { defaultConfig } from "acp-kernel";
@@ -12,18 +12,10 @@ import { SessionStore, _setStoreForTest } from "../src/persist.ts";
 import { _setForTest as setRegistryForTest } from "../src/registry.ts";
 import { applyCompatRoles, applyCompatRolesJson, detectRoleRejection, detectSystemPlacementError, parseCompatRoles, resolveCompatRoles } from "../src/compat-roles.ts";
 import { _liveUpstreamTimersForTest } from "../src/fetch-util.ts";
+import { rmrf } from "./tmp-rm.ts";
 
 function close(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-}
-
-async function freePort(): Promise<number> {
-    const server = http.createServer();
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-    await close(server);
-    return port;
 }
 
 const ROLES = { developer: "system" };
@@ -129,9 +121,8 @@ async function startProxy(upstream: http.Server, { compatJson, bareWire }: Start
     const previous = process.env.SIGMA_CONFIG_FILE;
     process.env.SIGMA_CONFIG_FILE = biliConfig;
     const upstreamPort = (upstream.address() as { port: number }).port;
-    const port = await freePort();
     const opts: ProxyOptions = {
-        port,
+        port: 0,
         host: "127.0.0.1",
         upstream: `http://127.0.0.1:${upstreamPort}`,
         routes: loadRoutes(),
@@ -147,19 +138,21 @@ async function startProxy(upstream: http.Server, { compatJson, bareWire }: Start
         log: false,
         debug: false,
         passthrough: false,
+        chainContentDetection: false,
         passthroughSource: null,
         autoUpdate: false,
         mitm: { enabled: false, domains: [] },
     };
     const proxy = await startServer(opts);
     if (!proxy.listening) await once(proxy, "listening");
+    const port = (proxy.address() as { port: number }).port;
     return {
         port,
         opts,
         stop: async () => { await close(proxy); },
         cleanup: () => {
-            if (previous === undefined) delete process.env.SIGMA_CONFIG_FILE; else process.env.SIGMA_CONFIG_FILE = previous;
-            rmSync(root, { recursive: true, force: true });
+            if (previous === undefined) delete process.env.BILI_CONFIG_FILE; else process.env.BILI_CONFIG_FILE = previous;
+            rmrf(root);
         },
     };
 }
@@ -463,9 +456,13 @@ test("e2e #583 G: mid-list assistant→system 400s on a placement-strict backend
         });
         assert.equal(res1.status, 200, "client sees a transparent 200 after the second-chance retry");
         assert.equal(seen.length, 3, `expected 3 upstream hits (asst→sys→user), got ${JSON.stringify(seen)}`);
+        // #1881: bili's own injected head system (ACP-TAGS prohibition, present
+        // even with injectTool=false) is legitimate at index 0 — the ladder
+        // mechanism is about MID-LIST placement, so scope the checks past it.
+        const midListSystem = (roles: string[]) => roles.slice(1).includes("system");
         assert.ok(seen[0].includes("assistant"), "hit 1 carries an assistant role → rejected");
-        assert.ok(!seen[1].includes("assistant") && seen[1].includes("system"), "hit 2: primary hop rewrote assistant→system (mid-list → placement 400)");
-        assert.ok(!seen[2].includes("assistant") && !seen[2].includes("system"), "hit 3: second-chance rewrote assistant→user → accepted");
+        assert.ok(!seen[1].includes("assistant") && midListSystem(seen[1]), "hit 2: primary hop rewrote assistant→system (mid-list → placement 400)");
+        assert.ok(!seen[2].includes("assistant") && !midListSystem(seen[2]), "hit 3: second-chance rewrote assistant→user → accepted");
         // Second request: the session learned assistant→user, so every assistant
         // is pre-rewritten BEFORE fetch — no 400 round-trip.
         const res2 = await fetch(`http://127.0.0.1:${harness.port}/v1/chat/completions`, {
@@ -475,7 +472,7 @@ test("e2e #583 G: mid-list assistant→system 400s on a placement-strict backend
         });
         assert.equal(res2.status, 200);
         assert.equal(seen.length, 4, `expected 4 upstream hits total (3 + 1), got ${JSON.stringify(seen)}`);
-        assert.ok(!seen[3].includes("assistant") && !seen[3].includes("system"), "second request pre-rewritten via learned map");
+        assert.ok(!seen[3].includes("assistant") && !midListSystem(seen[3]), "second request pre-rewritten via learned map");
         await waitFor(() => _liveUpstreamTimersForTest() === 0);
         assert.equal(_liveUpstreamTimersForTest(), 0, "abandoned retry bodies must not re-arm the idle timer");
     } finally {

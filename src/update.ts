@@ -20,7 +20,7 @@
  * version and stops trying. No notified Set — failed installs retry next
  * cycle automatically.
  */
-import { readFile, writeFile, mkdir, access, constants, rm, cp, unlink } from "node:fs/promises";
+import { readFile, writeFile, mkdir, access, constants, rm, cp, unlink, lstat, rename } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import crypto from "node:crypto";
@@ -30,7 +30,8 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { cacheDir } from "./paths.js";
 import { log as loggerLog, type Logger } from "./logger.js";
-import { refreshDshProfileBundles, isDshProfileCopy } from "./dsh-channel.js";
+import { refreshDshProfileBundles, isDshProfileCopy, dshProfileDirs, dshProfileDependsOnBili, dshProfileDepSpec, isRegistryDepSpec, DSH_PACKAGE, DSH_DESKTOP_PROFILE } from "./dsh-channel.js";
+import { isPiNpmCopy, piNpmEntrySpec, runPiAsync, PI_NPM_SPEC } from "./pi-channel.js";
 import { resolveDshHome, resolveKimiHome, resolveOmpHome, resolvePiHome } from "./client-config.js";
 import { proxyDispatcher } from "./upstream-proxy.js";
 import type { FetchOptions } from "./fetch-util.js";
@@ -63,7 +64,7 @@ function checkIntervalMs(): number {
     const raw = Number(process.env.SIGMA_UPDATE_CHECK_INTERVAL_MS?.trim());
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CHECK_INTERVAL_MS;
 }
-const CHECK_INTERVAL_MS = checkIntervalMs();
+export const CHECK_INTERVAL_MS = checkIntervalMs();
 const THROTTLE_FILE = path.join(cacheDir(), ".update-check");
 const LOCK_FILE = path.join(cacheDir(), ".update-lock");
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z-.]+)?$/;
@@ -88,6 +89,31 @@ let staleWarnKey: string | undefined;
 
 export function _resetStaleWarnForTest(): void {
     staleWarnKey = undefined;
+}
+
+// #1481: per-process dedupe for advisory force-install refusals/failures. The
+// advisory watcher retries every cycle while an entry matches, so without this
+// a persistent refusal (source checkout, host-managed lane, bad target) would
+// log a fresh warning every cycle forever. Keyed by advisory id + message.
+const advisoryRefusalWarnKeys = new Set<string>();
+
+export function _resetAdvisoryRefusalWarnsForTest(): void {
+    advisoryRefusalWarnKeys.clear();
+}
+
+// THROTTLE_FILE is resolved once at module load, so every test in a process
+// shares one throttle state — non-forced checkForUpdate tests must reset it
+// or they inherit the previous test's "last checked" timestamp.
+export async function _resetUpdateThrottleForTest(): Promise<void> {
+    firstCheckDone = false;
+    await rm(THROTTLE_FILE, { force: true });
+}
+
+function warnAdvisoryOnce(advisoryId: string, message: string): void {
+    const key = `${advisoryId}\u0000${message}`;
+    if (advisoryRefusalWarnKeys.has(key)) return;
+    advisoryRefusalWarnKeys.add(key);
+    loggerLog("warn", message);
 }
 
 // --- Version comparison (ported from opencode-acp lib/update.ts) ---
@@ -244,6 +270,23 @@ export interface HostManagedInstall {
  *  store. Returns the owner + its update channel, or undefined when the copy
  *  is sigma-owned (npm global, manual install) and may be updated in place.
  *  Exported for tests. */
+// #1575 (owner decision 2026-10-01, recorded on the issue): the dsh DESKTOP
+// profile copy is bili-owned IN PLACE. Every other update channel for that
+// lane is closed by design upstream — the dsh CLI refuses `--profile desktop`
+// outright ("managed exclusively by the Electron application") and the
+// in-app plugin manager does not reliably pull newer bundled deps — so the
+// global self-update / periodic check is the only working path and it must be
+// allowed to overwrite in place. Residual second-writer risk with the app's
+// own manager is explicitly accepted by the owner; reverting means dropping
+// this check.
+function isDshDesktopBiliCopy(installDir: string, real: string, env: NodeJS.ProcessEnv): boolean {
+    const anchor = path.join(resolveDshHome(env), "profiles", DSH_DESKTOP_PROFILE).split(path.sep).join("/");
+    return [installDir, real].some((dir) => {
+        const norm = dir.split(path.sep).join("/");
+        return norm.startsWith(anchor + "/") && norm.endsWith(`/node_modules/${DSH_PACKAGE}`);
+    });
+}
+
 export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = process.env): HostManagedInstall | undefined {
     let real = installDir;
     try {
@@ -251,6 +294,7 @@ export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = 
     } catch {
         // nonexistent or unreadable — evaluate the literal path
     }
+    if (isDshDesktopBiliCopy(installDir, real, env)) return undefined;
     for (const dir of [installDir, real]) {
         if (dir.split(path.sep).some((seg) => seg === ".pnpm")) {
             return {
@@ -261,11 +305,11 @@ export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = 
     }
     const xdgData = env.XDG_DATA_HOME && env.XDG_DATA_HOME.trim().length > 0 ? env.XDG_DATA_HOME : path.join(os.homedir(), ".local", "share");
     const homes: Array<[string, string, string]> = [
-        ["pi", resolvePiHome(env), "`pi update` (pi installs and upgrades the npm:sigma entry itself)"],
-        ["opencode", path.join(xdgData, "opencode"), "opencode's own plugin manager (reload/reinstall the sigma plugin)"],
-        ["dsh", resolveDshHome(env), "the dsh plugin channel (the global sigma self-update refreshes profiles, and so does the profile proxy's own periodic check; or `dsh plugin add sigma@latest`)"],
-        ["kimi", resolveKimiHome(env), "`sigma plugin install kimi` after updating the global sigma install"],
-        ["omp", resolveOmpHome(env), "the global sigma install (the extensions entry points at it)"],
+        ["pi", resolvePiHome(env), "`pi update --extension npm:billion-context` (the pi copy's own proxy drives pi's update channel every check cycle, #1196; manual: `pi update --all`)"],
+        ["opencode", path.join(xdgData, "opencode"), "opencode's own plugin manager (reload/reinstall the billion-context plugin)"],
+        ["dsh", resolveDshHome(env), "the dsh plugin channel (the global bili self-update refreshes profiles, and so does the profile proxy's own periodic check; or `dsh plugin add billion-context@latest`)"],
+        ["kimi", resolveKimiHome(env), "`bili plugin install kimi` after updating the global bili install"],
+        ["omp", resolveOmpHome(env), "the global bili install (the extensions entry points at it)"],
     ];
     for (const [owner, home, channel] of homes) {
         if (!home) continue;
@@ -279,7 +323,7 @@ export function hostManagedInstall(installDir: string, env: NodeJS.ProcessEnv = 
 }
 
 /** Read the version from the on-disk package.json (not the startup constant). */
-async function readDiskVersion(installDir: string): Promise<string | undefined> {
+export async function readDiskVersion(installDir: string): Promise<string | undefined> {
     try {
         const pkg = JSON.parse(await readFile(path.join(installDir, "package.json"), "utf-8"));
         return pkg.version;
@@ -494,6 +538,25 @@ export type UpdateOptions = {
     /** Dist-tag channel to follow (default "latest"), e.g. "dev", "stable".
      *  Publishing a PR (pr-N tag) never pulls a user on another channel. */
     updateTag?: string;
+    /** Explicit install dir override (programmatic callers / test seam) —
+     *  skips findInstallDir's walk-up. Same shape as runAdvisoryCheck's
+     *  option. */
+    installDir?: string;
+    /** #1481: returns true while the advisory watcher holds an active
+     *  critical-bug advisory. The normal loop defers to it (its target version
+     *  wins over "follow latest"), otherwise the two loops would fight over
+     *  the install dir every cycle. A forced manual check still proceeds. */
+    advisoryActive?: () => boolean;
+    /** #1588-A: returns true when a candidate version falls inside any freshly
+     *  parsed advisory's affected range. Consulted right before the normal
+     *  loop installs its candidate: a rollback-form advisory leaves this
+     *  machine's disk clean while the registry's latest stays affected, and
+     *  following latest would pull the machine back into the defect (the
+     *  watcher would roll it back again — ping-pong). The blocklist wins over
+     *  "follow latest" until the advisory stops covering the candidate. The
+     *  predicate fails open; a forced manual check still proceeds. Absent =
+     *  no-op. */
+    advisoryBlocksVersion?: (version: string) => boolean;
     /** Fired whenever this process detects the on-disk install is newer than
      *  the running code (#811): right after a successful in-place install and
      *  on every subsequent up-to-date check while the process stays stale.
@@ -593,6 +656,176 @@ export async function refreshDshProfileCopy(
     }
     try {
         await refreshDshProfileBundles(latest, log, env);
+        await refreshDshDesktopCopy(latest, log, env);
+    } finally {
+        await lock.release();
+    }
+}
+
+/** #1575 (owner decision): refresh the dsh DESKTOP profile copy IN PLACE. The
+ *  CLI refuses --profile desktop outright ("managed exclusively by the Electron
+ *  application") and the in-app plugin manager cannot be relied on, so bili owns
+ *  that copy: a verified-registry-tarball install through the standard
+ *  junction-safe installer (whose hostManagedInstall exemption recognizes this
+ *  exact layout), keyed off the running user's DSH_HOME. Called alongside
+ *  refreshDshProfileBundles at every driver site; all sites hold the shared
+ *  update lock. Silent while the copy is missing, in step, or ahead; failures
+ *  log and retry next cycle; never throws. */
+export async function refreshDshDesktopCopy(
+    targetVersion: string,
+    log: Logger = loggerLog,
+    env: NodeJS.ProcessEnv = process.env,
+    resolveProxy?: (url: string) => string | undefined,
+): Promise<void> {
+    const flat = path.join(resolveDshHome(env), "profiles", DSH_DESKTOP_PROFILE, "node_modules", DSH_PACKAGE);
+    try {
+        try {
+            await access(flat, constants.F_OK);
+        } catch {
+            return; // no desktop profile on this machine — nothing to keep in step
+        }
+        const diskVersion = await readDiskVersion(flat);
+        if (!isVersionNewer(targetVersion, diskVersion ?? "0.0.0")) return; // in step or ahead — never downgrade
+        const doc = await fetchVersionDoc({ resolveProxy }, DSH_PACKAGE, targetVersion);
+        if (!doc?.tarball) {
+            log("warn", `[update] dsh ${DSH_DESKTOP_PROFILE}: in-place refresh to ${targetVersion} failed \u2014 no dist.tarball for that version on the registry; retrying next cycle`);
+            return;
+        }
+        const result = await installViaTarball(targetVersion, doc.tarball, flat, doc.integrity, doc.shasum, egressDispatcher({ resolveProxy }, doc.tarball), env);
+        if (result.ok) {
+            log("info", `[update] refreshed dsh ${DSH_DESKTOP_PROFILE} profile copy in place (${diskVersion ?? "?"} \u2192 ${targetVersion}) \u2014 restart dsh to load it`);
+        } else {
+            log("warn", `[update] dsh ${DSH_DESKTOP_PROFILE}: in-place refresh to ${targetVersion} failed: ${result.error}; retrying next cycle`);
+        }
+    } catch (err) {
+        log("warn", `[update] dsh ${DSH_DESKTOP_PROFILE} in-place refresh check failed: ${err instanceof Error ? err.message : String(err)}; leaving the copy untouched`);
+    }
+}
+
+/** #1196-class fix for the pi lane: the copy under <piHome>/npm is pi's own
+ *  materialization of the settings `npm:billion-context` entry — #991 keeps
+ *  the global updater out, and pi has no background package updater, so the
+ *  proxy running FROM the copy drives `pi update --extension
+ *  npm:billion-context` (pi's owner channel) on its periodic check when the
+ *  registry has a newer version. Only the unpinned spec form self-refreshes;
+ *  an explicit `@version` pin (or a missing settings entry) is left alone.
+ *  Best-effort: never throws, never blocks the proxy; a failed refresh
+ *  retries on the next check cycle. */
+export async function refreshPiNpmCopy(
+    installDir: string,
+    opts: UpdateOptions,
+    env: NodeJS.ProcessEnv = process.env,
+    log: Logger = loggerLog,
+): Promise<void> {
+    if (!isPiNpmCopy(installDir, env)) return;
+    const entry = piNpmEntrySpec(env);
+    if (entry !== PI_NPM_SPEC) {
+        log("info", `[update] pi packages entry is ${entry ?? "(missing)"} — leaving the pi copy alone (only the unpinned ${PI_NPM_SPEC} form self-refreshes)`);
+        return;
+    }
+    let latest: string | undefined;
+    try {
+        latest = await fetchRegistryVersion(opts, opts.packageName);
+    } catch (e) {
+        log("warn", `[update] pi npm copy check failed: ${String(e)} — leaving the copy alone`);
+        return;
+    }
+    if (!latest) {
+        log("warn", `[update] could not resolve the latest version for ${opts.packageName} — leaving the pi copy alone`);
+        return;
+    }
+    const diskVersion = await readDiskVersion(installDir);
+    const currentVersion = diskVersion ?? opts.currentVersion;
+    if (!isVersionNewer(latest, currentVersion)) {
+        log("info", `[update] pi npm copy up to date (current=${currentVersion} latest=${latest} tag=${normalizeUpdateTag(opts.updateTag)})`);
+        return;
+    }
+    log("info", `[update] pi npm copy is stale (${currentVersion} → ${latest}) — refreshing via pi's update channel`);
+    const lock = await tryAcquireLock();
+    if (!lock) {
+        log("info", `[update] another process is updating, will check next cycle`);
+        return;
+    }
+    try {
+        await runPiAsync(["update", "--extension", PI_NPM_SPEC], env);
+        log("info", `[update] pi npm copy refreshed to ${latest} — restart pi to load it`);
+    } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        log("warn", `[update] pi npm copy refresh to ${latest} failed: ${detail} — manual fix: run \`pi update --extension ${PI_NPM_SPEC}\` from a shell where \`pi\` resolves (or point BILI_PI_BIN at pi's executable); retries next check cycle`);
+    } finally {
+        await lock.release();
+    }
+}
+
+/** Drive the owner-channel refresh for whichever host-managed lane this
+ *  install dir belongs to. Each helper no-ops when the classification does
+ *  not match, and a dir can only sit in one host's tree. */
+async function refreshOwnerManagedCopies(
+    installDir: string,
+    opts: UpdateOptions,
+    env: NodeJS.ProcessEnv,
+    log: Logger,
+): Promise<void> {
+    await refreshDshProfileCopy(installDir, opts, env, log);
+    await refreshPiNpmCopy(installDir, opts, env, log);
+}
+/** Registry-pinned dsh profile copies whose installed version is older
+ *  than the global one ("name@version" per entry). Dev pins (link:/file:)
+ *  and declared-but-not-installed mounts are out of scope: neither
+ *  participates in the mixed-copy crash. */
+async function staleDshProfileCopies(globalVersion: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+    let dirs: string[];
+    try {
+        dirs = dshProfileDirs(env);
+    } catch {
+        return []; // dsh has never run on this machine
+    }
+    const out: string[] = [];
+    for (const dir of dirs) {
+        if (!dshProfileDependsOnBili(dir)) continue;
+        const spec = dshProfileDepSpec(dir);
+        if (spec !== undefined && !isRegistryDepSpec(spec)) continue;
+        const version = await readDiskVersion(path.join(dir, "node_modules", DSH_PACKAGE));
+        if (version && isVersionNewer(globalVersion, version)) out.push(`${path.basename(dir)}@${version}`);
+    }
+    return out;
+}
+
+/** #1803: dsh's CLI reads the bili bundle yml from the GLOBAL install but
+ *  resolves the entry module from each profile's own node_modules. A profile
+ *  copy left behind the global version — manual `npm i -g`, or a post-update
+ *  refresh that failed and never retried — makes the bare-name entry resolve
+ *  to the old package's CLI root (a module with zero exports), so dsh
+ *  hard-crashes at boot ("invalid plugin …") and the crash also blocks the
+ *  profile copy's own #1196 self-heal. Drive convergence from the global
+ *  install's periodic check: detect registry-pinned profile copies older
+ *  than the global disk version and refresh them through dsh's own plugin
+ *  channel under the shared update lock — so a failed refresh retries every
+ *  cycle instead of only on the next install event. Silent and spawn-free
+ *  while everything is in step. */
+export async function convergeDshProfileBundles(
+    installDir: string | undefined,
+    globalVersion: string | undefined,
+    env: NodeJS.ProcessEnv = process.env,
+    log: Logger = loggerLog,
+): Promise<void> {
+    if (!installDir || !globalVersion) return;
+    let stale: string[];
+    try {
+        stale = await staleDshProfileCopies(globalVersion, env);
+    } catch {
+        return; // profile scanning must never break the update loop
+    }
+    if (stale.length === 0) return;
+    log("info", `[update] dsh profile bundle(s) behind the global copy (${stale.join(", ")} < ${globalVersion}) — converging via dsh's plugin channel (#1803)`);
+    const lock = await tryAcquireLock();
+    if (!lock) {
+        log("info", `[update] another process is updating, will check next cycle`);
+        return;
+    }
+    try {
+        await refreshDshProfileBundles(globalVersion, log, env);
+        await refreshDshDesktopCopy(globalVersion, log, env);
     } finally {
         await lock.release();
     }
@@ -615,12 +848,26 @@ export async function checkForUpdate(opts: UpdateOptions, force = false): Promis
         await writeLastCheck(now);
         firstCheckDone = true;
 
+        if (!force && opts.advisoryActive?.()) {
+            // The advisory watcher is working on this install dir: let its target
+            // version win instead of racing it with "follow latest".
+            const dir = opts.installDir ?? (await findInstallDir(opts.packageName));
+            const managed = dir ? hostManagedInstall(dir) : undefined;
+            if (managed && dir) {
+                loggerLog("info", `[update] deferring to the advisory loop; ${managed.owner}-managed install keeps its owner-channel refresh (#991/#1196)`);
+                await refreshOwnerManagedCopies(dir, opts, process.env, loggerLog);
+                return;
+            }
+            loggerLog("info", "[update] deferring to the advisory loop (an active critical-bug advisory owns this install)");
+            return;
+        }
+
         // Source-checkout guard (#580): findInstallDir() walks up from the
         // running dist/ and lands on the repo root when sigma runs from a git
         // clone (node dist/index.js start). An in-place tarball copy would
         // silently rewrite tracked files (the version pin, READMEs), so refuse
         // to self-update here instead of proceeding.
-        const installDir = await findInstallDir(opts.packageName);
+        const installDir = opts.installDir ?? await findInstallDir(opts.packageName);
         if (installDir && await isGitWorkingTree(installDir)) {
             loggerLog("info", `[update] running from a source checkout (${installDir}) \u2014 skipping auto-update (use npm install -g ${opts.packageName})`);
             return;
@@ -633,11 +880,11 @@ export async function checkForUpdate(opts: UpdateOptions, force = false): Promis
         const managed = installDir ? hostManagedInstall(installDir) : undefined;
         if (managed && installDir) {
             loggerLog("info", `[update] install dir is managed by ${managed.owner} (${installDir}) \u2014 skipping in-place self-update; update it via ${managed.channel} (#991)`);
-            // #1196: a copy living inside a dsh profile bundle cannot wait
-            // for a global self-update that may never come (dsh-market users
-            // often have no global install at all) — drive the lockstep
-            // refresh through dsh's own plugin channel from here.
-            await refreshDshProfileCopy(installDir, opts, process.env, loggerLog);
+            // #1196: a copy inside a host's own tree (dsh profile bundle, pi
+            // npm dir) cannot wait for a global self-update that may never
+            // come — drive the lockstep refresh through the host's own
+            // channel from here.
+            await refreshOwnerManagedCopies(installDir, opts, process.env, loggerLog);
             return;
         }
 
@@ -680,6 +927,22 @@ export async function checkForUpdate(opts: UpdateOptions, force = false): Promis
             if (diskVersion && staleInstallStatus(diskVersion, opts.currentVersion) === "restart") {
                 notifyStaleInstall(opts, diskVersion);
             }
+            // #1803: converge dsh profile copies left behind this global
+            // version — dsh reads the yml from here but the entry module from
+            // each profile, so a stale copy hard-crashes dsh at boot.
+            await convergeDshProfileBundles(installDir, diskVersion, process.env);
+            return;
+        }
+
+        // #1588-A: the candidate itself may sit inside a freshly parsed
+        // advisory's affected range even though no advisory is active against
+        // THIS machine (rollback form: disk/target clean, latest still
+        // affected). Installing it would pull the machine back into the defect
+        // and the watcher would roll it back again — ping-pong every cycle.
+        // Skip the candidate: the blocklist wins over "follow latest" until
+        // the advisory document stops covering it.
+        if (!force && opts.advisoryBlocksVersion?.(latest)) {
+            loggerLog("info", `[update] skipping ${latest}: covered by a critical-bug advisory's affected range (#1588) — not pulling this install back into the defect; retrying next cycle`);
             return;
         }
 
@@ -708,6 +971,7 @@ export async function checkForUpdate(opts: UpdateOptions, force = false): Promis
                 // the old version next to the new global one (#953). Best-effort:
                 // never fails the update itself.
                 await refreshDshProfileBundles(latest, loggerLog);
+                await refreshDshDesktopCopy(latest, loggerLog, process.env, opts.resolveProxy);
                 notifyStaleInstall(opts, latest);
             } else {
                 loggerLog("warn", `[update] install failed: ${result.error}. Will retry next cycle.`);
@@ -761,6 +1025,7 @@ export async function installViaTarball(
     integrity?: string,
     shasum?: string,
     dispatcher?: object,
+    env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ ok: boolean; error?: string }> {
     if (!installDir) {
         return { ok: false, error: "cannot determine install directory (package.json not found walking up from running binary)" };
@@ -783,7 +1048,8 @@ export async function installViaTarball(
 
     // #991 single-writer: refuse to overwrite a host-managed copy (pnpm
     // store, host agent data trees) — only its owner may update it.
-    const managed = hostManagedInstall(installDir);
+    // Exception: the dsh desktop-profile copy is bili-owned in place (#1575).
+    const managed = hostManagedInstall(installDir, env);
     if (managed) {
         return { ok: false, error: `install dir is managed by ${managed.owner} (${installDir}) \u2014 refusing in-place overwrite (single-writer); update via ${managed.channel}` };
     }
@@ -876,27 +1142,65 @@ export async function installViaTarball(
         await rm(tmpFile, { force: true });
     }
 
+    // pnpm virtual-store copy (#1575 desktop lane): the flat node_modules
+    // entry is a directory symlink/junction into <profile>/.pnpm/. fs.cp would
+    // FOLLOW the link and rewrite shared store content (hardlinked,
+    // integrity-checked by pnpm), so displace the LINK itself and lay down the
+    // verified package as a real directory at this path instead.
+    let pnpmOldLink: string | null = null;
+    {
+        let linkStat: Awaited<ReturnType<typeof lstat>> | null = null;
+        try {
+            linkStat = await lstat(installDir);
+        } catch {
+            // vanished mid-update — treat as a plain missing/real dir below
+        }
+        if (linkStat?.isSymbolicLink()) {
+            pnpmOldLink = `${installDir}.pnpm-${Date.now()}`;
+            try {
+                await rename(installDir, pnpmOldLink);
+            } catch (e) {
+                return { ok: false, error: `failed to move the pnpm link aside (${pnpmOldLink}): ${String(e)} (install left untouched)` };
+            }
+        }
+    }
+
     // Back up the current install before overwriting. If anything fails after
     // the copy (partial copy, version drift, corrupted entry), the backup is
     // restored so the previously working version keeps running.
     const backupDir = path.join(cacheDir(), `.update-backup-${version}`);
-    try {
-        await rm(backupDir, { recursive: true, force: true });
-        await cp(installDir, backupDir, { recursive: true, force: true });
-    } catch (e) {
-        // Fail closed: without a backup we refuse to overwrite the running
-        // install — the current version keeps working.
-        return { ok: false, error: `backup of current install failed (install left untouched): ${String(e)}` };
+    if (pnpmOldLink) {
+        // The displaced artifact IS the link itself (kept at pnpmOldLink) and
+        // the store contents it points into were never touched — nothing to
+        // back up as files.
+        try {
+            await rm(backupDir, { recursive: true, force: true });
+        } catch {
+            // clearing a stale backup dir failing is not fatal in this branch
+        }
+    } else {
+        try {
+            await rm(backupDir, { recursive: true, force: true });
+            await cp(installDir, backupDir, { recursive: true, force: true });
+        } catch (e) {
+            // Fail closed: without a backup we refuse to overwrite the running
+            // install — the current version keeps working.
+            return { ok: false, error: `backup of current install failed (install left untouched): ${String(e)}` };
+        }
     }
 
     const restoreFromBackup = async (): Promise<string | null> => {
         try {
             await rm(installDir, { recursive: true, force: true });
-            await cp(backupDir, installDir, { recursive: true, force: true });
+            if (pnpmOldLink) {
+                await rename(pnpmOldLink, installDir);
+            } else {
+                await cp(backupDir, installDir, { recursive: true, force: true });
+            }
             return null;
         } catch (e) {
-            // Keep the backup dir — it is the only healthy copy left.
-            return `ROLLBACK FAILED — restore ${backupDir} to ${installDir} manually: ${String(e)}`;
+            // Keep the backup — it is the only healthy copy left.
+            return `ROLLBACK FAILED — restore ${pnpmOldLink ?? backupDir} to ${installDir} manually: ${String(e)}`;
         }
     };
 
@@ -933,8 +1237,16 @@ export async function installViaTarball(
         return { ok: false, error: rb ?? postEntryErr };
     }
 
-    // Success: the backup is no longer needed.
+    // Success: the backup is no longer needed, and neither is the displaced
+    // pnpm link (the store copy underneath it was left byte-identical).
     await rm(backupDir, { recursive: true, force: true });
+    if (pnpmOldLink) {
+        try {
+            await unlink(pnpmOldLink);
+        } catch {
+            // inert once installDir holds the fresh real directory
+        }
+    }
 
     return { ok: true };
 }
@@ -961,6 +1273,97 @@ export async function detectStaleInstall(
     }
     const diskVersion = await readDiskVersion(installDir);
     return { diskVersion, stale: staleInstallStatus(diskVersion, runningVersion) === "restart" };
+}
+
+/** Fetch one published version's registry doc (#1481): tarball URL plus
+ *  integrity/shasum for verification. Returns undefined when the version does
+ *  not exist or the fetch fails — callers treat that as "do nothing". */
+export async function fetchVersionDoc(
+    opts: Pick<UpdateOptions, "resolveProxy">,
+    packageName: string,
+    version: string,
+): Promise<{ tarball?: string; integrity?: string; shasum?: string } | undefined> {
+    const url = `${REGISTRY_BASE}/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`;
+    const dispatcher = egressDispatcher(opts, url);
+    try {
+        const res = await fetchWithEgress(url, {
+            signal: AbortSignal.timeout(5000),
+            headers: { Accept: "application/json" },
+            ...(dispatcher ? { dispatcher } : {}),
+        });
+        if (!res.ok) return undefined;
+        const data = (await res.json()) as { dist?: { tarball?: string; integrity?: string; shasum?: string } };
+        return data?.dist?.tarball ? data.dist : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** Force-install a specific published version in place (#1481), regardless of
+ *  whether it is newer — the advisory watcher uses this to push users OUT of
+ *  an affected range, so the target may even be OLDER than the current
+ *  version (rollback semantics). Reuses the self-updater's full safety chain:
+ *  same cross-process lock, same backup/verify/rollback tarball install, same
+ *  #580 source-checkout and #991 single-writer guards (those refuse with an
+ *  actionable error instead of installing). Returns ok:false with a reason on
+ *  any refusal/failure; never throws. */
+export async function forceInstallVersion(
+    targetVersion: string,
+    installDir: string | undefined,
+    opts: UpdateOptions,
+    advisoryId: string,
+): Promise<{ ok: boolean; error?: string }> {
+    if (!installDir) {
+        const error = "cannot locate the install directory";
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: ${error}`);
+        return { ok: false, error };
+    }
+    const diskNow = await readDiskVersion(installDir);
+    if ((diskNow ?? opts.currentVersion) === targetVersion) {
+        // The advisory marks its own target as affected — a misconfiguration.
+        // Fail loudly instead of spinning on a no-op install every cycle.
+        const error = `advisory ${advisoryId} targets the current version ${targetVersion} (misconfigured advisory)`;
+        warnAdvisoryOnce(advisoryId, `[update] ${error} — fix the advisory document`);
+        return { ok: false, error };
+    }
+    if (await isGitWorkingTree(installDir)) {
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: running from a source checkout (${installDir}) — refusing self-update (#580); upgrade manually with npm install -g ${opts.packageName}@${targetVersion}`);
+        return { ok: false, error: "running from a source checkout — refusing self-update (#580)" };
+    }
+    const managed = hostManagedInstall(installDir);
+    if (managed) {
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: install dir belongs to ${managed.owner} — no in-place overwrite (#991); update via ${managed.channel}`);
+        return { ok: false, error: `install dir is managed by ${managed.owner}; update via ${managed.channel}` };
+    }
+    const doc = await fetchVersionDoc(opts, opts.packageName, targetVersion);
+    if (!doc?.tarball) {
+        const error = `cannot resolve ${targetVersion} on the registry`;
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: ${error}`);
+        return { ok: false, error };
+    }
+    const lock = await tryAcquireLock();
+    if (!lock) {
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: another process is updating, will retry next cycle`);
+        return { ok: false, error: "another process is updating, will retry next cycle" };
+    }
+    try {
+        // Re-check under the lock: another process may have finished the same
+        // install between the pre-lock read and lock acquisition.
+        const diskUnderLock = await readDiskVersion(installDir);
+        if (diskUnderLock === targetVersion) return { ok: true };
+        const result = await installViaTarball(targetVersion, doc.tarball, installDir, doc.integrity, doc.shasum, egressDispatcher(opts, doc.tarball));
+        if (result.ok) {
+            loggerLog("info", `[update] advisory ${advisoryId}: installed ${diskUnderLock ?? opts.currentVersion} → ${targetVersion}. Restart to finish.`);
+            await refreshDshProfileBundles(targetVersion, loggerLog);
+            await refreshDshDesktopCopy(targetVersion, loggerLog, process.env, opts.resolveProxy);
+            notifyStaleInstall(opts, targetVersion);
+            return { ok: true };
+        }
+        warnAdvisoryOnce(advisoryId, `[update] advisory ${advisoryId}: install failed: ${result.error} (will retry next cycle)`);
+        return { ok: false, error: result.error };
+    } finally {
+        await lock.release();
+    }
 }
 
 export function startAutoUpdate(opts: UpdateOptions): void {
