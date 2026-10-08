@@ -10,10 +10,12 @@
       "devDependencies": {
         "@types/node": "^22.0.0",
         "@types/node-forge": "^1.3.14",
-        "acp-kernel": "0.0.95",
+        "@types/semver": "^7.7.1",
+        "acp-kernel": "0.0.100",
         "fzstd": "0.1.1",
         "jsonc-parser": "^3.3.1",
         "node-forge": "^1.4.0",
+        "semver": "7.8.5",
         "tar": "^7.5.22",
         "tsup": "^8.0.0",
         "tsx": "^4.0.0",
@@ -221,6 +223,8 @@
 
     "@types/node-forge": ["@types/node-forge@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-mhVF2BnD4BO+jtOp7z1CdzaK4mbuK0LLQYAvdOLqHTavxFNq4zA1EmYkpnFjP8HOUzedfQkRnp0E2ulSAYSzAw=="],
 
+    "@types/semver": ["@types/semver@7.8.0", "", {}, "sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ=="],
+
     "@verdaccio/auth": ["@verdaccio/auth@8.1.3", "", { "dependencies": { "@verdaccio/config": "8.3.0", "@verdaccio/core": "8.3.0", "@verdaccio/loaders": "8.1.3", "@verdaccio/signature": "8.1.3", "debug": "4.4.3", "lodash": "4.18.1", "verdaccio-htpasswd": "13.1.3" } }, "sha512-6fI5jKyu7p8qRDLhGgNAa+gwqe+AEpXOcmVUUv6GLQBPY+lovKgfl5Sui72CTRzrkKPg7zNWS+T2tvODR6nIBw=="],
 
     "@verdaccio/config": ["@verdaccio/config@8.3.0", "", { "dependencies": { "@verdaccio/core": "8.3.0", "debug": "4.4.3", "js-yaml": "5.2.2", "lodash": "4.18.1" } }, "sha512-kzjh1p/VmXjeJQ3X8D630OU+q8QUjhECaWZs0O1AzpSVjWJhQP4jjQmVBtF7a/oNGLFzJ+RnU5KUh+lERRkSRQ=="],
@@ -265,7 +269,7 @@
 
     "acorn": ["acorn@8.18.0", "", { "bin": "bin/acorn" }, "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ=="],
 
-    "acp-kernel": ["acp-kernel@0.0.95", "", {}, "sha512-hs8PmgxWVs0caB/u3kpj/JuK0SqwSNV4T7Wkr2OXRZSZLmAA/8OhXW/4JNcunojqtHaWXRKd9SsvnnEOHay/xA=="],
+    "acp-kernel": ["acp-kernel@0.0.100", "", {}, "sha512-v+SoFJe+k5qYwvFfDdHZ46KK9VAlJ0PfZjLPPtVdXuwzUiRKDI02j1nh2OnqbD7HGO4e7lToEsWlU+Olme5WAg=="],
 
     "agent-base": ["agent-base@6.0.2", "", { "dependencies": { "debug": "4" } }, "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ=="],
 
