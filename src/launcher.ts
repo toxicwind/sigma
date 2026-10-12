@@ -3793,7 +3793,7 @@ export function resolveClientCommand(
         if (piResolved) return { command: piResolved, prefixArgs: [] };
         const cli = path.join(
             os.homedir(),
-            ".pi/agent/npm/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
+            ".pi/agent/npm/node_modules/tau/dist/cli.js",
         );
         return { command: process.execPath, prefixArgs: [cli] };
     }
