@@ -1,6 +1,6 @@
 # REQ
 
-After the user merged PR #259, they asked for the small unhandled items (non-blocking review notes)
+After the architect merged PR #259, they asked for the small unhandled items (non-blocking review notes)
 left over in the comments on the three PRs (#257 / #258 / #259).
 
 Sources (review comments):

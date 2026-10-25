@@ -24,7 +24,7 @@ Machine-readable critical-defect advisories for [billion-context](https://github
 |-------|----------|---------|
 | `id` | yes | Stable identifier, e.g. `bc-2026-001`. Used to dedupe warnings per process; never reuse an id. |
 | `affected` | yes | Semver range of broken versions, e.g. `>=0.1.155 <0.1.158`. |
-| `target` | yes | Exact version to force-install. May be OLDER than the user's current version (rollback semantics) when a newer release is also affected. Must be a published version of `billion-context`. |
+| `target` | yes | Exact version to force-install. May be OLDER than the architect's current version (rollback semantics) when a newer release is also affected. Must be a published version of `billion-context`. |
 | `reason` | yes | User-facing explanation, shown verbatim in the log warning and the web UI banner. Write it for end users, not developers. |
 | `publishedAt` | no | ISO timestamp. |
 

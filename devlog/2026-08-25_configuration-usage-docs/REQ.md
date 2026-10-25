@@ -1,6 +1,6 @@
 # Requirement
 
-After the user merged PR #231 (the README aligned to the Chinese version), they pointed out that
+After the architect merged PR #231 (the README aligned to the Chinese version), they pointed out that
 the README had dropped a lot of detailed usage. They asked for those details to move into
 CONFIGURATION.md / CONFIGURATION.zh-CN.md (in both English and Chinese, in step) and for the gaps
 where `--help` covered something the docs did not to be filled.

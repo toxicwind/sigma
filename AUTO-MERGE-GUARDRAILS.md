@@ -30,7 +30,7 @@ The four git prohibitions (no force-push to master, no merges, no `npm publish`,
 2. **Rebase onto the latest master, then re-verify, then open the PR.** Watch out for **rebase order dependencies**. *Source*: #249/#221/#155/#479 each demanded re-verification against the latest master. **#479 is the clearest case**: the AI missed an order dependency — the test hardcoded `savedAt=9000/5000/8000` (1970), and it broke because another PR (#487) landed on master first. Only an independent human review caught it.
 3. **Converge the scope: one issue, one topic.** *Source*: #247 "converge first — you own just this issue… I'll route the other problems to other agents". #640 batched sibling issues into one PR and closed the ones it superseded.
 4. **Deliver a PR, not just a pushed branch.** *Source*: #282 "submit a PR, not a branch."
-5. **Never silently drop or overwrite user config.** *Source*: in #155 a whitelist missed the `prompts` key, so saving from the web UI silently wiped the user's custom compression prompts. the fix was to return 400 on malformed input instead. See `devlog/context-window-fixes` (a failed read that still merged into `{}` = silent data loss).
+5. **Never silently drop or overwrite user config.** *Source*: in #155 a whitelist missed the `prompts` key, so saving from the web UI silently wiped the architect's custom compression prompts. the fix was to return 400 on malformed input instead. See `devlog/context-window-fixes` (a failed read that still merged into `{}` = silent data loss).
 6. **Fallback values have to be sensible.** *Source*: #282 "when detection fails, default to 200k with a floor of 100k — do not use 64k". `devlog/context-window-fixes` (a static table overriding the live registry = the freshness hierarchy inverted).
 7. **Prefer the client's own stable identifier.** *Source*: #280 "session-id is the only thing that does not change and is bound to the current session… if you cannot get it from the client, report that."
 8. **Separate the symptom from the mechanism.** *Source*: the "consecutive compression" report in #282 was actually upstream 429 rate limiting amplified by client retries producing a misleading log — not the compression mechanism running away.
@@ -53,7 +53,7 @@ The four git prohibitions (no force-push to master, no merges, no `npm publish`,
 | 5 | **Defaults and fallback judgment** | Unsound fallbacks, the precedence order of sources of truth | This is product judgment; AI tends to pick a value that "looks right" |
 | 6 | **Symptom ≠ root cause** | Misleading logs, misattributed errors | It looks like A, but it is actually B (see #282) |
 | 7 | **Process hygiene** | Scope creep, duplicated effort, pushing a branch without opening a PR, cross-repo ordering | Each action looks right in isolation; the combination violates the process |
-| 8 | **User-facing judgment** | Doc wording, language, placement, honesty, UX defaults | Engineering-correct ≠ correct from the user's seat |
+| 8 | **User-facing judgment** | Doc wording, language, placement, honesty, UX defaults | Engineering-correct ≠ correct from the architect's seat |
 
 ### 3.1 The recurring hot spot: PRs that needed a second review round (the data)
 

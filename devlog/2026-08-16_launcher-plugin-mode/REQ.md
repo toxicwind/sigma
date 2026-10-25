@@ -3,7 +3,7 @@
 ## Request
 
 The proxy form already works for most scenarios. The launcher funnels every action that would
-otherwise "touch the host" into spawn parameters, so the user only changes which command they run
+otherwise "touch the host" into spawn parameters, so the architect only changes which command they run
 (`sigma claude` / `sigma codex`) and the experience is nearly identical to the local-plugin form. Zero
 writes to host config files, zero effect on existing plugins, zero residue after uninstall. This is
 the launcher form of the #161 plugin protocol (plugin-in-launcher, an inside/outside call and

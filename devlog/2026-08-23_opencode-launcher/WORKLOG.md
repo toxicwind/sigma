@@ -137,7 +137,7 @@ origin — into httpRewrites; buildClaudeEnv wraps it via ANTHROPIC_BASE_URL (cl
 honors that env natively). MITM whitelist stays empty for claude.
 
 **Fix 3 — readClaudeSettings honors shell env**: settings.json-only reading
-ignored a user-exported ANTHROPIC_BASE_URL (their real relay); the launcher would
+ignored an architect-exported ANTHROPIC_BASE_URL (their real relay); the launcher would
 then wrap api.anthropic.com and override the relay entirely. Now env is a fallback
 (settings.json still wins). Loop-local variable renamed settingsEnv to avoid
 shadowing.

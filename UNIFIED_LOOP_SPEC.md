@@ -1,7 +1,7 @@
 # Unified Compress-Loop — Design Spec (Phase 1+2)
 
 ## Problem
-The generic sigma proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the blowup). Root cause confirmed by the user.
+The generic sigma proxy's three `compress-loop-*.ts` files have an **injection-persistence** bug: the philosophy prompt (injected as a conversation message, not a transient system prompt) and accumulated proxy-tool records PERSIST across re-request rounds, re-priming the model → on rare model paths the model loops `acp_status`/`search_context` until the loop-limit fires a degenerate empty completion (the blowup). Root cause confirmed by the architect.
 
 `executeProxyTool` is also copy-pasted ×3 (compress-loop.ts:47, compress-loop-anthropic.ts:59, compress-loop-responses.ts:85).
 

@@ -3,7 +3,7 @@
 Tiered, model-written release notes consumed by the proxy's visibility
 watcher (`src/update-notes.ts`): acp_status and the `/acp` panel use them to
 tell users and agents "an update is ready — restart to finish" or "a
-recommended release exists", with a per-release summary and the user-side
+recommended release exists", with a per-release summary and the architect-side
 span (everything between the running version and the newest release).
 
 Companion package mechanics mirror `advisories/` (#1481):

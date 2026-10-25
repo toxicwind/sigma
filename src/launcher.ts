@@ -3020,7 +3020,7 @@ export function attachGateAllows(health: HealthInfo, attachExternal: boolean): b
     return health.watchdog?.armed === true;
 }
 
-/** #1660: the user-sovereignty zone marker — neither a declared lane nor a
+/** #1660: the user-estatety zone marker — neither a declared lane nor a
  *  launcher launch token exists only for a manually started `bili start`
  *  daemon. By definition the user maintains it (they typed the command; it
  *  has no session lifecycle BY DESIGN, not by drift), so lanes may attach to

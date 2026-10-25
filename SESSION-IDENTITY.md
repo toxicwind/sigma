@@ -10,7 +10,7 @@ to. Written as future reference after the tail-window reattach removal
 
 Client-provided ids are honored verbatim. Partitioning sessions by anything the
 client can rotate — credentials, relays, protocol translation — orphans state
-exactly when the user keeps talking (the #286 lesson). For requests that carry
+exactly when the architect keeps talking (the #286 lesson). For requests that carry
 no id at all, the message content is the only stable thing both sides share, so
 affinity is computed purely from the replayed history.
 

@@ -1,7 +1,7 @@
 # FORK-NOTES — what sigma changed relative to upstream
 
 > **Upstream:** [`sigma`](https://github.com/ranxianglei/sigma) by **ranxianglei** (MIT, © 2026).
-> **This fork:** `sigma`, carried inside the sovereign monorepo.
+> **This fork:** `sigma`, carried inside the estate monorepo.
 >
 > `README.md` links here for the question of exactly what we changed. This file is that answer.
 > Every claim below names its backing commit or line.
@@ -161,7 +161,7 @@ places.
 **CJK test fixtures.** Many suites under `tests/` assert on Chinese text. Translating them would
 have destroyed coverage rather than preserved it.
 
-The rule behind this split: prose *about the engineering* is English. Prose *for the user* is
+The rule behind this split: prose *about the engineering* is English. Prose *for the architect* is
 translated. Fixtures stay as they are. `README.zh-CN.md` is user-facing. It gets translated.
 
 ## 7. Fork-original code: the preflight wall-clock ceiling

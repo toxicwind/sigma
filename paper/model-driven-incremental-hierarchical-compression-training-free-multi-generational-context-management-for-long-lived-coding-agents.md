@@ -18,7 +18,7 @@ The decisive constraint of agentic software engineering [2405.15793][2310.06770]
 
 - *Sliding-window truncation* discards the oldest turns outright (the de facto window policy of attention-sink streaming [2309.17453]), and positional degradation erodes even what survives [2307.03172].
 - *Threshold auto-compaction* (the factory setting of commercial coding CLIs[^claudecode]) summarizes the entire history into one opaque blob near the window limit and discards the source — irreversible, single-granularity, and timed by a threshold blind to the task's actual needs.
-- *External memory* (vector/graph stores) extracts "facts" but discards procedural context — the traceback that explained why a fix worked, the constraint the user stated 300 turns ago.
+- *External memory* (vector/graph stores) extracts "facts" but discards procedural context — the traceback that explained why a fix worked, the constraint the architect stated 300 turns ago.
 
 Recent research agrees on the *direction* — the agent should manage its own context — but its dominant line converges mechanistically on **training**: AgentFold [2510.24699] fine-tunes a 30B model around a fold operator; Context-ReAct [2605.05191] distills five atomic context operators from 10K synthetic trajectories; ACM [2607.23809] post-trains editing tools over external memory. This prices "self-management" at a custom checkpoint per agent framework and freezes the policy at training time.
 

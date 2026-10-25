@@ -21,7 +21,7 @@ No `/^minimax/i` table entry AND no `api.minimax.chat` / `api.minimaxi.com` mapp
 
 ## Requirements
 
-1. Never silently rebuild an unparseable config from `{}` — refuse the PUT, tell the user.
+1. Never silently rebuild an unparseable config from `{}` — refuse the PUT, tell the architect.
 2. DeepSeek default must stop triggering constant emergency compression.
 3. MiniMax windows must resolve (table entry + registry host mapping).
 4. Stale-table lock-in must not recur: a warm registry cache outranks the static table.

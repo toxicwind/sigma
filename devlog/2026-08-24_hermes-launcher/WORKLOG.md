@@ -60,7 +60,7 @@ Revert the single commit; no data migrations, no config-format changes.
 
 - hermes `--provider custom` on the CLI is a placeholder profile that routes
   to openrouter unless completed by config — irrelevant here because the
-  launcher rewrites the user's real config instead.
+  launcher rewrites the architect's real config instead.
 - `HERMES_HOME` env is respected by both sides (hermes + launcher), so e2e
   could run against a throwaway home without touching `~/.hermes`.
 - Upstream forbids wheel/sdist builds (setup.py guard); the supported local

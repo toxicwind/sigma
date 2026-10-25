@@ -140,7 +140,7 @@ small node scripts that do the work around the client:
   the runtime-info report therefore happens at bootstrap only (model + context
   window + max output from the client's own config whenever present).
 - **Watchdog & lifecycle:** the MCP child probes the proxy every 30 s. In
-  attach mode it waits forever (it never touches a user-owned proxy); in spawn
+  attach mode it waits forever (it never touches an architect-owned proxy); in spawn
   mode a dead proxy is respawned and the routing rewritten to the new origin.
   If recovery fails, the managed block is removed so traffic degrades back to
   direct upstream rather than hitting a dead port. When a session ends, kimi
@@ -261,7 +261,7 @@ two small node scripts that do the work around the client:
   (`plans`/`none`) is a compat escape hatch, and `BILI_ZCODE_SIGNING_FIXED=1`
   flips the #1621 skips off once a ZCode build ships the signing fix.
 - **Watchdog & lifecycle:** the MCP child probes the proxy every 30 s. In
-  attach mode it waits forever (it never touches a user-owned proxy); in spawn
+  attach mode it waits forever (it never touches an architect-owned proxy); in spawn
   mode a dead proxy is respawned and the routing rewritten to the new origin.
   If recovery fails, the managed rewrite is removed so traffic degrades back
    to direct upstream rather than hitting a dead port. When a session ends,
@@ -282,7 +282,7 @@ two small node scripts that do the work around the client:
    (new sessions/queries) — an in-flight session keeps retrying its cached old
    port until it re-reads. To avoid this structurally, pin `BILLION_CONTEXT_PROXY`
    at a resident proxy (`bili start`) and let every session attach to it
-   (attach mode never touches a user-owned proxy).
+   (attach mode never touches an architect-owned proxy).
 - **Known limitations:** ZCode's anti-fraud fingerprinting (#661) applies to
   MITM-rebuilt bodies on `zcode.z.ai` login traffic — native mode does not
   touch that surface (model traffic flows through the provider store, not the

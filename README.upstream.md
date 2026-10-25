@@ -138,7 +138,7 @@ the request, and handling preflight blocks that have no authentic call — far
 more invasive than re-voicing a standalone note. A `user` message is allowed
 anywhere in the conversation, so it is the minimal change that satisfies both
 SGLang's one-system rule and prefix-cache stability. The accepted trade-off:
-a summary is a stand-in for the folded history, and re-voicing it as a user
+a summary is a stand-in for the folded history, and re-voicing it as an architect
 turn is a semantic mismatch the model tolerates (it is clearly marked
 `[Compressed conversation section]`).
 
@@ -593,7 +593,7 @@ small node scripts that do the work around the client:
   the runtime-info report therefore happens at bootstrap only (model + context
   window + max output from the client's own config whenever present).
 - **Watchdog & lifecycle:** the MCP child probes the proxy every 30 s. In
-  attach mode it waits forever (it never touches a user-owned proxy); in spawn
+  attach mode it waits forever (it never touches an architect-owned proxy); in spawn
   mode a dead proxy is respawned and the routing rewritten to the new origin.
   If recovery fails, the managed block is removed so traffic degrades back to
   direct upstream rather than hitting a dead port. When a session ends, kimi
@@ -690,7 +690,7 @@ two small node scripts that do the work around the client:
   `headers["x-sigma-plugin"] = "zcode"` — until then traffic rides wire mode.
   Tool calls bind via the per-call `conversation_id` argument (#760).
 - **Watchdog & lifecycle:** the MCP child probes the proxy every 30 s. In
-  attach mode it waits forever (it never touches a user-owned proxy); in spawn
+  attach mode it waits forever (it never touches an architect-owned proxy); in spawn
   mode a dead proxy is respawned and the routing rewritten to the new origin.
   If recovery fails, the managed rewrite is removed so traffic degrades back
   to direct upstream rather than hitting a dead port. When a session ends,
@@ -1162,7 +1162,7 @@ state across concurrent users/accounts. It uses **the conversation value the
 client itself provides, verbatim** (`src/session-id.ts`) — no hashing and no
 protocol/upstream/API-key dimensions. Those dimensions were mutable mid-
 conversation (credentials rotate, users switch relays, the wire protocol can
-change), so keying on them orphaned state exactly when the user kept talking
+change), so keying on them orphaned state exactly when the architect kept talking
 (#280, #286). The id is used only inside the proxy (state store, persistence,
 UI label); it is never sent upstream.
 

@@ -25,7 +25,7 @@ through the proxy, inject the four ACP tools.**
 
 1. `sigma hermes [opts --] [args]` spawns a fresh proxy and launches hermes
    against it; proxy dies with the client.
-2. Zero edits to the user's real `~/.hermes/` — skills, memories, sessions,
+2. Zero edits to the architect's real `~/.hermes/` — skills, memories, sessions,
    SOUL.md, `.env` stay shared.
 3. Provider endpoints are discovered from `~/.hermes/config.yaml` (both the
    v12 `providers:` dict and the legacy `custom_providers:` list).

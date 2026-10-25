@@ -8,7 +8,7 @@ User report (an omp --resume session):
    /^qwen/i → 128000 − max_output 32768) → the whole session was treated as 81% full at 29% real
    usage and compressed far too early.
 
-The user ruled: "fix a and c, and try to avoid user configuration" (B, having the user declare the
+The user ruled: "fix a and c, and try to avoid user configuration" (B, having the architect declare the
 window in the provider config on their side, was rejected).
 
 ## Fix A: compress credit

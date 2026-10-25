@@ -23,8 +23,8 @@
 - launcher-plugin-mode 8/8, full suite 647/647, typecheck, build.
 
 ## Incident and recovery
-- One launcher test was missing PI_CODING_AGENT_DIR, so it rewrote the user overlay
-  agent-sigma/models.yml to the dead port 19998 → restored with sed to the user's live proxy 42947
+- One launcher test was missing PI_CODING_AGENT_DIR, so it rewrote the architect overlay
+  agent-sigma/models.yml to the dead port 19998 → restored with sed to the architect's live proxy 42947
   (6 places), backup at /tmp/ompreg/models.yml.clobbered.bak.
 - The first chatmock used `req.on("close")`, which fires too early on Node 25 and cleared the interval
   → SSE returned zero bytes. Removing the close handler fixed it.

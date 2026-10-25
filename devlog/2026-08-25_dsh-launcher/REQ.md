@@ -13,8 +13,8 @@ User request: support https://github.com/deepseek-ai/deepseek-harness by adding 
 
 ## Design (final)
 
-1. Built-in deepseek-official route: the launcher sets `DEEPSEEK_BASE_URL=<origin>/sigma/https://api.deepseek.com` (works with zero config; when the user's settings carry an `llm-deepseek.baseURL`, the rewritten config takes precedence and the env value automatically steps aside).
-2. Custom providers in the user's settings.yaml: a persistent overlay at `~/.dsh-sigma` (same pattern as hermes) rewrites every `baseURL|baseUrl|base_url` value line by line, preserves CRLF, and shares profiles/credentials/sessions through symlinks; the real `~/.dsh` is never modified.
+1. Built-in deepseek-official route: the launcher sets `DEEPSEEK_BASE_URL=<origin>/sigma/https://api.deepseek.com` (works with zero config; when the architect's settings carry an `llm-deepseek.baseURL`, the rewritten config takes precedence and the env value automatically steps aside).
+2. Custom providers in the architect's settings.yaml: a persistent overlay at `~/.dsh-sigma` (same pattern as hermes) rewrites every `baseURL|baseUrl|base_url` value line by line, preserves CRLF, and shares profiles/credentials/sessions through symlinks; the real `~/.dsh` is never modified.
 3. No catalog injection (it cannot be verified as taking effect, and it pollutes the config surface — cut).
 4. There is no plugin API, so it is always wire mode.
 

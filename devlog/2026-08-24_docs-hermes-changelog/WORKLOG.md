@@ -75,7 +75,7 @@
 - When PR #225 (v0.1.50) merges, move the [Unreleased] block into
   `[0.1.50] — <merge date>` in the next docs pass.
 
-## Follow-up 5: review fixes after the user rewrote README.zh-CN.md
+## Follow-up 5: review fixes after the architect rewrote README.zh-CN.md
 
 The user slimmed the Chinese README down directly in the GitHub web UI, cutting 87 lines. The
 method sections 0/A/B/C became sections 1/2/3, the plugin-mode/table/Web UI sections were deleted,
@@ -93,4 +93,4 @@ fixed in e6e481d plus 9a52eca:
    limited to wire. Without an install the model can still call acp_status.
 
 The user's editorial choice was respected, so nothing deleted was restored. Removing the Web UI
-section was the user's decision, and the product feature still exists.
+section was the architect's decision, and the product feature still exists.

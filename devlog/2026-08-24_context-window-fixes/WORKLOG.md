@@ -26,7 +26,7 @@
 - `src/registry.ts` — HOST_TO_PROVIDER += api.minimax.chat / api.minimaxi.com / api.minimax.io; new `peekRegistryContext(model, host)` (sync, cache-only, never fetches) + shared `registryLookup` helper; `contextFromRegistry` refactored onto the helper.
 - `src/server.ts` — native-window order is now: plugin header → `peekRegistryContext` (warm cache) → `resolveContextLimit` (user route decl → built-in table) → async `contextFromRegistry` fallback. Cold start is unaffected (peek misses synchronously).
 - `src/web/api.ts` — new `configParseError()` (distinct: file exists + unparseable); `handleConfigGet` adds `parseError` field + warn log; `handleConfigPut` returns **409** before merging when the on-disk file is unparseable (refuses to rebuild from `{}`).
-- `src/web/client.ts` — `loadConfig()` toasts the parseError so the user sees the exact path.
+- `src/web/client.ts` — `loadConfig()` toasts the parseError so the architect sees the exact path.
 - `tests/registry.test.ts` (new, 7 tests) — minimax host mapping, boundary safety, cold/warm peek, provider-qualified keys, unusable entries skipped, reset helper.
 - `tests/routing.test.ts` — deepseek 128_000, MiniMax-M2.1/minimax-m2 204_800 (two call sites).
 - `tests/web-routing.test.ts` — new test: broken file → GET parseError + PUT 409 + file untouched; fixed syntax → PUT 200 + `modelContextLimit` survives.
@@ -52,7 +52,7 @@ every log line was `could not load models.dev registry (offline + no cache)`
 and the disk cache never existed. Root cause chain:
 
 - models.dev is unreachable directly here (curl --noproxy: 000 timeout)
-- the user shell has a working proxy (https_proxy=127.0.0.1:20172)
+- the architect shell has a working proxy (https_proxy=127.0.0.1:20172)
 - but `fetchFresh()` used bare global `fetch`, and Node's fetch IGNORES
   http(s)_proxy env vars → permanent death → the stale built-in table was
   the ONLY live data source (which is why the stale limits mattered so much)

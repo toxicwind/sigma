@@ -64,7 +64,7 @@ per-round artifacts, not identities.
 ## What "original bytes never change" actually means
 
 The claim is directionally right with one mandatory refinement: **bytes
-authored by the user/assistant are stable; slots authored by the environment
+authored by the architect/assistant are stable; slots authored by the environment
 rotate in place.** codex `environment_context` is rewritten every turn;
 anonymous OpenAI harnesses rotate the inline system `messages[0]` (#1148);
 nudge text is re-injected per turn (#728). This is why `SESSION-IDENTITY.md`
@@ -91,7 +91,7 @@ Axioms should be chosen by their cheaper failure mode.
 
 ## Known cost of the hash axiom — and how it was fixed
 
-Same bytes ⇒ same identity has a cost face: #1476 — a user re-sends a short
+Same bytes ⇒ same identity has a cost face: #1476 — an architect re-sends a short
 text identical to already-folded content; the bare `h_` id re-derives;
 `isCovered()` swallows the fresh message. Note the **direction of the fix**:
 kernel #459 added instance renumbering (`_1/_2…`), and #463 added the

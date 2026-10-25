@@ -38,7 +38,7 @@ is that it happened without any notice.
    (e.g. `pi: replaced existing entries: npm:sigma-pi`).
 2. `sigma plugin remove pi` names the entry it drops in its output.
 3. The `/acp` no-proxy warning is neutral: it offers BOTH exits — launch via
-   `sigma <client>` for proxy mode, or remove the plugin if the user uses
+   `sigma <client>` for proxy mode, or remove the plugin if the architect uses
    sigma-pi / doesn't want a proxy. Agent-aware wording (the
    remove hint mentions `sigma-pi` only for pi).
 4. Existing behavior unchanged otherwise: same entries removed, same backup

@@ -17,18 +17,18 @@ guess. Opt-out envs: `BILI_NATIVE_PI=0`, `BILI_NATIVE_OMP=0`, `BILI_NATIVE_OPENC
 
 ## Proxy reuse and the attach gate (#1225, #1335, #1232, #1660)
 
-A native hook may attach to an already-running proxy instead of spawning its own — only when it passes the lifecycle gate below. Reuse is identity-based (#1225): an existing proxy is attached only when it runs the **same code** (sha256 of the entry script, recorded in the instance file), its **lane is compatible** — each launcher declares its client's lane, two *different declared* lanes never share, and an instance without a declared lane is a manually started user-zone daemon, wildcard-compatible on that axis — **and it passes the lifecycle gate** (§below): an armed parent-pid watchdog (`watchdog.armed == true`), i.e. it was spawned by a launcher with a parent pid and dies when the last attached session dies, **or** it is a user-zone instance (no lane, no launch token), which is exempt by definition (#1660). Instances written before #1225 carry no code fingerprint and are therefore never attached: a rebuilt or updated install always starts a fresh proxy on the next launch, so fixes take effect immediately instead of silently serving stale code.
+A native hook may attach to an already-running proxy instead of spawning its own — only when it passes the lifecycle gate below. Reuse is identity-based (#1225): an existing proxy is attached only when it runs the **same code** (sha256 of the entry script, recorded in the instance file), its **lane is compatible** — each launcher declares its client's lane, two *different declared* lanes never share, and an instance without a declared lane is a manually started user-zone daemon, wildcard-compatible on that axis — **and it passes the lifecycle gate** (§below): an armed parent-pid watchdog (`watchdog.armed == true`), i.e. it was spawned by a launcher with a parent pid and dies when the last attached session dies, **or** it is an architect-zone instance (no lane, no launch token), which is exempt by definition (#1660). Instances written before #1225 carry no code fingerprint and are therefore never attached: a rebuilt or updated install always starts a fresh proxy on the next launch, so fixes take effect immediately instead of silently serving stale code.
 
 | Listener | Attaches? | Why |
 |---|---|---|
 | Proxy spawned by this session | ✅ | armed at birth |
 | Another session's armed shared proxy (watcher set, #1186) | ✅ | sharing is by design |
-| Manually started `bili start` daemon (user zone, #1660) | ✅ by default | **user-zone** instance (no lane, no launch token): deliberately maintained by the user — you own its lifetime and version; refused only when `BILI_NATIVE_ATTACH_EXTERNAL=0/false` explicitly closes the gate |
+| Manually started `bili start` daemon (user zone, #1660) | ✅ by default | **user-zone** instance (no lane, no launch token): deliberately maintained by the architect — you own its lifetime and version; refused only when `BILI_NATIVE_ATTACH_EXTERNAL=0/false` explicitly closes the gate |
 | Unarmed **lane'd** proxy (crashed-session orphan; pre-#1330 unverifiable) | ❌ loudly refused | lifecycle-drift symptom (#1335): riding it would silently reuse a proxy no live session owns |
 
-The hook probes each candidate's `/__bili/health` before attaching: armed → attach and register a watcher (unchanged); a **user-zone** candidate attaches by default regardless of watchdog state (#1660) — the user deliberately maintains that daemon; an unarmed **lane'd** candidate (a crashed session's orphan, or a pre-#1330 build that reports no `watchdog` field at all — unverifiable, treated as unarmed) is refused **loudly**, and the session spawns its own proxy in the self-managed port zone (base `18787`, or the lane's sticky drift record; armed at birth, dies with the last session, #1186 watcher semantics). Version skew stays fixed: the code-fingerprint check runs first, so a rebuilt or updated install never rides a stale daemon even through the user-zone exemption. Cost: one extra short-lived proxy process per session when nothing attachable exists (session state is shared on disk, so compression continuity is unaffected); the multi-instance warning (#394) becomes correspondingly more common. **Escape hatch:** `native.attachExternal: true` in the config file or `BILI_NATIVE_ATTACH_EXTERNAL=1` extends attaching to *lane'd* listeners regardless of watchdog state (including pre-#1330 builds) — you then own those daemons' lifetimes and versions; `0`/`false` closes the gate for everyone, including user-zone daemons, forcing fresh zone spawns. Explicit user-directed attaches (`BILLION_CONTEXT_ATTACH` / preset `BILLION_CONTEXT_PROXY` for kimi/dsh) bypass discovery entirely and are exempt by construction.
+The hook probes each candidate's `/__bili/health` before attaching: armed → attach and register a watcher (unchanged); a **user-zone** candidate attaches by default regardless of watchdog state (#1660) — the architect deliberately maintains that daemon; an unarmed **lane'd** candidate (a crashed session's orphan, or a pre-#1330 build that reports no `watchdog` field at all — unverifiable, treated as unarmed) is refused **loudly**, and the session spawns its own proxy in the self-managed port zone (base `18787`, or the lane's sticky drift record; armed at birth, dies with the last session, #1186 watcher semantics). Version skew stays fixed: the code-fingerprint check runs first, so a rebuilt or updated install never rides a stale daemon even through the architect-zone exemption. Cost: one extra short-lived proxy process per session when nothing attachable exists (session state is shared on disk, so compression continuity is unaffected); the multi-instance warning (#394) becomes correspondingly more common. **Escape hatch:** `native.attachExternal: true` in the config file or `BILI_NATIVE_ATTACH_EXTERNAL=1` extends attaching to *lane'd* listeners regardless of watchdog state (including pre-#1330 builds) — you then own those daemons' lifetimes and versions; `0`/`false` closes the gate for everyone, including user-zone daemons, forcing fresh zone spawns. Explicit user-directed attaches (`BILLION_CONTEXT_ATTACH` / preset `BILLION_CONTEXT_PROXY` for kimi/dsh) bypass discovery entirely and are exempt by construction.
 
-Attach discovery is lane-aware across **all** live instances (#1232): the launcher probes every live entry in the instance registry, not just the single instance file (last-writer-wins — under concurrent multi-client use it can point at another client's proxy), and applies the gate above to every candidate. Among compatible candidates the newest instance with the launcher's own declared lane wins; an instance without a lane (a user-zone daemon) is wildcard-compatible on the lane axis and gate-exempt by default (#1660). The `another bili instance is running` warning (#394) is lane-aware too: it fires for same-lane or lane-less coexistence, but stays silent between two *different* declared lanes, whose session files are disjoint.
+Attach discovery is lane-aware across **all** live instances (#1232): the launcher probes every live entry in the instance registry, not just the single instance file (last-writer-wins — under concurrent multi-client use it can point at another client's proxy), and applies the gate above to every candidate. Among compatible candidates the newest instance with the launcher's own declared lane wins; an instance without a lane (an architect-zone daemon) is wildcard-compatible on the lane axis and gate-exempt by default (#1660). The `another bili instance is running` warning (#394) is lane-aware too: it fires for same-lane or lane-less coexistence, but stays silent between two *different* declared lanes, whose session files are disjoint.
 
 ## Shared state dir and multi-instance security boundary (#394, #1724)
 
@@ -59,7 +59,7 @@ owner and no per-lane isolation on disk. Two consequences follow:
 
 **Security posture:** the shared-state surface is protected *only* by the admin
 endpoint's loopback gate (non-loopback source addresses are refused) plus
-filesystem permissions on the user's home tree (both dirs live under $HOME) —
+filesystem permissions on the architect's home tree (both dirs live under $HOME) —
 there is no per-session authorization. For a **single-user host** that is
 sufficient. On a **multi-user host** it is not: any local account able to reach
 the proxy's loopback port can read every session of every user. Such hosts must
@@ -149,7 +149,7 @@ hook stays dormant.
 ## Injection priority — no files unless unavoidable (#535)
 
 bili never owns user data: every launched client runs on its **real home**, so
-runtime writes land where the user expects them. When pointing a client at the
+runtime writes land where the architect expects them. When pointing a client at the
 proxy, the launcher picks by priority — **env vars first** (proxy/CA envs for
 hermes/dsh/codex; the `BILI_PROVIDER_REWRITES` URL manifest for pi/omp,
 consumed by their extension's `registerProvider` at load), then **CLI flags or
@@ -201,7 +201,7 @@ the request, and handling preflight blocks that have no authentic call — far
 more invasive than re-voicing a standalone note. A `user` message is allowed
 anywhere in the conversation, so it is the minimal change that satisfies both
 SGLang's one-system rule and prefix-cache stability. The accepted trade-off:
-a summary is a stand-in for the folded history, and re-voicing it as a user
+a summary is a stand-in for the folded history, and re-voicing it as an architect
 turn is a semantic mismatch the model tolerates (it is clearly marked
 `[Compressed conversation section]`).
 

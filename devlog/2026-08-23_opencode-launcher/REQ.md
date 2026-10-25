@@ -9,7 +9,7 @@
 remained:
 
 1. With opencode-acp self-disabled (upstream PR ranxianglei/opencode-acp#335),
-   the user lost the `/acp` status command — the proxy's wire injection covers
+   the architect lost the `/acp` status command — the proxy's wire injection covers
    the model-facing tools, but nothing rendered a status panel.
 2. Session binding: opencode cannot stamp `x-sigma-plugin-*` headers from a
    plugin, so `handlePluginStatus` could not resolve the conversation to a
@@ -17,7 +17,7 @@ remained:
 
 ## Requirements
 1. `sigma opencode` must surface an `/acp`-equivalent status panel with zero
-   install steps and zero edits to the user's real `~/.config/opencode/opencode.json`.
+   install steps and zero edits to the architect's real `~/.config/opencode/opencode.json`.
 2. The proxy's 4 wire-injected ACP tools must keep flowing to the model
    (compress/decompress/search_context/acp_status appended after opencode's
    native tools).

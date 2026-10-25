@@ -42,7 +42,7 @@
     logic; it only reads the proxy's `/__bili/plugin/status` endpoint.
   - No new runtime dependencies.
 - **Non-Goals** (explicitly out of scope):
-  - No subcommands (`/acp compress`, `/acp help`, …) — the user asked for exactly one
+  - No subcommands (`/acp compress`, `/acp help`, …) — the architect asked for exactly one
     command that only shows status.
   - No manual "compress now" trigger (that would need a new proxy endpoint + the
     compress loop; deferred).
